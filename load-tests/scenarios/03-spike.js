@@ -10,6 +10,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
+import { htmlReport } from '../lib/reporter.js';
 import { BASE_URL, transactionPayload, pick, CUSTOMERS, MERCHANTS } from '../config.js';
 
 const spikeErrorRate  = new Rate('spike_error_rate');
@@ -58,4 +59,8 @@ export default function () {
 
   spikeErrorRate.add(!ok);
   sleep(0.2);
+}
+
+export function handleSummary(data) {
+  return { '/scripts/results/03-spike.html': htmlReport(data) };
 }

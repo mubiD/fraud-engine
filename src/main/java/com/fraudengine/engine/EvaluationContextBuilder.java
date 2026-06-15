@@ -5,6 +5,8 @@ import com.fraudengine.model.BlacklistedMerchant;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.repository.BlacklistedMerchantRepository;
 import com.fraudengine.repository.TransactionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +18,8 @@ import java.util.stream.Collectors;
 
 @Component
 public class EvaluationContextBuilder {
+
+    private static final Logger log = LoggerFactory.getLogger(EvaluationContextBuilder.class);
 
     private final TransactionRepository transactionRepository;
     private final BlacklistedMerchantRepository blacklistedMerchantRepository;
@@ -37,6 +41,9 @@ public class EvaluationContextBuilder {
                 .findRecentByCustomer(transaction.getCustomerId(), lookbackStart);
 
         Set<String> blacklisted = getBlacklistedMerchantIds();
+
+        log.debug("Evaluation context built: recentTransactions={}, blacklistedMerchants={}, lookbackMinutes={}",
+                recent.size(), blacklisted.size(), properties.getContextLookbackMinutes());
 
         return EvaluationContext.builder()
                 .recentCustomerTransactions(recent)
