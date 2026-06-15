@@ -8,6 +8,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';
+import { htmlReport } from '../lib/reporter.js';
 import { BASE_URL, THRESHOLDS, transactionPayload, pick, CUSTOMERS } from '../config.js';
 
 const errorRate = new Rate('error_rate');
@@ -45,4 +46,8 @@ export default function () {
 
   errorRate.add(!ok);
   sleep(0.5);
+}
+
+export function handleSummary(data) {
+  return { '/scripts/results/02-ramp.html': htmlReport(data) };
 }

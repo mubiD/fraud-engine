@@ -9,6 +9,7 @@ import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
@@ -48,31 +49,60 @@ public class TransactionConsumer {
             containerFactory = "kafkaListenerContainerFactory"
     )
     @Transactional
-    public void consume(TransactionEvent event) {
-        log.info("Received transaction event: {}", event.getTransactionId());
+    public void consume(TransactionEvent event,
+                        @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+                        @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+                        @Header(KafkaHeaders.OFFSET) long offset) {
+        try {
+            MDC.put("transactionId", event.getTransactionId().toString());
+            MDC.put("customerId",    event.getCustomerId());
+            MDC.put("merchantId",    event.getMerchantId());
+            MDC.put("kafkaTopic",    topic);
+            MDC.put("kafkaPartition", String.valueOf(partition));
+            MDC.put("kafkaOffset",   String.valueOf(offset));
 
-        Transaction transaction = transactionRepository.findById(event.getTransactionId())
-                .orElseGet(() -> transactionRepository.save(mapToEntity(event)));
+            log.info("Consumed transaction event: amount={} {}, category={}, location={}",
+                    event.getAmount(), event.getCurrency(),
+                    event.getCategory(), event.getLocation());
 
-        FraudAssessment assessment = ruleEngine.evaluate(transaction);
-        fraudAssessmentRepository.save(assessment);
+            Transaction transaction = transactionRepository.findById(event.getTransactionId())
+                    .orElseGet(() -> transactionRepository.save(mapToEntity(event)));
 
-        transaction.setStatus(TransactionStatus.ASSESSED);
-        transactionRepository.save(transaction);
+            FraudAssessment assessment = ruleEngine.evaluate(transaction);
+            fraudAssessmentRepository.save(assessment);
 
-        log.info("Assessment complete for transaction {}: fraudulent={}, score={}",
-                transaction.getId(), assessment.isFraudulent(), assessment.getRiskScore());
+            transaction.setStatus(TransactionStatus.ASSESSED);
+            transactionRepository.save(transaction);
+
+            if (assessment.isFraudulent()) {
+                log.warn("Transaction flagged as FRAUDULENT: riskScore={}, violations={}",
+                        assessment.getRiskScore(), assessment.getRuleViolations().size());
+            } else {
+                log.info("Transaction cleared: riskScore={}", assessment.getRiskScore());
+            }
+        } finally {
+            MDC.clear();
+        }
     }
 
     @DltHandler
     public void handleDlt(TransactionEvent event,
                           @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
-        log.error("Transaction {} exhausted retries, routed to DLT from topic: {}",
-                event.getTransactionId(), topic);
-        transactionRepository.findById(event.getTransactionId()).ifPresent(t -> {
-            t.setStatus(TransactionStatus.FAILED);
-            transactionRepository.save(t);
-        });
+        try {
+            MDC.put("transactionId", event.getTransactionId().toString());
+            MDC.put("customerId",    event.getCustomerId());
+            MDC.put("kafkaTopic",    topic);
+
+            log.error("Transaction exhausted all retries and was routed to DLT: topic={}", topic);
+
+            transactionRepository.findById(event.getTransactionId()).ifPresent(t -> {
+                t.setStatus(TransactionStatus.FAILED);
+                transactionRepository.save(t);
+                log.error("Transaction status set to FAILED");
+            });
+        } finally {
+            MDC.clear();
+        }
     }
 
     private Transaction mapToEntity(TransactionEvent event) {
