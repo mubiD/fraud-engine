@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -25,16 +27,24 @@ public class RuleEngine {
     }
 
     public FraudAssessment evaluate(Transaction transaction) {
-        log.debug("Evaluating {} rules for transaction {}", rules.size(), transaction.getId());
+        Instant start = Instant.now();
+        List<FraudRule> enabledRules = rules.stream()
+                .filter(FraudRule::isEnabled)
+                .sorted(Comparator.comparingInt(FraudRule::getPriority))
+                .collect(Collectors.toList());
+
+        log.debug("Starting rule evaluation: enabledRules={}", enabledRules.size());
 
         EvaluationContext context = contextBuilder.build(transaction);
 
-        List<RuleResult> violations = rules.stream()
-                .filter(FraudRule::isEnabled)
-                .sorted(Comparator.comparingInt(FraudRule::getPriority))
+        List<RuleResult> violations = enabledRules.stream()
                 .map(rule -> rule.evaluate(transaction, context))
                 .filter(RuleResult::isViolation)
                 .collect(Collectors.toList());
+
+        violations.forEach(v ->
+                log.warn("Rule violated: rule={}, severity={}, detail={}",
+                        v.getRuleName(), v.getSeverity(), v.getDescription()));
 
         int riskScore = calculateRiskScore(violations);
         boolean isFraudulent = riskScore >= 50;
@@ -57,8 +67,9 @@ public class RuleEngine {
 
         assessment.setRuleViolations(ruleViolations);
 
-        log.info("Transaction {} assessed: fraudulent={}, riskScore={}, violations={}",
-                transaction.getId(), isFraudulent, riskScore, violations.size());
+        long elapsedMs = Duration.between(start, Instant.now()).toMillis();
+        log.debug("Rule evaluation complete: fraudulent={}, riskScore={}, violations={}, elapsedMs={}",
+                isFraudulent, riskScore, violations.size(), elapsedMs);
 
         return assessment;
     }

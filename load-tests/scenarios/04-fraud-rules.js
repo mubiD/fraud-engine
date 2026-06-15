@@ -11,6 +11,7 @@
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
+import { htmlReport } from '../lib/reporter.js';
 import { BASE_URL, THRESHOLDS, transactionPayload, pick, CUSTOMERS, MERCHANTS } from '../config.js';
 
 const flaggedCount = new Counter('flagged_transactions_returned');
@@ -83,4 +84,8 @@ export default function () {
 
     sleep(0.2);
   });
+}
+
+export function handleSummary(data) {
+  return { '/scripts/results/04-fraud-rules.html': htmlReport(data) };
 }
