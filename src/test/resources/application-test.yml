@@ -1,0 +1,18 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+fraud:
+  rules:
+    amount-threshold:
+      threshold: 5000.00
+    velocity:
+      max-transactions: 5
+      window-minutes: 10
+    duplicate:
+      window-seconds: 300
+    geographic:
+      window-minutes: 60

@@ -1,0 +1,10 @@
+target/
+.idea/
+*.iml
+*.class
+*.jar
+*.war
+.DS_Store
+.env
+application-local.yml
+.claude*

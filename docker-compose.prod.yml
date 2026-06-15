@@ -1,0 +1,29 @@
+version: "3.9"
+
+# PROD environment — port range 8085 / 5437 / 9592
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    container_name: fraud-postgres-prod
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+
+  kafka:
+    container_name: fraud-kafka-prod
+    ports:
+      - "9592:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9592
+
+  fraud-engine:
+    container_name: fraud-engine-prod
+    ports:
+      - "8085:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+volumes:
+  postgres_data_prod:
