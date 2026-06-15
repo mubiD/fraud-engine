@@ -2,10 +2,6 @@ spring:
   application:
     name: fraud-rule-engine
 
-logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{requestId:--}] [txn=%X{transactionId:--}] [cust=%X{customerId:--}] [merchant=%X{merchantId:--}] [%X{kafkaTopic:--}:%X{kafkaOffset:--}] %-40.40logger{39} : %m%n"
-
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:frauddb}
     username: ${DB_USER:fraud}
@@ -51,6 +47,10 @@ logging:
 
   cache:
     type: caffeine
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{requestId:--}] [txn=%X{transactionId:--}] [cust=%X{customerId:--}] [merchant=%X{merchantId:--}] [%X{kafkaTopic:--}:%X{kafkaOffset:--}] %-40.40logger{39} : %m%n"
 
 fraud:
   kafka:
