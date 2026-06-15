@@ -2,12 +2,17 @@
 FROM maven:3.9.6-amazoncorretto-21 AS build
 WORKDIR /app
 
+# Force wagon HTTP transport so SSL-bypass flags take effect during POM resolution
+ENV MAVEN_OPTS="-Dmaven.wagon.http.ssl.insecure=true \
+                -Dmaven.wagon.http.ssl.allowall=true \
+                -Dmaven.wagon.http.ssl.ignore.validity.dates=true"
+
 # Cache dependencies separately from source — layer invalidated only on pom.xml change
 COPY pom.xml .
-RUN mvn dependency:go-offline -q
+RUN mvn dependency:go-offline -q -Dmaven.resolver.transport=wagon
 
 COPY src ./src
-RUN mvn package -DskipTests -q
+RUN mvn package -DskipTests -q -Dmaven.resolver.transport=wagon
 
 # Stage 2: Runtime — slim JRE only, no build tools or source
 FROM amazoncorretto:21-alpine
