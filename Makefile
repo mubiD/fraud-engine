@@ -29,7 +29,7 @@ stop:
 	@if [ -z "$(ENV)" ]; then \
 	  echo "Usage: make stop ENV=<dev|int|qa|load|prod>"; exit 1; fi
 	docker compose -f docker-compose.yml -f docker-compose.$(ENV).yml \
-	  -p fraud-$(ENV) down --remove-orphans
+	  -p fraud-$(ENV) down --remove-orphans --volumes
 
 # ── Image build (no startup) ─────────────────────────────────────────────────
 

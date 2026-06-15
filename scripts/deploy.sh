@@ -28,7 +28,7 @@ COMPOSE_FILES="-f docker-compose.yml -f docker-compose.${ENV}.yml"
 PROJECT="fraud-${ENV}"
 
 echo "==> [$ENV] Stopping existing containers..."
-docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans
+docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans --volumes
 
 echo "==> [$ENV] Building image..."
 docker compose $COMPOSE_FILES -p "$PROJECT" build --no-cache fraud-engine
@@ -49,4 +49,5 @@ until docker inspect --format='{{.State.Health.Status}}' "fraud-engine-${ENV}" 2
 done
 
 echo "==> [$ENV] Deployed successfully."
-echo "    App: http://localhost:$(docker inspect --format='{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}' "fraud-engine-${ENV}")"
+APP_PORT=$(docker inspect --format='{{range $p, $b := .NetworkSettings.Ports}}{{if eq $p "8080/tcp"}}{{(index $b 0).HostPort}}{{end}}{{end}}' "fraud-engine-${ENV}")
+echo "    App: http://localhost:${APP_PORT}"
