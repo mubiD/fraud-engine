@@ -1,0 +1,29 @@
+version: "3.9"
+
+# DEV environment — port range 8081 / 5433 / 9192
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    container_name: fraud-postgres-dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+
+  kafka:
+    container_name: fraud-kafka-dev
+    ports:
+      - "9192:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9192
+
+  fraud-engine:
+    container_name: fraud-engine-dev
+    ports:
+      - "8081:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+
+volumes:
+  postgres_data_dev:
