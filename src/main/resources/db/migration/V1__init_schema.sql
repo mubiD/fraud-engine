@@ -8,8 +8,8 @@ CREATE TABLE transactions (
     currency      VARCHAR(3)      NOT NULL,
     category      VARCHAR(64),
     location      VARCHAR(128),
-    latitude      DECIMAL(9, 6),
-    longitude     DECIMAL(9, 6),
+    latitude      DOUBLE PRECISION,
+    longitude     DOUBLE PRECISION,
     timestamp     TIMESTAMPTZ     NOT NULL,
     status        VARCHAR(32)     NOT NULL DEFAULT 'PENDING',
     created_at    TIMESTAMPTZ     NOT NULL DEFAULT now()
