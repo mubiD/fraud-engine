@@ -8,6 +8,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
+import { htmlReport } from '../lib/reporter.js';
 import { BASE_URL, THRESHOLDS, transactionPayload } from '../config.js';
 
 const assessmentLatency = new Trend('assessment_poll_duration');
@@ -65,4 +66,8 @@ export default function () {
   }
 
   sleep(1);
+}
+
+export function handleSummary(data) {
+  return { '/scripts/results/01-baseline.html': htmlReport(data) };
 }

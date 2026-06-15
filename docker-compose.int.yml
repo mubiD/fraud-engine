@@ -16,7 +16,7 @@ services:
     ports:
       - "9292:9092"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9292
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9292,INTERNAL://kafka:29092
 
   fraud-engine:
     container_name: fraud-engine-int

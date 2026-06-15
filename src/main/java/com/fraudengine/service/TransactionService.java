@@ -7,6 +7,7 @@ import com.fraudengine.model.Transaction;
 import com.fraudengine.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,14 @@ public class TransactionService {
 
         transaction = transactionRepository.save(transaction);
 
+        MDC.put("transactionId", transaction.getId().toString());
+        MDC.put("customerId",    transaction.getCustomerId());
+        MDC.put("merchantId",    transaction.getMerchantId());
+
+        log.info("Transaction accepted: amount={} {}, category={}, location={}",
+                transaction.getAmount(), transaction.getCurrency(),
+                transaction.getCategory(), transaction.getLocation());
+
         TransactionEvent event = TransactionEvent.builder()
                 .transactionId(transaction.getId())
                 .customerId(transaction.getCustomerId())
@@ -59,7 +68,7 @@ public class TransactionService {
                 .build();
 
         producer.publish(event);
-        log.info("Transaction {} submitted and queued for evaluation", transaction.getId());
+        log.info("Transaction queued to Kafka for fraud evaluation");
         return transaction.getId();
     }
 }

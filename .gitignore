@@ -8,3 +8,5 @@ target/
 .env
 application-local.yml
 .claude*
+load-tests/results/*.html
+load-tests/results/*.json
