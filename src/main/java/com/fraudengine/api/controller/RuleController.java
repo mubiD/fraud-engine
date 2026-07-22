@@ -1,11 +1,11 @@
 package com.fraudengine.api.controller;
 
 import com.fraudengine.api.dto.RuleDto;
-import com.fraudengine.api.dto.UpdateRuleRequest;
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.service.RuleManagementService;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -24,12 +24,5 @@ public class RuleController {
     @GetMapping
     public List<RuleDto> getRules() {
         return ruleManagementService.getRules().stream().map(mapper::toDto).toList();
-    }
-
-    @PatchMapping("/{ruleName}")
-    public ResponseEntity<Void> updateRule(@PathVariable String ruleName,
-                                           @RequestBody UpdateRuleRequest request) {
-        ruleManagementService.updateRule(ruleName, request);
-        return ResponseEntity.noContent().build();
     }
 }

@@ -15,8 +15,14 @@ public class FraudAssessment {
     private UUID id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "transaction_id", nullable = false)
+    @JoinColumns({
+        @JoinColumn(name = "transaction_id", referencedColumnName = "id", nullable = false),
+        @JoinColumn(name = "transaction_timestamp", referencedColumnName = "timestamp", nullable = false)
+    })
     private Transaction transaction;
+
+    @Column(name = "transaction_timestamp", nullable = false, insertable = false, updatable = false)
+    private Instant transactionTimestamp;
 
     @Column(name = "is_fraudulent", nullable = false)
     private boolean fraudulent;
@@ -34,6 +40,7 @@ public class FraudAssessment {
 
     public UUID getId() { return id; }
     public Transaction getTransaction() { return transaction; }
+    public Instant getTransactionTimestamp() { return transactionTimestamp; }
     public boolean isFraudulent() { return fraudulent; }
     public int getRiskScore() { return riskScore; }
     public Instant getAssessedAt() { return assessedAt; }

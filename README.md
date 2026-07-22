@@ -1,8 +1,8 @@
 # Fraud Rule Engine
 
-A production-grade backend service that processes categorised transaction events, evaluates them against a configurable set of fraud detection rules, and exposes results via a REST API.
+A production-grade backend service that consumes transaction events from Kafka, evaluates them against a configurable set of fraud detection rules, persists assessments to PostgreSQL, and routes outcomes to dedicated downstream topics.
 
-**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka (KRaft) · PostgreSQL 16 · Docker · JUnit 5 · Mockito · Testcontainers · k6
+**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · Zipkin · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers · k6
 
 ---
 
@@ -11,27 +11,42 @@ A production-grade backend service that processes categorised transaction events
 See [DESIGN.md](./DESIGN.md) for the full system design document covering all architectural decisions, trade-offs, and extensibility considerations.
 
 ```
-POST /api/v1/transactions
-        │
-        ▼
-  Kafka Producer ──► transactions.raw (partitioned by customerId)
-                              │
-                              ▼
-                    Kafka Consumer (Spring)
-                              │
-                              ▼
-                    Rule Engine (Strategy Pattern)
-                    ├── AmountThresholdRule   (priority 1)
-                    ├── VelocityRule          (priority 2)
-                    ├── DuplicateRule         (priority 3)
-                    ├── BlacklistedMerchant   (priority 4)
-                    └── GeographicAnomaly     (priority 5)
-                              │
-                              ▼
-                    FraudAssessment → PostgreSQL
-                              │
-                              ▼
-              GET /api/v1/fraud-flags (cursor-based pagination)
+External System
+      │
+      ▼  TransactionEvent (Protobuf)
+transactions.raw  ──────────────────────────────────────────────────────┐
+      │                                                                  │
+      ▼                                                             retry topics
+  TransactionConsumer                                            (transactions.raw-0,
+      │   @RetryableTopic (3 attempts, exponential backoff)       transactions.raw-1)
+      │   @Transactional(chainedKafkaTransactionManager)               │
+      │   idempotency guard: findByIdOnly → skip-save if exists        │
+      │                                                                 ▼
+      ▼                                                      transactions.raw.DLT
+  Rule Engine (Strategy Pattern)                         (@DltHandler → status=FAILED)
+  ├── AmountThresholdRule    priority 1   HIGH
+  ├── VelocityRule           priority 2   HIGH
+  ├── DuplicateTransactionRule priority 3  CRITICAL   (type-aware window)
+  ├── BlacklistedMerchantRule  priority 4  CRITICAL   (Caffeine-cached)
+  └── GeographicAnomalyRule    priority 5  CRITICAL   (speed + clock-skew guard)
+      │
+      ▼
+  FraudAssessment → PostgreSQL (Flyway-managed, daily-partitioned)
+      │
+      ├── isFraudulent=true  → FraudulentTransactionEvent (Protobuf)
+      │                              ▼
+      │                       transactions.flagged
+      │
+      └── isFraudulent=false → ClearedTransactionEvent (Protobuf)
+                                     ▼
+                              transactions.passed
+
+Query API (read-only)
+  GET /api/v1/transactions?customerId=
+  GET /api/v1/transactions/{id}/assessment
+  GET /api/v1/transactions/flagged
+  GET /api/v1/transactions/passed
+  GET /api/v1/rules
 ```
 
 ---
@@ -40,15 +55,21 @@ POST /api/v1/transactions
 
 The only prerequisite is **Docker**. No Java, Maven, or Kafka installation required — everything runs inside containers.
 
-Each environment is fully self-contained: its own app instance, Postgres database, and Kafka broker, all on separate ports so multiple environments can run simultaneously.
+Each environment is fully self-contained: its own app instance, Postgres database, Kafka cluster, and observability stack, all on separate host ports so multiple environments can run simultaneously.
 
-| Environment | App | Postgres | Kafka (host) |
-|---|---|---|---|
-| `dev` | 8081 | 5433 | 9192 |
-| `int` | 8082 | 5434 | 9292 |
-| `qa` | 8083 | 5435 | 9392 |
-| `load` | 8084 | 5436 | 9492 |
-| `prod` | 8085 | 5437 | 9592 |
+| Service | dev | int | qa | load | prod |
+|---|---|---|---|---|---|
+| App | 8081 | 8082 | 8083 | 8084 | 8085 |
+| Postgres | 5433 | 5434 | 5435 | 5436 | 5437 |
+| Kafka broker 1 | 9192 | 9292 | 9392 | 9492 | 9592 |
+| Kafka broker 2 | 9193 | 9293 | 9393 | 9493 | 9593 |
+| Kafka broker 3 | 9194 | 9294 | 9394 | 9494 | 9594 |
+| Schema Registry | 8091 | — | — | — | — |
+| Vault | 8200 | — | — | — | — |
+| Zipkin | 9411 | — | — | — | — |
+| Prometheus | 9090 | — | — | — | — |
+
+> Schema Registry, Vault, Zipkin, and Prometheus host-port mappings are only exposed in the `dev` environment. In other environments they are accessible within the Docker network.
 
 ### Start an environment
 
@@ -63,22 +84,24 @@ make prod
 Each command:
 1. Builds the app image from source
 2. Starts Postgres and waits until healthy
-3. Starts Kafka and waits until healthy
-4. Starts the fraud-engine (Flyway runs migrations on boot)
-5. Polls `/actuator/health` until the app is ready
+3. Starts the 3-broker Kafka cluster and waits until healthy
+4. Starts Schema Registry and waits until healthy
+5. Starts Vault (dev mode, pre-unsealed)
+6. Starts the fraud-engine (Flyway runs migrations on boot)
+7. Polls `/actuator/health` until the app is ready
 
 Postgres data volumes are named per environment and persist across restarts.
 
 ### Tear down
 
 ```bash
-make stop ENV=int
+make stop ENV=dev
 ```
 
 ### Tail logs
 
 ```bash
-make logs ENV=int
+make logs ENV=dev
 ```
 
 ### See all running environments
@@ -91,78 +114,77 @@ make ps
 
 ## API Reference
 
-### Submit a Transaction
+> There is no HTTP submission endpoint. Transactions enter the system exclusively via `transactions.raw` Kafka topic. The API is read-only.
+
+### List transactions for a customer
 
 ```bash
-curl -X POST http://localhost:8082/api/v1/transactions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customerId": "CUST_001",
-    "merchantId": "MERCHANT_ABC",
-    "amount": 6500.00,
-    "currency": "GBP",
-    "category": "RETAIL",
-    "location": "London, UK",
-    "latitude": 51.5074,
-    "longitude": -0.1278
-  }'
+curl "http://localhost:8081/api/v1/transactions?customerId=CUST_001&pageSize=20"
 ```
 
-Response `202 Accepted`:
+Response `200 OK`:
 ```json
 {
-  "transactionId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "PENDING",
-  "message": "Transaction accepted for fraud evaluation"
+  "data": [
+    {
+      "transactionId": "550e8400-e29b-41d4-a716-446655440000",
+      "customerId": "CUST_001",
+      "merchantId": "MERCHANT_ABC",
+      "amount": "6500.00",
+      "currency": "GBP",
+      "transactionType": "CARD_PRESENT",
+      "status": "ASSESSED",
+      "timestamp": "2026-06-15T10:00:00Z",
+      "assessment": {
+        "fraudulent": true,
+        "riskScore": 50,
+        "violations": [{ "ruleName": "AMOUNT_THRESHOLD", "severity": "HIGH" }]
+      }
+    }
+  ],
+  "nextCursor": "2026-06-15T09:59:00Z"
 }
 ```
 
-### Get Assessment for a Transaction
+### Get full assessment for a transaction
 
 ```bash
-curl http://localhost:8082/api/v1/transactions/{transactionId}/assessment
+curl http://localhost:8081/api/v1/transactions/{transactionId}/assessment
 ```
 
-### List Fraud Flags (with cursor pagination)
+Returns `200 OK` with `FraudAssessmentDto`, or `404` if the transaction does not exist.
+
+### List fraudulent assessments
 
 ```bash
-# All fraud flags
-curl "http://localhost:8082/api/v1/fraud-flags?pageSize=20"
-
-# Filter by customer
-curl "http://localhost:8082/api/v1/fraud-flags?customerId=CUST_001"
+# All flagged transactions
+curl "http://localhost:8081/api/v1/transactions/flagged?pageSize=20"
 
 # Filter by rule that triggered
-curl "http://localhost:8082/api/v1/fraud-flags?ruleViolated=AMOUNT_THRESHOLD"
+curl "http://localhost:8081/api/v1/transactions/flagged?ruleViolated=AMOUNT_THRESHOLD"
 
 # Filter by minimum risk score
-curl "http://localhost:8082/api/v1/fraud-flags?minRiskScore=75"
+curl "http://localhost:8081/api/v1/transactions/flagged?minRiskScore=75"
 
 # Paginate using cursor from previous response
-curl "http://localhost:8082/api/v1/fraud-flags?cursor=2026-06-15T10:00:00Z"
+curl "http://localhost:8081/api/v1/transactions/flagged?cursor=2026-06-15T10:00:00Z"
 ```
 
-> Replace `8082` with the port for the environment you started.
-
-### List Rules
+### List cleared assessments
 
 ```bash
-curl http://localhost:8082/api/v1/rules
+curl "http://localhost:8081/api/v1/transactions/passed?pageSize=20"
 ```
 
-### Update a Rule (toggle/reconfigure at runtime)
+### List registered rules
 
 ```bash
-# Raise the amount threshold
-curl -X PATCH http://localhost:8082/api/v1/rules/AMOUNT_THRESHOLD \
-  -H "Content-Type: application/json" \
-  -d '{"threshold": 10000.00}'
-
-# Disable a rule
-curl -X PATCH http://localhost:8082/api/v1/rules/VELOCITY \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
+curl http://localhost:8081/api/v1/rules
 ```
+
+Returns each rule's name, version, enabled status, and priority. Rule configuration changes require redeployment — there is no runtime PATCH endpoint.
+
+> Replace `8081` with the port for the environment you started.
 
 ---
 
@@ -170,37 +192,73 @@ curl -X PATCH http://localhost:8082/api/v1/rules/VELOCITY \
 
 | Rule | Trigger | Severity | Priority |
 |---|---|---|---|
-| `AMOUNT_THRESHOLD` | Amount > £5,000 (configurable) | HIGH | 1 |
-| `VELOCITY` | > 5 transactions in 10 min (configurable) | HIGH | 2 |
-| `DUPLICATE_TRANSACTION` | Same amount + merchant within 5 min | CRITICAL | 3 |
-| `BLACKLISTED_MERCHANT` | Merchant on blacklist | CRITICAL | 4 |
-| `GEOGRAPHIC_ANOMALY` | Physically impossible travel between locations | CRITICAL | 5 |
+| `AMOUNT_THRESHOLD` | Amount ≥ threshold (default £5,000) | HIGH | 1 |
+| `VELOCITY` | > N transactions in M minutes for same customer (default: 5 in 10 min) | HIGH | 2 |
+| `DUPLICATE_TRANSACTION` | Same merchant + same amount within window — **30 s** for CARD_PRESENT / CONTACTLESS / ATM, **300 s** for CARD_NOT_PRESENT. Currency-agnostic by design to catch currency-hopping fraud. | CRITICAL | 3 |
+| `BLACKLISTED_MERCHANT` | Merchant ID on the blacklist (Caffeine-cached, 5-min TTL) | CRITICAL | 4 |
+| `GEOGRAPHIC_ANOMALY` | Implied travel speed between two consecutive locations exceeds 900 km/h. Skipped when transactions are < 1 minute apart (clock-skew guard). | CRITICAL | 5 |
 
-**Risk Scoring:** Each violation contributes a weighted score (LOW=10, MEDIUM=25, HIGH=50, CRITICAL=100), capped at 100. Transactions with score ≥ 50 are marked fraudulent.
+**Risk scoring:** Each violation contributes a weighted score (LOW=10, MEDIUM=25, HIGH=50, CRITICAL=100), capped at 100. A transaction is marked fraudulent when `riskScore ≥ 50`.
+
+---
+
+## Kafka Topics
+
+| Topic | Partitions | Direction | Message type |
+|---|---|---|---|
+| `transactions.raw` | 6 | Inbound (consumed) | `TransactionEvent` Protobuf |
+| `transactions.raw-0`, `transactions.raw-1` | 6 | Internal (retry) | auto-created by `@RetryableTopic` |
+| `transactions.raw.DLT` | 1 | Dead-letter | exhausted-retry events |
+| `transactions.flagged` | 3 | Outbound (produced) | `FraudulentTransactionEvent` Protobuf |
+| `transactions.passed` | 3 | Outbound (produced) | `ClearedTransactionEvent` Protobuf |
+
+All topics use replication factor 2 across the 3-broker cluster. Schemas are registered with and enforced by Confluent Schema Registry.
+
+---
+
+## Exactly-Once Semantics
+
+The DB write and Kafka publish are atomic via `ChainedKafkaTransactionManager`:
+
+1. Kafka TX opens
+2. DB TX opens
+3. `FraudAssessment` + updated `TransactionStatus` written to Postgres
+4. Outcome event published to `transactions.flagged` or `transactions.passed`
+5. DB TX commits; Kafka TX commits
+
+If the DB commit fails, the Kafka TX aborts — no message is published, and the consumer retries cleanly.
+If the Kafka commit fails after the DB commit, the consumer retries; the idempotency guard (`findByIdOnly`) skips the re-save and re-publishes the event.
+
+Consumer uses `isolation.level=read_committed` so downstream readers only see committed messages.
 
 ---
 
 ## Testing
 
-### Unit Tests
+### Unit tests
 
 ```bash
 make test-unit
 ```
 
-Tests each rule in isolation with zero Spring context. Fast and deterministic.
+Each rule is tested in isolation with zero Spring context — fast and deterministic. Includes type-aware window tests (CP vs CNP), geographic speed edge cases, and currency-agnostic duplicate detection.
 
-### Integration Tests (Testcontainers)
+### Integration tests (Testcontainers)
 
 ```bash
 make test-integration
 ```
 
-Spins up real PostgreSQL and Kafka containers via Testcontainers — no running environment needed. Tests the full pipeline end-to-end:
-- Transaction submitted → Kafka consumed → rule engine evaluated → assessment persisted → API returns result
+Spins up real PostgreSQL and Kafka containers. Tests the full pipeline end-to-end:
+
+- Transaction published to `transactions.raw` → consumed → rule engine → assessment persisted
+- Clean transaction published to `transactions.passed`
+- High-amount transaction published to `transactions.flagged`
 - Blacklisted merchant detection
-- Validation error handling
-- DLT routing on processing failure
+- Query API: customer transactions returning `PENDING` and `ASSESSED` statuses
+- 404 on assessment for unknown transaction ID
+
+Uses `mock://` Confluent Schema Registry (in-process) so no live registry is needed for tests.
 
 ### Run all tests
 
@@ -220,8 +278,6 @@ Load tests run exclusively against the `load` environment, which includes Influx
 make load
 ```
 
-This starts the fraud-engine, Kafka, Postgres, InfluxDB, and Grafana.
-
 ### 2. Open the live dashboard
 
 ```bash
@@ -229,7 +285,7 @@ make grafana
 # or open http://localhost:3000 manually
 ```
 
-The k6 dashboard is pre-provisioned — no login or setup required. Open it before starting a test so you can watch metrics stream in live.
+The k6 dashboard is pre-provisioned — no login or setup required.
 
 ### 3. Run a scenario
 
@@ -250,27 +306,10 @@ make load-test-all
 
 | Scenario | Purpose | Load |
 |---|---|---|
-| `01-baseline` | Steady-state throughput + assessment poll | 100 VUs, 2 min |
+| `01-baseline` | Steady-state throughput | 100 VUs, 2 min |
 | `02-ramp` | Find degradation point under increasing load | 10 → 500 VUs, 5 min |
 | `03-spike` | Validate Kafka absorbs a sudden burst | 50 → 500 → 50 VUs, ~4 min |
-| `04-fraud-rules` | Mixed write + read path (60/20/20 traffic split) | 100 VUs, 3 min |
-
-### Configuring load
-
-Edit the relevant file in `load-tests/scenarios/`. The key knobs are:
-
-```js
-// 01-baseline.js — change VUs or duration
-vus: 100,
-duration: '2m',
-
-// 02-ramp.js — change ramp stages
-stages: [
-  { duration: '1m', target: 100 },
-  { duration: '2m', target: 300 },
-  { duration: '2m', target: 500 },
-],
-```
+| `04-fraud-rules` | Mixed read/query traffic | 100 VUs, 3 min |
 
 Pass/fail thresholds are in `load-tests/config.js`:
 
@@ -279,30 +318,18 @@ http_req_duration: ['p(95)<1500', 'p(99)<2000'],
 http_req_failed:   ['rate<0.05'],
 ```
 
-### HTML reports
-
-At the end of every run, a self-contained HTML report is written to `load-tests/results/`:
-
-| Scenario | Report |
-|---|---|
-| `01-baseline` | `load-tests/results/01-baseline.html` |
-| `02-ramp` | `load-tests/results/02-ramp.html` |
-| `03-spike` | `load-tests/results/03-spike.html` |
-| `04-fraud-rules` | `load-tests/results/04-fraud-rules.html` |
-
-Open any report in a browser. To export as PDF: **File → Print → Save as PDF**.
-
-Reports include threshold results, request rate, VU count over time, p50/p90/p95/p99 latency, error rate, and all custom metrics for that scenario.
+HTML reports are written to `load-tests/results/` at the end of each run.
 
 ---
 
 ## Configuration
 
-All rule thresholds are configurable via `application.yml` or environment variables:
+All rule thresholds and windows are configurable via `application.yml` or environment variables:
 
 ```yaml
 fraud:
   rules:
+    context-lookback-minutes: 60
     amount-threshold:
       enabled: true
       threshold: 5000.00
@@ -312,49 +339,85 @@ fraud:
       window-minutes: 10
     duplicate:
       enabled: true
-      window-seconds: 300
+      card-present-window-seconds: 30
+      card-not-present-window-seconds: 300
     blacklisted-merchant:
       enabled: true
     geographic:
       enabled: true
       window-minutes: 60
+      max-travel-speed-kmh: 900.0
 ```
 
-Rules can also be toggled at runtime via `PATCH /api/v1/rules/{ruleName}` without redeployment.
+Startup validation: if `velocity.window-minutes` or `geographic.window-minutes` exceeds `context-lookback-minutes`, the app fails to start with an `IllegalStateException`.
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka broker list |
+| `SCHEMA_REGISTRY_URL` | `http://schema-registry:8081` | Confluent Schema Registry |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost` / `5432` / `frauddb` | PostgreSQL connection |
+| `DB_USER` / `DB_PASSWORD` | `fraud` / `fraud` | PostgreSQL credentials |
+| `VAULT_HOST` / `VAULT_TOKEN` | `vault` / `dev-root-token` | HashiCorp Vault |
+| `ZIPKIN_URL` | `http://zipkin:9411` | Distributed tracing endpoint |
 
 ---
 
 ## Health & Observability
 
 ```bash
-curl http://localhost:8082/actuator/health
-curl http://localhost:8082/actuator/metrics
+curl http://localhost:8081/actuator/health
+curl http://localhost:8081/actuator/prometheus
 ```
 
-### Structured logging & MDC correlation
+### Custom Prometheus metrics
 
-Every log line carries a consistent set of context fields so any transaction can be traced end-to-end across the HTTP layer, Kafka, and the rule engine — without needing a tracing agent.
+| Metric | Type | Description |
+|---|---|---|
+| `fraud.assessments.total{verdict="FRAUDULENT"}` | Counter | Fraudulent assessments since startup |
+| `fraud.assessments.total{verdict="PASSED"}` | Counter | Cleared assessments since startup |
+| `fraud.rule.evaluation.duration.seconds` | Timer | Full rule engine evaluation time (p50/p95/p99) |
+
+Consumer lag per partition is automatically exposed via `kafka_consumer_fetch_manager_records_lag` from the Micrometer + Spring Kafka auto-instrumentation.
+
+### Distributed tracing
+
+All Kafka listener invocations and HTTP requests are traced via Micrometer OTel bridge and exported to Zipkin at `${ZIPKIN_URL}/api/v2/spans`. Sampling probability is 100% by default.
+
+Open Zipkin at `http://localhost:9411` (dev environment) to view traces across consumer → rule engine → DB → Kafka publish.
+
+### Structured logging and MDC correlation
+
+Every log line carries a consistent set of context fields:
 
 | MDC field | Set by | Value |
 |---|---|---|
 | `requestId` | `MdcLoggingFilter` | Random UUID per HTTP request |
-| `httpMethod` | `MdcLoggingFilter` | `POST`, `GET`, etc. |
-| `httpPath` | `MdcLoggingFilter` | Request URI |
-| `transactionId` | `TransactionService` / `TransactionConsumer` | Transaction UUID |
-| `customerId` | `TransactionService` / `TransactionConsumer` | Customer identifier |
-| `merchantId` | `TransactionService` / `TransactionConsumer` | Merchant identifier |
+| `transactionId` | `TransactionConsumer` | Transaction UUID |
 | `kafkaTopic` | `TransactionConsumer` | Topic the event was consumed from |
 | `kafkaPartition` | `TransactionConsumer` | Partition number |
 | `kafkaOffset` | `TransactionConsumer` | Message offset |
 
-Log format (configured in `application.yml`):
+Customer and merchant identifiers are intentionally **not** logged (PII removal). `transactionId` is sufficient to join all tables and trace end-to-end.
+
+Log format:
 ```
-2026-06-15 12:00:00.123  INFO [requestId] [txn=<uuid>] [cust=CUST_001] [merchant=MERCH_ABC] [transactions.raw:42] TransactionConsumer : ...
+2026-06-15 12:00:00.123  INFO [requestId] [txn=<uuid>] [transactions.raw:42] TransactionConsumer : ...
 ```
 
-Fields not populated in the current context print as `-` so column alignment is preserved.
+---
 
-Rule changes made via `PATCH /api/v1/rules/{ruleName}` are logged at `WARN` with before/after values, providing a traceable audit trail in the log stream.
+## Data Lifecycle
+
+The `transactions` table is range-partitioned by `timestamp` (daily). `PartitionMaintenanceJob` runs every night at 02:00:
+
+- Creates the partition for `today + 2 days` (pre-creation buffer)
+- Drops the partition for `today − 91 days` (90-day retention)
+
+The `fraud_assessments` table has a composite foreign key `(transaction_id, transaction_timestamp)` referencing the partitioned table's composite primary key `(id, timestamp)`.
+
+Flyway manages all schema changes. `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
 
 ---
 
@@ -373,37 +436,43 @@ src/
 ├── main/java/com/fraudengine/
 │   ├── FraudRuleEngineApplication.java
 │   ├── api/
-│   │   ├── controller/          # TransactionController, FraudFlagController, RuleController
-│   │   ├── dto/                 # Request/Response DTOs
-│   │   └── mapper/              # MapStruct mappers
-│   ├── config/                  # KafkaConfig, CacheConfig, RuleProperties
-│   ├── consumer/                # TransactionConsumer (Kafka listener + DLT handler)
+│   │   ├── controller/     # TransactionQueryController, RuleController
+│   │   ├── dto/            # TransactionSummaryDto, FraudAssessmentDto, PagedResponse
+│   │   └── mapper/         # MapStruct mappers
+│   ├── config/             # KafkaConfig, CacheConfig, RuleProperties, FraudMetrics, SchedulingConfig
+│   ├── consumer/           # TransactionConsumer (@KafkaListener + @DltHandler)
 │   ├── engine/
-│   │   ├── FraudRule.java       # Strategy interface
-│   │   ├── RuleEngine.java      # Orchestrates evaluation
+│   │   ├── FraudRule.java              # Strategy interface
+│   │   ├── RuleEngine.java             # Orchestrates evaluation + risk scoring
 │   │   ├── EvaluationContext.java
 │   │   ├── EvaluationContextBuilder.java
-│   │   └── rules/               # One class per rule
-│   ├── exception/               # GlobalExceptionHandler
-│   ├── filter/                  # MdcLoggingFilter (MDC correlation per request)
-│   ├── kafka/                   # TransactionEvent, TransactionProducer
-│   ├── model/                   # JPA entities
-│   ├── repository/              # Spring Data repositories
-│   └── service/                 # TransactionService, FraudFlagService, RuleManagementService
+│   │   └── rules/                      # AmountThresholdRule, VelocityRule, DuplicateTransactionRule,
+│   │                                   # BlacklistedMerchantRule, GeographicAnomalyRule
+│   ├── exception/          # GlobalExceptionHandler
+│   ├── filter/             # MdcLoggingFilter
+│   ├── kafka/              # AssessmentProducer, TransactionEvent (POJO), event POJO classes
+│   ├── model/              # Transaction, FraudAssessment, RuleViolation, BlacklistedMerchant + enums
+│   ├── proto/              # ProtoMapper (Protobuf ↔ domain model conversion)
+│   ├── repository/         # Spring Data JPA repositories
+│   └── service/            # TransactionQueryService, PartitionMaintenanceJob, RuleManagementService
+├── main/proto/
+│   ├── transaction_event.proto           # TransactionEvent + TransactionType enum
+│   ├── cleared_transaction_event.proto   # ClearedTransactionEvent
+│   └── fraudulent_transaction_event.proto # FraudulentTransactionEvent
 ├── main/resources/
 │   ├── application.yml
-│   └── db/migration/            # Flyway SQL migrations
+│   └── db/migration/       # V1–V4 Flyway migrations (schema, blacklist, transaction type, partitioning)
 └── test/java/com/fraudengine/
-    ├── engine/rules/            # Unit tests — one per rule
-    ├── engine/                  # RuleEngineTest (Mockito)
-    └── integration/             # TransactionIntegrationTest (Testcontainers)
+    ├── engine/rules/       # Unit tests — one per rule
+    ├── kafka/              # AssessmentProducerTest (Mockito)
+    └── integration/        # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
 
 load-tests/
-├── config.js                    # Shared BASE_URL, thresholds, data pools
-├── scenarios/                   # One file per k6 scenario
-├── lib/reporter.js              # k6-reporter bundle (HTML summary generation)
-├── results/                     # Generated HTML reports (gitignored)
+├── config.js               # Shared BASE_URL, thresholds, data pools
+├── scenarios/              # One file per k6 scenario
+├── lib/reporter.js         # HTML summary generation
+├── results/                # Generated HTML reports (gitignored)
 └── grafana/
-    ├── provisioning/            # Auto-configured datasource + dashboard provider
-    └── dashboards/              # Pre-built k6 Grafana dashboard
+    ├── provisioning/       # Auto-configured datasource + dashboard provider
+    └── dashboards/         # Pre-built k6 Grafana dashboard
 ```
