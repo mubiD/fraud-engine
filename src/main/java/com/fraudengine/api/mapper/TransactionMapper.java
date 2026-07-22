@@ -3,9 +3,11 @@ package com.fraudengine.api.mapper;
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.dto.RuleDto;
 import com.fraudengine.api.dto.RuleViolationDto;
+import com.fraudengine.api.dto.TransactionSummaryDto;
 import com.fraudengine.engine.FraudRule;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.RuleViolation;
+import com.fraudengine.model.Transaction;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -25,4 +27,8 @@ public interface TransactionMapper {
     @Mapping(target = "priority", expression = "java(rule.getPriority())")
     @Mapping(target = "enabled", expression = "java(rule.isEnabled())")
     RuleDto toDto(FraudRule rule);
+
+    @Mapping(target = "transactionId", source = "id")
+    @Mapping(target = "assessment", source = "assessment")
+    TransactionSummaryDto toSummaryDto(Transaction transaction);
 }

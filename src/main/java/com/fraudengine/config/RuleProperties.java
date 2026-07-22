@@ -1,5 +1,6 @@
 package com.fraudengine.config;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
@@ -27,6 +28,20 @@ public class RuleProperties {
     public GeographicConfig getGeographic() { return geographic; }
     public void setGeographic(GeographicConfig v) { this.geographic = v; }
 
+    @PostConstruct
+    public void validate() {
+        if (velocity.getWindowMinutes() > contextLookbackMinutes) {
+            throw new IllegalStateException(String.format(
+                    "fraud.rules.velocity.window-minutes (%d) exceeds context-lookback-minutes (%d)",
+                    velocity.getWindowMinutes(), contextLookbackMinutes));
+        }
+        if (geographic.getWindowMinutes() > contextLookbackMinutes) {
+            throw new IllegalStateException(String.format(
+                    "fraud.rules.geographic.window-minutes (%d) exceeds context-lookback-minutes (%d)",
+                    geographic.getWindowMinutes(), contextLookbackMinutes));
+        }
+    }
+
     public static class AmountThresholdConfig {
         private boolean enabled = true;
         private BigDecimal threshold = new BigDecimal("5000.00");
@@ -50,11 +65,14 @@ public class RuleProperties {
 
     public static class DuplicateConfig {
         private boolean enabled = true;
-        private int windowSeconds = 300;
+        private int cardPresentWindowSeconds = 30;
+        private int cardNotPresentWindowSeconds = 300;
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean v) { this.enabled = v; }
-        public int getWindowSeconds() { return windowSeconds; }
-        public void setWindowSeconds(int v) { this.windowSeconds = v; }
+        public int getCardPresentWindowSeconds() { return cardPresentWindowSeconds; }
+        public void setCardPresentWindowSeconds(int v) { this.cardPresentWindowSeconds = v; }
+        public int getCardNotPresentWindowSeconds() { return cardNotPresentWindowSeconds; }
+        public void setCardNotPresentWindowSeconds(int v) { this.cardNotPresentWindowSeconds = v; }
     }
 
     public static class BlacklistedMerchantConfig {
@@ -66,9 +84,12 @@ public class RuleProperties {
     public static class GeographicConfig {
         private boolean enabled = true;
         private int windowMinutes = 60;
+        private double maxTravelSpeedKmh = 900.0;
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean v) { this.enabled = v; }
         public int getWindowMinutes() { return windowMinutes; }
         public void setWindowMinutes(int v) { this.windowMinutes = v; }
+        public double getMaxTravelSpeedKmh() { return maxTravelSpeedKmh; }
+        public void setMaxTravelSpeedKmh(double v) { this.maxTravelSpeedKmh = v; }
     }
 }
