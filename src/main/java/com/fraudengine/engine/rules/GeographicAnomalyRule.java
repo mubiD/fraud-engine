@@ -20,8 +20,11 @@ public class GeographicAnomalyRule implements FraudRule {
     private static final String RULE_NAME = "GEOGRAPHIC_ANOMALY";
     private static final String RULE_VERSION = "1.0";
 
-    private static final double MAX_TRAVEL_SPEED_KMH = 900.0;
     private static final double EARTH_RADIUS_KM = 6371.0;
+    // Minimum time gap required to perform a speed check.
+    // Transactions < 1 minute apart are ignored — clock skew and batched
+    // submissions can produce identical or near-identical timestamps.
+    private static final double MIN_TIME_DIFF_HOURS = 1.0 / 60.0;
 
     private final RuleProperties properties;
 
@@ -36,13 +39,13 @@ public class GeographicAnomalyRule implements FraudRule {
         }
 
         int windowMinutes = properties.getGeographic().getWindowMinutes();
+        double maxSpeedKmh = properties.getGeographic().getMaxTravelSpeedKmh();
         Instant windowStart = transaction.getTimestamp().minus(windowMinutes, ChronoUnit.MINUTES);
 
         return context.getRecentCustomerTransactions().stream()
-                .filter(t -> !t.getId().equals(transaction.getId()))
                 .filter(t -> t.getLatitude() != null && t.getLongitude() != null)
                 .filter(t -> t.getTimestamp().isAfter(windowStart))
-                .filter(t -> isPhysicallyImpossible(transaction, t))
+                .filter(t -> isPhysicallyImpossible(transaction, t, maxSpeedKmh))
                 .findFirst()
                 .map(conflicting -> RuleResult.violation(RULE_NAME, RULE_VERSION,
                         String.format("Physically impossible travel: [%.4f,%.4f] and [%.4f,%.4f] within %d minutes",
@@ -52,13 +55,15 @@ public class GeographicAnomalyRule implements FraudRule {
                 .orElseGet(() -> RuleResult.pass(RULE_NAME));
     }
 
-    private boolean isPhysicallyImpossible(Transaction a, Transaction b) {
-        double distanceKm = haversineDistanceKm(
-                a.getLatitude(), a.getLongitude(), b.getLatitude(), b.getLongitude());
+    private boolean isPhysicallyImpossible(Transaction a, Transaction b, double maxSpeedKmh) {
         double timeDiffHours = Math.abs(
                 Duration.between(a.getTimestamp(), b.getTimestamp()).toMinutes()) / 60.0;
-        if (timeDiffHours == 0) return distanceKm > 0;
-        return (distanceKm / timeDiffHours) > MAX_TRAVEL_SPEED_KMH;
+        if (timeDiffHours < MIN_TIME_DIFF_HOURS) {
+            return false;
+        }
+        double distanceKm = haversineDistanceKm(
+                a.getLatitude(), a.getLongitude(), b.getLatitude(), b.getLongitude());
+        return (distanceKm / timeDiffHours) > maxSpeedKmh;
     }
 
     private double haversineDistanceKm(double lat1, double lon1, double lat2, double lon2) {

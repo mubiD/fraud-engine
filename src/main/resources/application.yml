@@ -29,34 +29,56 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer
+      transaction-id-prefix: fraud-engine-tx-
       acks: all
       retries: 3
       properties:
         enable.idempotence: true
-        spring.json.add.type.headers: false
     consumer:
       group-id: fraud-engine-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer
       auto-offset-reset: earliest
       enable-auto-commit: false
       properties:
-        spring.json.trusted.packages: "com.fraudengine.kafka"
-        spring.json.value.default.type: "com.fraudengine.kafka.TransactionEvent"
+        isolation.level: read_committed
+        specific.protobuf.value.type: "com.fraudengine.proto.TransactionEventProto$TransactionEvent"
+    properties:
+      schema.registry.url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
+    listener:
+      shutdown-timeout: 30000
 
   cache:
     type: caffeine
 
+  config:
+    import: "optional:vault://"
+
+  cloud:
+    vault:
+      host: ${VAULT_HOST:vault}
+      port: ${VAULT_PORT:8200}
+      token: ${VAULT_TOKEN:dev-root-token}
+      scheme: http
+      kv:
+        enabled: true
+        backend: secret
+        default-context: fraud-engine
+
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{requestId:--}] [txn=%X{transactionId:--}] [cust=%X{customerId:--}] [merchant=%X{merchantId:--}] [%X{kafkaTopic:--}:%X{kafkaOffset:--}] %-40.40logger{39} : %m%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{requestId:--}] [txn=%X{transactionId:--}] [%X{kafkaTopic:--}:%X{kafkaOffset:--}] %-40.40logger{39} : %m%n"
 
 fraud:
+  schema-registry:
+    url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
   kafka:
+    replication-factor: 2
     topics:
       transactions-raw: transactions.raw
       transactions-flagged: transactions.flagged
+      transactions-passed: transactions.passed
       transactions-dlt: transactions.raw.DLT
 
   rules:
@@ -70,21 +92,34 @@ fraud:
       window-minutes: 10
     duplicate:
       enabled: true
-      window-seconds: 300
+      card-present-window-seconds: 30
+      card-not-present-window-seconds: 300
     blacklisted-merchant:
       enabled: true
     geographic:
       enabled: true
       window-minutes: 60
+      max-travel-speed-kmh: 900.0
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://zipkin:9411}/api/v2/spans
 
 server:
   port: 8080
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s

@@ -1,6 +1,7 @@
 package com.fraudengine.model;
 
 import com.fraudengine.model.enums.TransactionStatus;
+import com.fraudengine.model.enums.TransactionType;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -8,6 +9,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
+@IdClass(TransactionId.class)
 @Table(name = "transactions")
 public class Transaction {
 
@@ -32,8 +34,16 @@ public class Transaction {
     private Double latitude;
     private Double longitude;
 
+    @Id
     @Column(nullable = false)
     private Instant timestamp;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transaction_type", nullable = false)
+    private TransactionType transactionType = TransactionType.CARD_NOT_PRESENT;
+
+    @OneToOne(mappedBy = "transaction", fetch = FetchType.LAZY)
+    private FraudAssessment assessment;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -55,6 +65,8 @@ public class Transaction {
     public Double getLatitude() { return latitude; }
     public Double getLongitude() { return longitude; }
     public Instant getTimestamp() { return timestamp; }
+    public TransactionType getTransactionType() { return transactionType; }
+    public FraudAssessment getAssessment() { return assessment; }
     public TransactionStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
 
@@ -69,6 +81,7 @@ public class Transaction {
     public void setLatitude(Double latitude) { this.latitude = latitude; }
     public void setLongitude(Double longitude) { this.longitude = longitude; }
     public void setTimestamp(Instant timestamp) { this.timestamp = timestamp; }
+    public void setTransactionType(TransactionType transactionType) { this.transactionType = transactionType; }
     public void setStatus(TransactionStatus status) { this.status = status; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
@@ -86,6 +99,7 @@ public class Transaction {
         public Builder latitude(Double v) { t.latitude = v; return this; }
         public Builder longitude(Double v) { t.longitude = v; return this; }
         public Builder timestamp(Instant v) { t.timestamp = v; return this; }
+        public Builder transactionType(TransactionType v) { t.transactionType = v; return this; }
         public Builder status(TransactionStatus v) { t.status = v; return this; }
         public Transaction build() { return t; }
     }

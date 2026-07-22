@@ -63,4 +63,13 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
     Slice<FraudAssessment> findFlaggedByMinRiskScoreBefore(@Param("minRiskScore") int minRiskScore,
                                                            @Param("cursor") Instant cursor,
                                                            Pageable pageable);
+
+    @Query("""
+            SELECT fa FROM FraudAssessment fa
+            JOIN FETCH fa.transaction t
+            WHERE fa.fraudulent = false
+              AND (:cursor IS NULL OR fa.assessedAt < :cursor)
+            ORDER BY fa.assessedAt DESC
+            """)
+    Slice<FraudAssessment> findPassedBefore(@Param("cursor") Instant cursor, Pageable pageable);
 }

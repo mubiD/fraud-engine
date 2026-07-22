@@ -1,0 +1,18 @@
+syntax = "proto3";
+package com.fraudengine.proto;
+
+option java_package = "com.fraudengine.proto";
+option java_outer_classname = "ClearedTransactionEventProto";
+
+import "google/protobuf/timestamp.proto";
+import "transaction_event.proto";
+
+message ClearedTransactionEvent {
+  string transaction_id = 1;
+  string customer_id    = 2;
+  string merchant_id    = 3;
+  string amount         = 4;  // BigDecimal as plain string
+  string currency       = 5;
+  TransactionType transaction_type    = 6;
+  google.protobuf.Timestamp timestamp = 7;
+}
