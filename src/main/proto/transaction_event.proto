@@ -1,0 +1,29 @@
+syntax = "proto3";
+package com.fraudengine.proto;
+
+option java_package = "com.fraudengine.proto";
+option java_outer_classname = "TransactionEventProto";
+
+import "google/protobuf/timestamp.proto";
+
+enum TransactionType {
+  TRANSACTION_TYPE_UNSPECIFIED = 0;
+  CARD_NOT_PRESENT = 1;
+  CARD_PRESENT = 2;
+  CONTACTLESS = 3;
+  ATM = 4;
+}
+
+message TransactionEvent {
+  string transaction_id = 1;
+  string customer_id    = 2;
+  string merchant_id    = 3;
+  string amount         = 4;  // BigDecimal serialised as plain string, e.g. "1500.00"
+  string currency       = 5;
+  string category       = 6;
+  TransactionType transaction_type = 7;
+  string location       = 8;
+  double latitude       = 9;
+  double longitude      = 10;
+  google.protobuf.Timestamp timestamp = 11;
+}

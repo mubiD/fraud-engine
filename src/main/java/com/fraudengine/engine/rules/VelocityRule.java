@@ -32,7 +32,6 @@ public class VelocityRule implements FraudRule {
                 .minus(config.getWindowMinutes(), ChronoUnit.MINUTES);
 
         long count = context.getRecentCustomerTransactions().stream()
-                .filter(t -> !t.getId().equals(transaction.getId()))
                 .filter(t -> t.getTimestamp().isAfter(windowStart))
                 .count();
 

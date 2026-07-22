@@ -53,6 +53,18 @@ class GeographicAnomalyRuleTest {
         assertThat(result.getRuleName()).isEqualTo("GEOGRAPHIC_ANOMALY");
     }
 
+    @Test
+    void transactionsLessThanOneMinuteApart_skipSpeedCheck_passes() {
+        Instant now = Instant.now();
+        // London → New York in 30 seconds is physically impossible,
+        // but the < 1-minute guard skips the speed check to prevent false positives
+        // caused by clock skew or near-simultaneous auth attempts.
+        assertThat(rule.evaluate(
+                tx(40.7128, -74.0060, now),
+                ctx(List.of(tx(51.5074, -0.1278, now.minus(30, ChronoUnit.SECONDS))))
+        ).isViolation()).isFalse();
+    }
+
     private Transaction tx(double lat, double lon, Instant ts) {
         return Transaction.builder().id(UUID.randomUUID()).customerId("C").merchantId("M")
                 .amount(BigDecimal.TEN).currency("GBP").latitude(lat).longitude(lon).timestamp(ts).build();

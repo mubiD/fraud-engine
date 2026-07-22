@@ -4,8 +4,16 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+  cloud:
+    vault:
+      enabled: false
+  kafka:
+    properties:
+      schema.registry.url: mock://fraud-engine-test
 
 fraud:
+  kafka:
+    replication-factor: 1
   rules:
     amount-threshold:
       threshold: 5000.00
@@ -13,6 +21,7 @@ fraud:
       max-transactions: 5
       window-minutes: 10
     duplicate:
-      window-seconds: 300
+      card-present-window-seconds: 30
+      card-not-present-window-seconds: 300
     geographic:
       window-minutes: 60

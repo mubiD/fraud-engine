@@ -38,7 +38,10 @@ public class EvaluationContextBuilder {
                 .minus(properties.getContextLookbackMinutes(), ChronoUnit.MINUTES);
 
         List<Transaction> recent = transactionRepository
-                .findRecentByCustomer(transaction.getCustomerId(), lookbackStart);
+                .findRecentByCustomer(transaction.getCustomerId(), lookbackStart)
+                .stream()
+                .filter(t -> !t.getId().equals(transaction.getId()))
+                .collect(Collectors.toList());
 
         Set<String> blacklisted = getBlacklistedMerchantIds();
 

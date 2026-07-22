@@ -6,6 +6,7 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
+import com.fraudengine.model.enums.TransactionType;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -27,11 +28,18 @@ public class DuplicateTransactionRule implements FraudRule {
 
     @Override
     public RuleResult evaluate(Transaction transaction, EvaluationContext context) {
-        int windowSeconds = properties.getDuplicate().getWindowSeconds();
+        RuleProperties.DuplicateConfig config = properties.getDuplicate();
+
+        // Physical channels (tap, insert, swipe, ATM) have tight windows.
+        // CNP (online, MOTO) uses a wider window to catch payment processor retries.
+        boolean isPhysicalChannel = transaction.getTransactionType() != TransactionType.CARD_NOT_PRESENT;
+        int windowSeconds = isPhysicalChannel
+                ? config.getCardPresentWindowSeconds()
+                : config.getCardNotPresentWindowSeconds();
+
         Instant windowStart = transaction.getTimestamp().minus(windowSeconds, ChronoUnit.SECONDS);
 
         boolean hasDuplicate = context.getRecentCustomerTransactions().stream()
-                .filter(t -> !t.getId().equals(transaction.getId()))
                 .filter(t -> t.getTimestamp().isAfter(windowStart))
                 .anyMatch(t -> t.getMerchantId().equals(transaction.getMerchantId())
                         && t.getAmount().compareTo(transaction.getAmount()) == 0);

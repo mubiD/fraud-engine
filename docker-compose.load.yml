@@ -11,12 +11,26 @@ services:
     volumes:
       - postgres_data_load:/var/lib/postgresql/data
 
-  kafka:
-    container_name: fraud-kafka-load
+  kafka1:
+    container_name: fraud-kafka1-load
     ports:
       - "9492:9092"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9492,INTERNAL://kafka:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9492,INTERNAL://kafka1:29092
+
+  kafka2:
+    container_name: fraud-kafka2-load
+    ports:
+      - "9493:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9493,INTERNAL://kafka2:29093
+
+  kafka3:
+    container_name: fraud-kafka3-load
+    ports:
+      - "9494:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9494,INTERNAL://kafka3:29094
 
   fraud-engine:
     container_name: fraud-engine-load
