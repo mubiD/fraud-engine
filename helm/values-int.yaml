@@ -1,0 +1,99 @@
+##################################################################################
+# fraud-rule-engine — int
+# NOTE: <ECR_ACCOUNT_ID>, <AWS_REGION>, and vault paths are placeholder values.
+#       Replace with actual coordinates before deploying to a real cluster.
+##################################################################################
+active: true
+
+#---------------------------------------------
+# Scaling
+#---------------------------------------------
+replicaCount: 1
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 80
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+#---------------------------------------------
+# Environment options
+#---------------------------------------------
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: int
+  - name: HOST_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+    value: "http://$(HOST_IP):4317"
+
+nodeAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: sdlc
+            operator: In
+            values:
+              - dev_int
+
+#---------------------------------------------
+# Vault - Operator
+#---------------------------------------------
+vault:
+  paths:
+    - name: shared
+      path: fraud-engine/shared/int
+      rolloutTargetsEnabled: false
+    - name: service
+      path: fraud-engine/service/int
+      rolloutTargetsEnabled: false
+  baseMountPath: /vault/secrets
+  refreshAfter: 60s
+
+#---------------------------------------------
+# Ingress
+#---------------------------------------------
+ingress:
+  enabled: true
+  className: ''
+  annotations: {}
+  hostname: fraud-rule-engine-int.ingress
+  host: fraud-rule-engine-int.ingress
+  commonName: fraud-rule-engine-int.ingress
+  hosts:
+    - host: fraud-rule-engine-int.ingress
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - fraud-rule-engine-int.ingress
+      secretName: fraud-rule-engine-int.ingress
+
+#---------------------------------------------
+# Service Account
+#---------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: 'fraud-rule-engine-int-sa'
+
+##################################################################################
+#  !! Odin Managed. Be careful if you modify !!
+##################################################################################
+
+#---------------------------------------------
+# Deployment Image
+#---------------------------------------------
+image:
+  repository: <ECR_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/fraud-rule-engine
+  tag: int-1.0.0-00000000

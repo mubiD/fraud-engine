@@ -66,7 +66,7 @@ Each environment is fully self-contained: its own app instance, Postgres databas
 | Kafka broker 3 | 9194 | 9294 | 9394 | 9494 | 9594 |
 | Schema Registry | 8091 | — | — | — | — |
 | Vault | 8200 | — | — | — | — |
-| Zipkin | 9411 | — | — | — | — |
+| Instana agent | — | — | — | — | — |
 | Prometheus | 9090 | — | — | — | — |
 
 > Schema Registry, Vault, Zipkin, and Prometheus host-port mappings are only exposed in the `dev` environment. In other environments they are accessible within the Docker network.
@@ -360,7 +360,7 @@ Startup validation: if `velocity.window-minutes` or `geographic.window-minutes` 
 | `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost` / `5432` / `frauddb` | PostgreSQL connection |
 | `DB_USER` / `DB_PASSWORD` | `fraud` / `fraud` | PostgreSQL credentials |
 | `VAULT_HOST` / `VAULT_TOKEN` | `vault` / `dev-root-token` | HashiCorp Vault |
-| `ZIPKIN_URL` | `http://zipkin:9411` | Distributed tracing endpoint |
+| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | `http://localhost:4317` | OTel GRPC endpoint (Instana agent in K8s, unset locally — spans dropped gracefully) |
 
 ---
 
@@ -377,15 +377,18 @@ curl http://localhost:8081/actuator/prometheus
 |---|---|---|
 | `fraud.assessments.total{verdict="FRAUDULENT"}` | Counter | Fraudulent assessments since startup |
 | `fraud.assessments.total{verdict="PASSED"}` | Counter | Cleared assessments since startup |
+| `fraud.dlt.total` | Counter | Transactions that exhausted all retries and reached the dead-letter topic |
 | `fraud.rule.evaluation.duration.seconds` | Timer | Full rule engine evaluation time (p50/p95/p99) |
 
 Consumer lag per partition is automatically exposed via `kafka_consumer_fetch_manager_records_lag` from the Micrometer + Spring Kafka auto-instrumentation.
 
 ### Distributed tracing
 
-All Kafka listener invocations and HTTP requests are traced via Micrometer OTel bridge and exported to Zipkin at `${ZIPKIN_URL}/api/v2/spans`. Sampling probability is 100% by default.
+All Kafka listener invocations and HTTP requests are traced via the Micrometer OTel bridge and exported via OTLP gRPC to `${MANAGEMENT_OTLP_TRACING_ENDPOINT}`. Sampling probability is 10% by default.
 
-Open Zipkin at `http://localhost:9411` (dev environment) to view traces across consumer → rule engine → DB → Kafka publish.
+**In Kubernetes** the Instana agent runs as a DaemonSet. Each pod's Helm values file injects `HOST_IP` (the node IP) and sets `MANAGEMENT_OTLP_TRACING_ENDPOINT=http://$(HOST_IP):4317`, pointing the OTLP exporter at the local agent. Traces are visible in the Instana UI with full service dependency maps.
+
+**Locally** `MANAGEMENT_OTLP_TRACING_ENDPOINT` is not set. The app defaults to `http://localhost:4317`, finds nothing, and drops spans silently — all other functionality is unaffected.
 
 ### Structured logging and MDC correlation
 

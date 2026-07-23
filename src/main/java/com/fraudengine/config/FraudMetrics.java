@@ -10,6 +10,7 @@ public class FraudMetrics {
 
     private final Counter fraudulentCounter;
     private final Counter passedCounter;
+    private final Counter dltCounter;
     private final Timer evaluationTimer;
 
     public FraudMetrics(MeterRegistry registry) {
@@ -23,6 +24,10 @@ public class FraudMetrics {
                 .tag("verdict", "PASSED")
                 .register(registry);
 
+        this.dltCounter = Counter.builder("fraud.dlt.total")
+                .description("Transactions exhausted all retries and reached the dead-letter topic")
+                .register(registry);
+
         this.evaluationTimer = Timer.builder("fraud.rule.evaluation.duration.seconds")
                 .description("Rule engine evaluation latency")
                 .publishPercentiles(0.5, 0.95, 0.99)
@@ -31,5 +36,6 @@ public class FraudMetrics {
 
     public void recordFraudulent() { fraudulentCounter.increment(); }
     public void recordPassed()     { passedCounter.increment(); }
+    public void recordDlt()        { dltCounter.increment(); }
     public Timer evaluationTimer() { return evaluationTimer; }
 }

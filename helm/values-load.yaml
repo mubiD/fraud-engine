@@ -1,0 +1,103 @@
+##################################################################################
+# fraud-rule-engine — load
+# Load environment runs on qa nodes. Replica count and resources are elevated to
+# reflect realistic throughput during k6 load scenarios.
+# NOTE: <ECR_ACCOUNT_ID>, <AWS_REGION>, and vault paths are placeholder values.
+#       Replace with actual coordinates before deploying to a real cluster.
+##################################################################################
+active: true
+
+#---------------------------------------------
+# Scaling
+# Two replicas to distribute k6 load across instances and validate
+# that the Kafka consumer group rebalances correctly under scale-out.
+#---------------------------------------------
+replicaCount: 2
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1024Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+#---------------------------------------------
+# Environment options
+#---------------------------------------------
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: load
+  - name: HOST_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+    value: "http://$(HOST_IP):4317"
+
+nodeAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: sdlc
+            operator: In
+            values:
+              - qa
+
+#---------------------------------------------
+# Vault - Operator
+#---------------------------------------------
+vault:
+  paths:
+    - name: shared
+      path: fraud-engine/shared/load
+      rolloutTargetsEnabled: false
+    - name: service
+      path: fraud-engine/service/load
+      rolloutTargetsEnabled: false
+  baseMountPath: /vault/secrets
+  refreshAfter: 60s
+
+#---------------------------------------------
+# Ingress
+#---------------------------------------------
+ingress:
+  enabled: true
+  className: ''
+  annotations: {}
+  hostname: fraud-rule-engine-load.ingress
+  host: fraud-rule-engine-load.ingress
+  commonName: fraud-rule-engine-load.ingress
+  hosts:
+    - host: fraud-rule-engine-load.ingress
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - fraud-rule-engine-load.ingress
+      secretName: fraud-rule-engine-load.ingress
+
+#---------------------------------------------
+# Service Account
+#---------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: 'fraud-rule-engine-load-sa'
+
+##################################################################################
+#  !! Odin Managed. Be careful if you modify !!
+##################################################################################
+
+#---------------------------------------------
+# Deployment Image
+#---------------------------------------------
+image:
+  repository: <ECR_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/fraud-rule-engine
+  tag: load-1.0.0-00000000
