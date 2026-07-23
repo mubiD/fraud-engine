@@ -1,10 +1,20 @@
 package com.fraudengine.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(description = "Fraud rule registered with the rule engine")
 public class RuleDto {
 
+    @Schema(description = "Canonical rule name", example = "AmountThresholdRule")
     private String ruleName;
+
+    @Schema(description = "Rule version string", example = "1.0")
     private String ruleVersion;
+
+    @Schema(description = "Evaluation priority; lower values run first", example = "10")
     private int priority;
+
+    @Schema(description = "Whether this rule is currently active in the engine")
     private boolean enabled;
 
     public RuleDto() {}

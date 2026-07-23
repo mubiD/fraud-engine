@@ -27,6 +27,9 @@ fi
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.${ENV}.yml"
 PROJECT="fraud-${ENV}"
 
+echo "==> [$ENV] Building JAR..."
+mvn package -DskipTests -q
+
 echo "==> [$ENV] Stopping existing containers..."
 docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans --volumes
 

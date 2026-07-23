@@ -1,12 +1,21 @@
 package com.fraudengine.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.Instant;
 import java.util.List;
 
+@Schema(description = "Cursor-paginated response envelope")
 public class PagedResponse<T> {
 
+    @Schema(description = "Page of results")
     private List<T> data;
+
+    @Schema(description = "ISO-8601 cursor to pass as the `cursor` parameter to fetch the next page; null when there are no more pages",
+            example = "2026-07-23T09:00:00Z")
     private Instant nextCursor;
+
+    @Schema(description = "True if there are additional pages beyond this one")
     private boolean hasMore;
 
     public PagedResponse() {}
