@@ -49,11 +49,6 @@ services:
     ports:
       - "8200:8200"
 
-  zipkin:
-    container_name: fraud-zipkin-dev
-    ports:
-      - "9411:9411"
-
   prometheus:
     container_name: fraud-prometheus-dev
     ports:

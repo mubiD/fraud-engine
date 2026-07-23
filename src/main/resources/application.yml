@@ -108,13 +108,13 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   tracing:
     sampling:
-      probability: 1.0
-  zipkin:
+      probability: 0.1
+  otlp:
     tracing:
-      endpoint: ${ZIPKIN_URL:http://zipkin:9411}/api/v2/spans
+      endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4317}
 
 server:
   port: 8080

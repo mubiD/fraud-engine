@@ -1,0 +1,103 @@
+##################################################################################
+# fraud-rule-engine — prod
+# Autoscaling enabled. Resources sized for sustained production throughput.
+# NOTE: <ECR_ACCOUNT_ID>, <AWS_REGION>, and vault paths are placeholder values.
+#       Replace with actual coordinates before deploying to a real cluster.
+##################################################################################
+active: true
+
+#---------------------------------------------
+# Scaling
+# Minimum two replicas for HA. Autoscaling up to 6 on CPU pressure.
+# CPU target set lower than other envs (70%) to scale out earlier and
+# avoid latency spikes from a saturated JVM under burst load.
+#---------------------------------------------
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+resources:
+  limits:
+    cpu: 2
+    memory: 2048Mi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+#---------------------------------------------
+# Environment options
+#---------------------------------------------
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: HOST_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+    value: "http://$(HOST_IP):4317"
+
+nodeAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: sdlc
+            operator: In
+            values:
+              - prod
+
+#---------------------------------------------
+# Vault - Operator
+#---------------------------------------------
+vault:
+  paths:
+    - name: shared
+      path: fraud-engine/shared/prod
+      rolloutTargetsEnabled: true
+    - name: service
+      path: fraud-engine/service/prod
+      rolloutTargetsEnabled: true
+  baseMountPath: /vault/secrets
+  refreshAfter: 60s
+
+#---------------------------------------------
+# Ingress
+#---------------------------------------------
+ingress:
+  enabled: true
+  className: ''
+  annotations: {}
+  hostname: fraud-rule-engine.ingress
+  host: fraud-rule-engine.ingress
+  commonName: fraud-rule-engine.ingress
+  hosts:
+    - host: fraud-rule-engine.ingress
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - fraud-rule-engine.ingress
+      secretName: fraud-rule-engine.ingress
+
+#---------------------------------------------
+# Service Account
+#---------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: 'fraud-rule-engine-prod-sa'
+
+##################################################################################
+#  !! Odin Managed. Be careful if you modify !!
+##################################################################################
+
+#---------------------------------------------
+# Deployment Image
+#---------------------------------------------
+image:
+  repository: <ECR_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/fraud-rule-engine
+  tag: prod-1.0.0-00000000

@@ -1,5 +1,6 @@
 package com.fraudengine.exception;
 
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -32,6 +34,26 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("Bad request: {}", ex.getMessage());
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(DateTimeParseException.class)
+    public ProblemDetail handleDateTimeParse(DateTimeParseException ex) {
+        log.warn("Unparseable date-time value: {}", ex.getParsedString());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+                "Invalid date-time value: '" + ex.getParsedString() + "'. Expected ISO-8601 format, e.g. 2026-07-23T10:00:00Z");
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) {
+        Map<String, String> errors = ex.getConstraintViolations().stream()
+                .collect(Collectors.toMap(
+                        v -> v.getPropertyPath().toString(),
+                        v -> v.getMessage(),
+                        (a, b) -> a));
+        log.warn("Constraint violation on request params: {}", errors);
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request parameters");
+        detail.setProperty("errors", errors);
+        return detail;
     }
 
     @ExceptionHandler(Exception.class)
