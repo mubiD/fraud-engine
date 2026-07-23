@@ -110,6 +110,7 @@ public class TransactionConsumer {
             MDC.put("transactionId", event.getTransactionId());
             MDC.put("kafkaTopic",    topic);
 
+            metrics.recordDlt();
             log.error("Transaction exhausted all retries and was routed to DLT: topic={}", topic);
 
             transactionRepository.findByIdOnly(UUID.fromString(event.getTransactionId())).ifPresent(t -> {

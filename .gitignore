@@ -10,3 +10,4 @@ application-local.yml
 .claude*
 load-tests/results/*.html
 load-tests/results/*.json
+PROGRESS_LOG.md

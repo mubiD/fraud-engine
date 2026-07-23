@@ -129,7 +129,9 @@ services:
       DB_PASSWORD: fraud
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093,kafka3:29094
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
-      ZIPKIN_URL: http://zipkin:9411
+      # MANAGEMENT_OTLP_TRACING_ENDPOINT is intentionally absent here.
+      # Locally the app connects to no tracing backend and drops spans gracefully.
+      # In Kubernetes this env var is injected via the Helm values file pointing at the Instana agent.
       VAULT_HOST: vault
       VAULT_TOKEN: dev-root-token
     depends_on:
@@ -143,20 +145,10 @@ services:
         condition: service_healthy
       schema-registry:
         condition: service_healthy
-      zipkin:
-        condition: service_started
       vault:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  zipkin:
-    image: openzipkin/zipkin:3
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9411/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
