@@ -124,7 +124,7 @@ jobs:
 # Postgres data volumes are preserved across deploys.
 # ---------------------------------------------------------------------------
   deploy:
-    name: Deploy to ${{ needs.build.outputs.POM_ARTIFACT_ID && env.TARGET_ENV || 'local' }}
+    name: Deploy to ${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment || github.ref_name }}
     needs: build
     runs-on: self-hosted
     if: >
@@ -133,7 +133,7 @@ jobs:
        github.event.action == 'closed' &&
        github.event.pull_request.merged == true)
 
-    environment: ${{ env.TARGET_ENV }}
+    environment: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment || github.ref_name }}
 
     env:
       POM_VERSION:     ${{ needs.build.outputs.POM_VERSION }}
