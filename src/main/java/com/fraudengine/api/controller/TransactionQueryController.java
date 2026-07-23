@@ -7,8 +7,11 @@ import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.service.TransactionQueryService;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.data.domain.Slice;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -17,6 +20,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/transactions")
+@Validated
 public class TransactionQueryController {
 
     private final TransactionQueryService queryService;
@@ -31,7 +35,7 @@ public class TransactionQueryController {
     public PagedResponse<TransactionSummaryDto> getByCustomerId(
             @RequestParam String customerId,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") int pageSize) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
         Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;
         Slice<Transaction> slice = queryService.getByCustomerId(customerId, cursorInstant, pageSize);
@@ -65,7 +69,7 @@ public class TransactionQueryController {
             @RequestParam(required = false) String ruleViolated,
             @RequestParam(required = false) Integer minRiskScore,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") int pageSize) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
         Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;
         Slice<FraudAssessment> slice = queryService.getFlagged(
@@ -77,7 +81,7 @@ public class TransactionQueryController {
     @GetMapping("/passed")
     public PagedResponse<FraudAssessmentDto> getPassed(
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") int pageSize) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
         Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;
         Slice<FraudAssessment> slice = queryService.getPassed(cursorInstant, pageSize);

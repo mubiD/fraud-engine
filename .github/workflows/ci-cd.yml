@@ -91,6 +91,18 @@ jobs:
       - name: Integration tests (Testcontainers)
         run: mvn test --batch-mode -Dtest="**/integration/**"
 
+      - name: Build Docker image for scanning
+        run: docker build -t fraud-rule-engine:scan .
+
+      - name: Trivy — vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: fraud-rule-engine:scan
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
