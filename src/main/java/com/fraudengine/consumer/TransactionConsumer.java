@@ -21,12 +21,21 @@ import org.springframework.kafka.retrytopic.TopicSuffixingStrategy;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.retry.annotation.Backoff;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+// PRODUCTION ONLY: inactive under the standalone and local Spring profiles.
+// In production consumes transactions.raw (Protobuf/Schema Registry wire format),
+// runs the rule engine, persists results, and publishes to transactions.flagged /
+// transactions.passed inside a ChainedKafkaTransactionManager transaction for
+// exactly-once semantics.
+// standalone / local: the equivalent flow is exercised synchronously via
+// POST /api/v1/standalone/submit (StandaloneTransactionController.java).
 @Component
+@Profile("!standalone & !local")
 public class TransactionConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionConsumer.class);

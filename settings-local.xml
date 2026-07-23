@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Local build settings — used by deploy.sh to bypass the Capitec Artifactory mirror.
+
+  The project's standard ~/.m2/settings.xml redirects Maven Central to
+  https://capitecbank.jfrog.io/artifactory/reward-maven, which returns 403
+  from outside the corporate network. This file restores the real Maven Central
+  so that a local build can resolve all dependencies directly.
+
+  Used automatically by: ./scripts/deploy.sh
+  Not committed as the default settings — developers inside the Capitec network
+  should continue to use their ~/.m2/settings.xml.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0
+                              https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <!-- No active profiles — use the repositories declared in pom.xml directly. -->
+</settings>

@@ -1,0 +1,18 @@
+// Protocol Buffers well-known type — sourced from google/protobuf 3.25.x.
+// Included here so protoc-jar-maven-plugin can resolve the import without
+// needing the protobuf-java sources JAR on the include path.
+
+syntax = "proto3";
+
+package google.protobuf;
+
+option csharp_namespace = "Google.Protobuf.WellKnownTypes";
+option java_package = "com.google.protobuf";
+option java_outer_classname = "TimestampProto";
+option java_multiple_files = true;
+option objc_class_prefix = "GPB";
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
