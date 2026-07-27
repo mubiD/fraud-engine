@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
@@ -18,7 +19,15 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
 
+// PRODUCTION ONLY: inactive under the standalone and local Spring profiles.
+// Wires the transactional Kafka producer (KafkaProtobufSerializer + Schema Registry),
+// topic declarations, and ChainedKafkaTransactionManager for exactly-once DB+Kafka
+// commit semantics.
+// standalone profile: StandaloneConfig.java provides @Primary JpaTransactionManager.
+// local profile:      LocalKafkaConfig.java provides @Primary JpaTransactionManager
+//                     and topic declarations; JSON serialisation used instead of Protobuf.
 @Configuration
+@Profile("!standalone & !local")
 public class KafkaConfig {
 
     @Value("${fraud.kafka.topics.transactions-raw}")

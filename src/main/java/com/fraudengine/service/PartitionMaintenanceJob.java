@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,7 +12,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
+// STANDALONE STUB: Inactive when running with --spring.profiles.active=standalone.
+// In production this job runs nightly (02:00) to pre-create the next daily partition
+// on the range-partitioned transactions table and drop partitions older than 90 days.
+// The H2 in-memory database used in standalone mode does not support table partitioning,
+// so this job must not run there.
 @Component
+@Profile("!standalone")
 public class PartitionMaintenanceJob {
 
     private static final Logger log = LoggerFactory.getLogger(PartitionMaintenanceJob.class);

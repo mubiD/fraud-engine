@@ -6,7 +6,6 @@ import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.proto.TransactionEventProto;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
-import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -85,7 +84,11 @@ class TransactionIntegrationTest {
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaProtobufSerializer.class);
+        // PRODUCTION: KafkaProtobufSerializer (io.confluent) is the production wire format.
+        // Referenced as a string so the test compiles without the confluent Maven profile.
+        // Run full integration tests with: mvn verify -Pconfluent
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                "io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer");
         props.put("schema.registry.url", MOCK_SCHEMA_REGISTRY);
         testTemplate = new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props));
 

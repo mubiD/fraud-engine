@@ -8,10 +8,17 @@ import com.fraudengine.proto.ProtoMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+// PRODUCTION ONLY: inactive under the standalone and local Spring profiles.
+// In production serialises FraudulentTransactionEvent / ClearedTransactionEvent protos
+// (Confluent KafkaProtobufSerializer) and publishes to Kafka for downstream alert,
+// audit, and BI consumers.
+// standalone / local: rule engine runs end-to-end; Kafka publish is skipped.
 @Component
+@Profile("!standalone & !local")
 public class AssessmentProducer {
 
     private static final Logger log = LoggerFactory.getLogger(AssessmentProducer.class);

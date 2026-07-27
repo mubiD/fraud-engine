@@ -27,6 +27,9 @@ fi
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.${ENV}.yml"
 PROJECT="fraud-${ENV}"
 
+echo "==> [$ENV] Building JAR..."
+mvn package -DskipTests -q
+
 echo "==> [$ENV] Stopping existing containers..."
 docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans --volumes
 
@@ -50,4 +53,25 @@ done
 
 echo "==> [$ENV] Deployed successfully."
 APP_PORT=$(docker inspect --format='{{range $p, $b := .NetworkSettings.Ports}}{{if eq $p "8080/tcp"}}{{(index $b 0).HostPort}}{{end}}{{end}}' "fraud-engine-${ENV}")
-echo "    App: http://localhost:${APP_PORT}"
+DB_PORT=$(docker inspect --format='{{range $p, $b := .NetworkSettings.Ports}}{{if eq $p "5432/tcp"}}{{(index $b 0).HostPort}}{{end}}{{end}}' "fraud-postgres-${ENV}" 2>/dev/null)
+
+echo ""
+echo "  ┌─────────────────────────────────────────────────────────┐"
+echo "  │  fraud-engine [$ENV]                                     │"
+echo "  ├─────────────────────────────────────────────────────────┤"
+echo "  │  App        http://localhost:${APP_PORT}                        │"
+echo "  │  Swagger    http://localhost:${APP_PORT}/swagger-ui.html        │"
+echo "  ├─────────────────────────────────────────────────────────┤"
+echo "  │  Database   localhost:${DB_PORT}  /  frauddb                   │"
+echo "  │  User       fraud          Password  fraud              │"
+echo "  │  Connect:   psql -h localhost -p ${DB_PORT} -U fraud frauddb   │"
+echo "  ├─────────────────────────────────────────────────────────┤"
+echo "  │  Shell      docker attach fraud-engine-${ENV}                 │"
+echo "  │             (stream N fake events: type  stream 500)    │"
+echo "  │             (detach without stopping: Ctrl+P then Ctrl+Q)│"
+echo "  └─────────────────────────────────────────────────────────┘"
+echo ""
+
+# Open a new Terminal window tailing the app logs
+osascript -e "tell application \"Terminal\" to do script \"echo 'fraud-engine-${ENV} logs'; docker logs -f fraud-engine-${ENV}\"" 2>/dev/null || \
+  echo "  (tip: run  docker logs -f fraud-engine-${ENV}  to tail logs)"
