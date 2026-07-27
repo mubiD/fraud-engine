@@ -1,16 +1,30 @@
 package com.fraudengine.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+@Schema(description = "Result of the fraud rule engine's assessment of a single transaction")
 public class FraudAssessmentDto {
 
+    @Schema(description = "Unique assessment identifier", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
     private UUID assessmentId;
+
+    @Schema(description = "Transaction this assessment belongs to", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID transactionId;
+
+    @Schema(description = "True if the rule engine determined the transaction to be fraudulent")
     private boolean fraudulent;
+
+    @Schema(description = "Aggregate risk score (0–100); higher values indicate greater fraud likelihood", example = "72")
     private int riskScore;
+
+    @Schema(description = "ISO-8601 UTC timestamp of when the assessment was completed", example = "2026-07-23T09:15:01Z")
     private Instant assessedAt;
+
+    @Schema(description = "List of individual rule violations that contributed to the assessment")
     private List<RuleViolationDto> violations;
 
     public FraudAssessmentDto() {}

@@ -1,27 +1,27 @@
-# Stage 1: Build
-FROM maven:3.9.6-amazoncorretto-21 AS build
-WORKDIR /app
-
-# Force wagon HTTP transport so SSL-bypass flags take effect during POM resolution
-ENV MAVEN_OPTS="-Dmaven.wagon.http.ssl.insecure=true \
-                -Dmaven.wagon.http.ssl.allowall=true \
-                -Dmaven.wagon.http.ssl.ignore.validity.dates=true"
-
-# Cache dependencies separately from source — layer invalidated only on pom.xml change
-COPY pom.xml .
-RUN mvn dependency:go-offline -q -Dmaven.resolver.transport=wagon
-
-COPY src ./src
-RUN mvn package -DskipTests -q -Dmaven.resolver.transport=wagon
-
-# Stage 2: Runtime — slim JRE only, no build tools or source
+# Runtime image only — the JAR is pre-built on the host by deploy.sh before this runs.
+#
+# Why not a multi-stage Maven build here?
+# The Confluent Schema Registry Maven repository (packages.confluent.io/maven) now
+# requires authentication, so `mvn dependency:go-offline` fails with 403 inside a
+# build container that has no local cache. In a proper CI/CD pipeline with a corporate
+# Nexus/Artifactory mirror or Confluent credentials injected via build secrets, the
+# original multi-stage approach would be used instead:
+#
+#   FROM maven:3.9.6-amazoncorretto-21 AS build
+#   WORKDIR /app
+#   COPY pom.xml .
+#   RUN --mount=type=secret,id=maven_settings,target=/root/.m2/settings.xml \
+#       mvn dependency:go-offline -q
+#   COPY src ./src
+#   RUN mvn package -DskipTests -q
+#
 FROM amazoncorretto:21-alpine
 WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
-COPY --from=build /app/target/fraud-rule-engine-*.jar app.jar
+COPY target/fraud-rule-engine-*.jar app.jar
 
 EXPOSE 8080
 

@@ -1,5 +1,15 @@
 .PHONY: dev int qa load prod stop logs ps build test load-test load-test-all grafana help
 
+# Capture the env name when invoked as: make stop <env>
+_STOP_ENV := $(filter dev int qa load prod,$(MAKECMDGOALS))
+
+# When "stop" is a goal, prevent make from also launching the env target
+ifneq ($(filter stop,$(MAKECMDGOALS)),)
+ifneq ($(_STOP_ENV),)
+$(_STOP_ENV): ;
+endif
+endif
+
 ENVS := dev int qa load prod
 
 # ── Environment launchers ────────────────────────────────────────────────────
@@ -26,10 +36,10 @@ prod:
 # ── Teardown ─────────────────────────────────────────────────────────────────
 
 stop:
-	@if [ -z "$(ENV)" ]; then \
-	  echo "Usage: make stop ENV=<dev|int|qa|load|prod>"; exit 1; fi
-	docker compose -f docker-compose.yml -f docker-compose.$(ENV).yml \
-	  -p fraud-$(ENV) down --remove-orphans --volumes
+	@if [ -z "$(_STOP_ENV)" ]; then \
+	  echo "Usage: make stop <dev|int|qa|load|prod>"; exit 1; fi
+	docker compose -f docker-compose.yml -f docker-compose.$(_STOP_ENV).yml \
+	  -p fraud-$(_STOP_ENV) down --remove-orphans --volumes
 
 # ── Image build (no startup) ─────────────────────────────────────────────────
 
@@ -104,7 +114,7 @@ help:
 	@echo "  make load         Start the LOAD environment  (port 8084, pg 5436, kafka 9492)"
 	@echo "  make prod         Start the PROD environment  (port 8085, pg 5437, kafka 9592)"
 	@echo ""
-	@echo "  make stop ENV=int         Tear down the INT environment"
+	@echo "  make stop int             Tear down the INT environment"
 	@echo "  make logs ENV=int         Tail fraud-engine logs for INT"
 	@echo "  make ps                   List all running fraud-* containers"
 	@echo ""

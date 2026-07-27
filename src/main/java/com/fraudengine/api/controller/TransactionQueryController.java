@@ -7,6 +7,12 @@ import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.service.TransactionQueryService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.data.domain.Slice;
@@ -21,6 +27,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/transactions")
 @Validated
+@Tag(name = "Transactions", description = "Query transactions and their fraud assessments")
 public class TransactionQueryController {
 
     private final TransactionQueryService queryService;
@@ -32,9 +39,19 @@ public class TransactionQueryController {
     }
 
     @GetMapping
+    @Operation(
+        summary = "List transactions for a customer",
+        description = "Returns a cursor-paginated list of transactions for the given customer, ordered by timestamp descending."
+    )
+    @ApiResponse(responseCode = "200", description = "Transactions returned")
+    @ApiResponse(responseCode = "400", description = "Invalid request parameters",
+        content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<TransactionSummaryDto> getByCustomerId(
+            @Parameter(description = "Customer identifier", required = true)
             @RequestParam String customerId,
+            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
             @RequestParam(required = false) String cursor,
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
         Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;
@@ -56,7 +73,15 @@ public class TransactionQueryController {
     }
 
     @GetMapping("/{transactionId}/assessment")
-    public ResponseEntity<FraudAssessmentDto> getAssessment(@PathVariable UUID transactionId) {
+    @Operation(
+        summary = "Get fraud assessment for a transaction",
+        description = "Returns the fraud assessment result for the specified transaction, including risk score and any rule violations."
+    )
+    @ApiResponse(responseCode = "200", description = "Assessment found")
+    @ApiResponse(responseCode = "404", description = "No assessment exists for the given transaction ID")
+    public ResponseEntity<FraudAssessmentDto> getAssessment(
+            @Parameter(description = "UUID of the transaction", required = true)
+            @PathVariable UUID transactionId) {
         return queryService.getAssessment(transactionId)
                 .map(mapper::toDto)
                 .map(ResponseEntity::ok)
@@ -64,11 +89,23 @@ public class TransactionQueryController {
     }
 
     @GetMapping("/flagged")
+    @Operation(
+        summary = "List flagged (fraudulent) transactions",
+        description = "Returns cursor-paginated fraud assessments where the transaction was flagged as fraudulent. All filter parameters are optional and combinable."
+    )
+    @ApiResponse(responseCode = "200", description = "Flagged assessments returned")
+    @ApiResponse(responseCode = "400", description = "Invalid request parameters",
+        content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<FraudAssessmentDto> getFlagged(
+            @Parameter(description = "Filter by customer identifier")
             @RequestParam(required = false) String customerId,
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AmountThresholdRule)")
             @RequestParam(required = false) String ruleViolated,
+            @Parameter(description = "Filter to assessments with a risk score at or above this value")
             @RequestParam(required = false) Integer minRiskScore,
+            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
             @RequestParam(required = false) String cursor,
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
         Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;
@@ -79,8 +116,17 @@ public class TransactionQueryController {
     }
 
     @GetMapping("/passed")
+    @Operation(
+        summary = "List passed (cleared) transactions",
+        description = "Returns cursor-paginated fraud assessments where the transaction was cleared by the rule engine."
+    )
+    @ApiResponse(responseCode = "200", description = "Passed assessments returned")
+    @ApiResponse(responseCode = "400", description = "Invalid request parameters",
+        content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<FraudAssessmentDto> getPassed(
+            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
             @RequestParam(required = false) String cursor,
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
         Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;

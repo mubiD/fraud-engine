@@ -1,0 +1,101 @@
+# =============================================================================
+# STANDALONE PROFILE
+# =============================================================================
+# Activates with: java -jar fraud-rule-engine.jar --spring.profiles.active=standalone
+#                 or: SPRING_PROFILES_ACTIVE=standalone
+#
+# Every external dependency this application normally requires is either disabled
+# or replaced with an in-process stub. Comments on each section describe what the
+# real production wiring looks like and why the stub exists here.
+#
+# What still works in this mode:
+#   - Full REST query API  (GET /api/v1/transactions/*, GET /api/v1/rules)
+#   - Rule engine end-to-end  (POST /api/v1/standalone/submit)
+#   - Swagger UI  (http://localhost:8080/swagger-ui.html)
+#   - Actuator health / metrics  (/actuator/health, /actuator/metrics)
+# =============================================================================
+
+spring:
+
+  autoconfigure:
+    exclude:
+      # STUB: Kafka broker (KRaft 3-node cluster).
+      # In production the auto-configuration wires consumers, producers, the
+      # transactional producer factory, and the ChainedKafkaTransactionManager.
+      # All of those beans are also gated on @Profile("!standalone") in the source,
+      # but excluding the auto-configuration prevents Spring from attempting a broker
+      # connection at startup even if the exclusion were removed.
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+
+  config:
+    # STUB: HashiCorp Vault import disabled.
+    # In production "optional:vault://" pulls DB credentials, Kafka API keys, and
+    # other runtime secrets from a Vault cluster (see docker-compose.yml: vault service).
+    # Here all secrets fall back to the plaintext defaults defined in application.yml
+    # (e.g. DB_PASSWORD defaults to "fraud"). Acceptable only for a demo environment.
+    import: ""
+
+  cloud:
+    vault:
+      # STUB: Vault client disabled. See spring.config.import comment above.
+      enabled: false
+
+  datasource:
+    # STUB: H2 in-memory database replaces PostgreSQL 16.
+    # In production the schema uses:
+    #   - range partitioning on transactions.timestamp (daily partitions, 90-day retention)
+    #   - pgcrypto for UUID generation
+    #   - composite primary key (id, timestamp) required by the partitioned table
+    #   - PartitionMaintenanceJob to pre-create and expire partitions nightly
+    # H2 supports none of those features, so Flyway is disabled and Hibernate generates
+    # the schema from entity definitions instead. The composite PK and FK relationships
+    # are preserved; only the partitioning strategy is absent.
+    url: jdbc:h2:mem:frauddb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;NON_KEYWORDS=VALUE
+    username: fraud
+    password: fraud
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+
+  jpa:
+    hibernate:
+      # STUB: Hibernate creates and drops the schema automatically.
+      # In production Flyway manages versioned migrations (V1–V4) applied to PostgreSQL.
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false
+    show-sql: false
+    # Must be true so that Hibernate creates the schema before StandaloneConfig seeds data.
+    defer-datasource-initialization: true
+
+  flyway:
+    # STUB: Flyway disabled. Hibernate DDL replaces it in standalone mode.
+    # In production Flyway applies V1 (schema), V2 (seed), V3 (transaction_type column),
+    # and V4 (range partitioning migration) against the PostgreSQL database.
+    enabled: false
+
+  h2:
+    console:
+      # Convenience: H2 web console available at http://localhost:8080/h2-console
+      # JDBC URL: jdbc:h2:mem:frauddb  |  User: fraud  |  Password: fraud
+      enabled: true
+      settings:
+        web-allow-others: false
+
+management:
+  tracing:
+    # STUB: Distributed tracing disabled.
+    # In production the Micrometer OTel bridge exports spans to the Instana agent via
+    # OTLP/gRPC (MANAGEMENT_OTLP_TRACING_ENDPOINT env var, injected by Helm).
+    enabled: false
+
+fraud:
+  # Signals to @Profile("!standalone")-gated beans that this is a demo run.
+  standalone: true
+  kafka:
+    # STUB: replication-factor 1 is meaningless here (Kafka is disabled), but the
+    # property is retained so KafkaConfig.java remains valid if re-enabled.
+    replication-factor: 1
