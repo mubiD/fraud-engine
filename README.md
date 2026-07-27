@@ -23,12 +23,23 @@ transactions.raw  ────────────────────�
       │   idempotency guard: findByIdOnly → skip-save if exists        │
       │                                                                 ▼
       ▼                                                      transactions.raw.DLT
-  Rule Engine (Strategy Pattern)                         (@DltHandler → status=FAILED)
-  ├── AmountThresholdRule    priority 1   HIGH
-  ├── VelocityRule           priority 2   HIGH
-  ├── DuplicateTransactionRule priority 3  CRITICAL   (type-aware window)
-  ├── BlacklistedMerchantRule  priority 4  CRITICAL   (Caffeine-cached)
-  └── GeographicAnomalyRule    priority 5  CRITICAL   (speed + clock-skew guard)
+  EvaluationContextBuilder                             (@DltHandler → status=FAILED)
+      │   queries recent transactions, blacklist, merchant locations,
+      │   daily spend total — all before rule evaluation
+      ▼
+  Rule Engine (Strategy Pattern)
+  ├── AmountThresholdRule           priority 1   HIGH      (category-tiered thresholds)
+  ├── VelocityRule                  priority 2   HIGH      (high-risk category boost → CRITICAL)
+  ├── DuplicateTransactionRule      priority 3   CRITICAL  (type-aware window, currency-aware)
+  ├── BlacklistedMerchantRule       priority 4   CRITICAL  (Caffeine-cached)
+  ├── GeographicAnomalyRule         priority 5   CRITICAL  (speed + clock-skew guard)
+  ├── CardCloningRule               priority 6   MEDIUM    (same amount, multiple merchants)
+  ├── TimeOfDayAnomalyRule          priority 7   MEDIUM    (23:00–05:00 UTC off-hours)
+  ├── HighRiskMerchantCategoryRule  priority 8   HIGH/MED  (crypto/money-transfer/gambling)
+  ├── DeviceFingerprintRule         priority 9   HIGH      (unknown device for customer)
+  ├── MultiChannelAnomalyRule       priority 10  MEDIUM    (rapid physical↔online switch)
+  ├── CrossMerchantVelocityRule     priority 11  MEDIUM    (≥10 txns across merchants in 10 min)
+  └── CumulativeSpendingRule        priority 12  HIGH      (hourly + daily spend limits)
       │
       ▼
   FraudAssessment → PostgreSQL (Flyway-managed, daily-partitioned)
@@ -131,7 +142,7 @@ Response `200 OK`:
       "customerId": "CUST_001",
       "merchantId": "MERCHANT_ABC",
       "amount": "6500.00",
-      "currency": "GBP",
+      "currency": "ZAR",
       "transactionType": "CARD_PRESENT",
       "status": "ASSESSED",
       "timestamp": "2026-06-15T10:00:00Z",
@@ -192,11 +203,18 @@ Returns each rule's name, version, enabled status, and priority. Rule configurat
 
 | Rule | Trigger | Severity | Priority |
 |---|---|---|---|
-| `AMOUNT_THRESHOLD` | Amount ≥ threshold (default £5,000) | HIGH | 1 |
-| `VELOCITY` | > N transactions in M minutes for same customer (default: 5 in 10 min) | HIGH | 2 |
-| `DUPLICATE_TRANSACTION` | Same merchant + same amount within window — **30 s** for CARD_PRESENT / CONTACTLESS / ATM, **300 s** for CARD_NOT_PRESENT. Currency-agnostic by design to catch currency-hopping fraud. | CRITICAL | 3 |
+| `AMOUNT_THRESHOLD` | Amount exceeds threshold — default R5,000, with configurable per-category overrides (e.g. RETAIL R15,000, GROCERY R3,000) | HIGH | 1 |
+| `VELOCITY` | > 5 transactions in 10 minutes for same customer. Boosted to CRITICAL when the merchant category is high-risk (crypto, money-transfer, wire-transfer). | HIGH → CRITICAL | 2 |
+| `DUPLICATE_TRANSACTION` | Same merchant + same amount + same currency within window — **120 s** for CARD_PRESENT / CONTACTLESS / ATM, **300 s** for CARD_NOT_PRESENT. | CRITICAL | 3 |
 | `BLACKLISTED_MERCHANT` | Merchant ID on the blacklist (Caffeine-cached, 5-min TTL) | CRITICAL | 4 |
-| `GEOGRAPHIC_ANOMALY` | Implied travel speed between two consecutive locations exceeds 900 km/h. Skipped when transactions are < 1 minute apart (clock-skew guard). | CRITICAL | 5 |
+| `GEOGRAPHIC_ANOMALY` | Implied travel speed between two consecutive physical locations exceeds 900 km/h. Skipped when transactions are < 1 minute apart (clock-skew guard). Falls back to merchant registered location when the transaction carries no coordinates. | CRITICAL | 5 |
+| `CARD_CLONING` | Same transaction amount charged to 2+ different merchants within 10 minutes — hallmark of automated card testing with a cloned card. | MEDIUM | 6 |
+| `TIME_OF_DAY_ANOMALY` | Transaction occurs in the off-hours window (default 23:00–05:00 UTC). | MEDIUM | 7 |
+| `HIGH_RISK_MERCHANT_CATEGORY` | Merchant category is crypto/money-transfer/wire-transfer (HIGH) or gambling/casino/payday-loan (MEDIUM). | HIGH / MEDIUM | 8 |
+| `DEVICE_FINGERPRINT` | Transaction arrives from a device fingerprint the customer has never used before (within the lookback window). Skipped when no fingerprint is supplied or the customer has no prior fingerprinted history. | HIGH | 9 |
+| `MULTI_CHANNEL_ANOMALY` | A physical-channel transaction (CARD_PRESENT, CONTACTLESS, ATM) and an online transaction (CARD_NOT_PRESENT) occur within 5 minutes of each other for the same customer. | MEDIUM | 10 |
+| `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes — provides an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
+| `CUMULATIVE_SPENDING` | Rolling spend exceeds the hourly limit (default R10,000) or daily limit (default R25,000). Hourly is computed from in-context recent transactions; daily is a pre-aggregated DB query. | HIGH | 12 |
 
 **Risk scoring:** Each violation contributes a weighted score (LOW=10, MEDIUM=25, HIGH=50, CRITICAL=100), capped at 100. A transaction is marked fraudulent when `riskScore ≥ 50`.
 
@@ -241,7 +259,7 @@ Consumer uses `isolation.level=read_committed` so downstream readers only see co
 make test-unit
 ```
 
-Each rule is tested in isolation with zero Spring context — fast and deterministic. Includes type-aware window tests (CP vs CNP), geographic speed edge cases, and currency-agnostic duplicate detection.
+Each rule is tested in isolation with zero Spring context — fast and deterministic. Covers category-tiered thresholds, type-aware duplicate windows, geographic speed edge cases, merchant-location fallback, off-hours wrap-around, device fingerprint unknown/known paths, multi-channel switching, cross-merchant velocity boundaries, and hourly/daily spend limits.
 
 ### Integration tests (Testcontainers)
 
@@ -333,13 +351,20 @@ fraud:
     amount-threshold:
       enabled: true
       threshold: 5000.00
+      category-thresholds:
+        RETAIL: 15000.00
+        ELECTRONICS: 15000.00
+        TRAVEL: 20000.00
+        GROCERY: 3000.00
+        MONEY_TRANSFER: 2000.00
+        WIRE_TRANSFER: 2000.00
     velocity:
       enabled: true
       max-transactions: 5
       window-minutes: 10
     duplicate:
       enabled: true
-      card-present-window-seconds: 30
+      card-present-window-seconds: 120
       card-not-present-window-seconds: 300
     blacklisted-merchant:
       enabled: true
@@ -347,9 +372,36 @@ fraud:
       enabled: true
       window-minutes: 60
       max-travel-speed-kmh: 900.0
+    card-cloning:
+      enabled: true
+      window-minutes: 10
+      min-different-merchants: 2
+    time-of-day:
+      enabled: true
+      off-hours-start-hour: 23
+      off-hours-end-hour: 5
+    high-risk-category:
+      enabled: true
+      high-risk-keywords: [CRYPTO, CRYPTOCURRENCY, CRYPTO_EXCHANGE, MONEY_TRANSFER, WIRE_TRANSFER]
+      medium-risk-keywords: [GAMBLING, CASINO, BETTING, PAYDAY_LOAN]
+    device-fingerprint:
+      enabled: true
+      window-minutes: 60
+    multi-channel:
+      enabled: true
+      window-minutes: 5
+    cross-merchant-velocity:
+      enabled: true
+      max-transactions: 10
+      window-minutes: 10
+    cumulative-spending:
+      enabled: true
+      hourly-limit: 10000.00
+      daily-limit: 25000.00
+      hourly-window-minutes: 60
 ```
 
-Startup validation: if `velocity.window-minutes` or `geographic.window-minutes` exceeds `context-lookback-minutes`, the app fails to start with an `IllegalStateException`.
+Startup validation: if `velocity.window-minutes`, `geographic.window-minutes`, or `card-cloning.window-minutes` exceeds `context-lookback-minutes`, the app fails to start with an `IllegalStateException`.
 
 ### Environment variables
 
@@ -420,7 +472,7 @@ The `transactions` table is range-partitioned by `timestamp` (daily). `Partition
 
 The `fraud_assessments` table has a composite foreign key `(transaction_id, transaction_timestamp)` referencing the partitioned table's composite primary key `(id, timestamp)`.
 
-Flyway manages all schema changes. `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
+Flyway manages all schema changes (`V1`–`V6`). `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
 
 ---
 
@@ -445,18 +497,32 @@ src/
 │   ├── config/             # KafkaConfig, CacheConfig, RuleProperties, FraudMetrics, SchedulingConfig
 │   ├── consumer/           # TransactionConsumer (@KafkaListener + @DltHandler)
 │   ├── engine/
-│   │   ├── FraudRule.java              # Strategy interface
-│   │   ├── RuleEngine.java             # Orchestrates evaluation + risk scoring
-│   │   ├── EvaluationContext.java
-│   │   ├── EvaluationContextBuilder.java
-│   │   └── rules/                      # AmountThresholdRule, VelocityRule, DuplicateTransactionRule,
-│   │                                   # BlacklistedMerchantRule, GeographicAnomalyRule
+│   │   ├── FraudRule.java                  # Strategy interface
+│   │   ├── RuleEngine.java                 # Orchestrates evaluation + risk scoring
+│   │   ├── EvaluationContext.java          # Carries pre-fetched context (transactions, blacklist,
+│   │   │                                   # merchant location, daily spend total)
+│   │   ├── EvaluationContextBuilder.java   # All DB queries run here before rule evaluation
+│   │   └── rules/
+│   │       ├── AmountThresholdRule.java    # priority 1  — category-tiered thresholds
+│   │       ├── VelocityRule.java           # priority 2  — with high-risk category boost
+│   │       ├── DuplicateTransactionRule.java  # priority 3
+│   │       ├── BlacklistedMerchantRule.java   # priority 4
+│   │       ├── GeographicAnomalyRule.java     # priority 5  — merchant location fallback
+│   │       ├── CardCloningRule.java           # priority 6
+│   │       ├── TimeOfDayAnomalyRule.java      # priority 7
+│   │       ├── HighRiskMerchantCategoryRule.java  # priority 8
+│   │       ├── DeviceFingerprintRule.java     # priority 9
+│   │       ├── MultiChannelAnomalyRule.java   # priority 10
+│   │       ├── CrossMerchantVelocityRule.java # priority 11
+│   │       └── CumulativeSpendingRule.java    # priority 12
 │   ├── exception/          # GlobalExceptionHandler
 │   ├── filter/             # MdcLoggingFilter
 │   ├── kafka/              # AssessmentProducer, TransactionEvent (POJO), event POJO classes
-│   ├── model/              # Transaction, FraudAssessment, RuleViolation, BlacklistedMerchant + enums
+│   ├── model/              # Transaction (+ deviceFingerprint), FraudAssessment, RuleViolation,
+│   │                       # BlacklistedMerchant, MerchantLocation + enums
 │   ├── proto/              # ProtoMapper (Protobuf ↔ domain model conversion)
-│   ├── repository/         # Spring Data JPA repositories
+│   ├── repository/         # TransactionRepository, BlacklistedMerchantRepository,
+│   │                       # MerchantLocationRepository
 │   └── service/            # TransactionQueryService, PartitionMaintenanceJob, RuleManagementService
 ├── main/proto/
 │   ├── transaction_event.proto           # TransactionEvent + TransactionType enum
@@ -464,9 +530,15 @@ src/
 │   └── fraudulent_transaction_event.proto # FraudulentTransactionEvent
 ├── main/resources/
 │   ├── application.yml
-│   └── db/migration/       # V1–V4 Flyway migrations (schema, blacklist, transaction type, partitioning)
+│   └── db/migration/
+│       ├── V1__initial_schema.sql
+│       ├── V2__seed_blacklisted_merchants.sql
+│       ├── V3__add_transaction_type.sql
+│       ├── V4__partition_transactions.sql
+│       ├── V5__add_device_fingerprint.sql      # device_fingerprint column + index
+│       └── V6__add_merchant_locations.sql      # merchant_locations table + seed data
 └── test/java/com/fraudengine/
-    ├── engine/rules/       # Unit tests — one per rule
+    ├── engine/rules/       # Unit tests — one per rule (12 rule test classes)
     ├── kafka/              # AssessmentProducerTest (Mockito)
     └── integration/        # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
 

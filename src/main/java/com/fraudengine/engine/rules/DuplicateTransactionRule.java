@@ -42,7 +42,8 @@ public class DuplicateTransactionRule implements FraudRule {
         boolean hasDuplicate = context.getRecentCustomerTransactions().stream()
                 .filter(t -> t.getTimestamp().isAfter(windowStart))
                 .anyMatch(t -> t.getMerchantId().equals(transaction.getMerchantId())
-                        && t.getAmount().compareTo(transaction.getAmount()) == 0);
+                        && t.getAmount().compareTo(transaction.getAmount()) == 0
+                        && t.getCurrency().equals(transaction.getCurrency()));
 
         if (hasDuplicate) {
             return RuleResult.violation(RULE_NAME, RULE_VERSION,

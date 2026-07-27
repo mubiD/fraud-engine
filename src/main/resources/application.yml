@@ -89,13 +89,20 @@ fraud:
     amount-threshold:
       enabled: true
       threshold: 5000.00
+      category-thresholds:
+        RETAIL: 15000.00
+        ELECTRONICS: 15000.00
+        TRAVEL: 20000.00
+        GROCERY: 3000.00
+        MONEY_TRANSFER: 2000.00
+        WIRE_TRANSFER: 2000.00
     velocity:
       enabled: true
       max-transactions: 5
       window-minutes: 10
     duplicate:
       enabled: true
-      card-present-window-seconds: 30
+      card-present-window-seconds: 120
       card-not-present-window-seconds: 300
     blacklisted-merchant:
       enabled: true
@@ -103,6 +110,42 @@ fraud:
       enabled: true
       window-minutes: 60
       max-travel-speed-kmh: 900.0
+    multi-channel:
+      enabled: true
+      window-minutes: 5
+    device-fingerprint:
+      enabled: true
+      window-minutes: 60
+    card-cloning:
+      enabled: true
+      window-minutes: 10
+      min-different-merchants: 2
+    time-of-day:
+      enabled: true
+      off-hours-start-hour: 23
+      off-hours-end-hour: 5
+    high-risk-category:
+      enabled: true
+      high-risk-keywords:
+        - CRYPTO
+        - CRYPTOCURRENCY
+        - CRYPTO_EXCHANGE
+        - MONEY_TRANSFER
+        - WIRE_TRANSFER
+      medium-risk-keywords:
+        - GAMBLING
+        - CASINO
+        - BETTING
+        - PAYDAY_LOAN
+    cross-merchant-velocity:
+      enabled: true
+      max-transactions: 10
+      window-minutes: 10
+    cumulative-spending:
+      enabled: true
+      hourly-limit: 10000.00
+      daily-limit: 25000.00
+      hourly-window-minutes: 60
 
 management:
   endpoints:

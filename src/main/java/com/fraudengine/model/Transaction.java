@@ -34,6 +34,9 @@ public class Transaction {
     private Double latitude;
     private Double longitude;
 
+    @Column(name = "device_fingerprint", length = 128)
+    private String deviceFingerprint;
+
     @Id
     @Column(nullable = false)
     private Instant timestamp;
@@ -64,6 +67,7 @@ public class Transaction {
     public String getLocation() { return location; }
     public Double getLatitude() { return latitude; }
     public Double getLongitude() { return longitude; }
+    public String getDeviceFingerprint() { return deviceFingerprint; }
     public Instant getTimestamp() { return timestamp; }
     public TransactionType getTransactionType() { return transactionType; }
     public FraudAssessment getAssessment() { return assessment; }
@@ -80,6 +84,7 @@ public class Transaction {
     public void setLocation(String location) { this.location = location; }
     public void setLatitude(Double latitude) { this.latitude = latitude; }
     public void setLongitude(Double longitude) { this.longitude = longitude; }
+    public void setDeviceFingerprint(String deviceFingerprint) { this.deviceFingerprint = deviceFingerprint; }
     public void setTimestamp(Instant timestamp) { this.timestamp = timestamp; }
     public void setTransactionType(TransactionType transactionType) { this.transactionType = transactionType; }
     public void setStatus(TransactionStatus status) { this.status = status; }
@@ -98,6 +103,7 @@ public class Transaction {
         public Builder location(String v) { t.location = v; return this; }
         public Builder latitude(Double v) { t.latitude = v; return this; }
         public Builder longitude(Double v) { t.longitude = v; return this; }
+        public Builder deviceFingerprint(String v) { t.deviceFingerprint = v; return this; }
         public Builder timestamp(Instant v) { t.timestamp = v; return this; }
         public Builder transactionType(TransactionType v) { t.transactionType = v; return this; }
         public Builder status(TransactionStatus v) { t.status = v; return this; }
