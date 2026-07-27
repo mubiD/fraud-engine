@@ -36,13 +36,24 @@ public class VelocityRule implements FraudRule {
                 .count();
 
         if (count >= config.getMaxTransactions()) {
+            Severity severity = isHighRiskCategory(transaction.getCategory())
+                    ? Severity.CRITICAL : Severity.HIGH;
+            String suffix = severity == Severity.CRITICAL
+                    ? " — escalated to CRITICAL due to high-risk merchant category" : "";
             return RuleResult.violation(RULE_NAME, RULE_VERSION,
-                    String.format("Customer %s made %d transactions in %d minutes (max: %d)",
+                    String.format("Customer %s made %d transactions in %d minutes (max: %d)%s",
                             transaction.getCustomerId(), count + 1,
-                            config.getWindowMinutes(), config.getMaxTransactions()),
-                    Severity.HIGH);
+                            config.getWindowMinutes(), config.getMaxTransactions(), suffix),
+                    severity);
         }
         return RuleResult.pass(RULE_NAME);
+    }
+
+    private boolean isHighRiskCategory(String category) {
+        if (category == null || category.isBlank()) return false;
+        String upper = category.toUpperCase();
+        return properties.getHighRiskCategory().getHighRiskKeywords().stream()
+                .anyMatch(kw -> upper.contains(kw.toUpperCase()));
     }
 
     @Override public String getRuleName()    { return RULE_NAME; }
