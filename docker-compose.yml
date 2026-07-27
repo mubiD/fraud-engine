@@ -102,6 +102,9 @@ services:
         condition: service_healthy
       kafka3:
         condition: service_healthy
+    # Restart on failure: schema-registry races with _schemas partition leader election on
+    # fresh Kafka clusters. A single retry after a few seconds is always sufficient.
+    restart: on-failure
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects || exit 1"]
       interval: 10s
