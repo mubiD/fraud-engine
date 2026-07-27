@@ -73,30 +73,36 @@ class DuplicateTransactionRuleTest {
         ).isViolation()).isFalse();
     }
 
-    // ---- CP / Contactless / ATM — tight 30-second window ----
+    // ---- CP / Contactless / ATM — extended 120-second window (Gap 6 fix) ----
 
     @Test
-    void cardPresent_withinShortWindow_isViolation() {
+    void cardPresent_withinExtendedWindow_isViolation() {
         Instant now = Instant.now();
-        // 15 s ago — inside the 30 s CP window
-        assertThat(rule.evaluate(
+        RuleProperties props = new RuleProperties();
+        props.getDuplicate().setCardPresentWindowSeconds(120);
+        DuplicateTransactionRule extendedRule = new DuplicateTransactionRule(props);
+        // 90 s ago — inside the 120 s window
+        assertThat(extendedRule.evaluate(
                 tx("M", new BigDecimal("100"), now, TransactionType.CARD_PRESENT),
-                ctx(List.of(tx("M", new BigDecimal("100"), now.minus(15, ChronoUnit.SECONDS), TransactionType.CARD_PRESENT)))
+                ctx(List.of(tx("M", new BigDecimal("100"), now.minus(90, ChronoUnit.SECONDS), TransactionType.CARD_PRESENT)))
         ).isViolation()).isTrue();
     }
 
     @Test
-    void cardPresent_outsideShortWindow_passes() {
+    void cardPresent_outsideExtendedWindow_passes() {
         Instant now = Instant.now();
-        // 45 s ago — outside the 30 s CP window
-        assertThat(rule.evaluate(
+        RuleProperties props = new RuleProperties();
+        props.getDuplicate().setCardPresentWindowSeconds(120);
+        DuplicateTransactionRule extendedRule = new DuplicateTransactionRule(props);
+        // 150 s ago — outside the 120 s window
+        assertThat(extendedRule.evaluate(
                 tx("M", new BigDecimal("100"), now, TransactionType.CARD_PRESENT),
-                ctx(List.of(tx("M", new BigDecimal("100"), now.minus(45, ChronoUnit.SECONDS), TransactionType.CARD_PRESENT)))
+                ctx(List.of(tx("M", new BigDecimal("100"), now.minus(150, ChronoUnit.SECONDS), TransactionType.CARD_PRESENT)))
         ).isViolation()).isFalse();
     }
 
     @Test
-    void contactless_withinShortWindow_isViolation() {
+    void contactless_withinWindow_isViolation() {
         Instant now = Instant.now();
         assertThat(rule.evaluate(
                 tx("M", new BigDecimal("20"), now, TransactionType.CONTACTLESS),
@@ -105,18 +111,48 @@ class DuplicateTransactionRuleTest {
     }
 
     @Test
-    void atm_outsideShortWindow_passes() {
+    void atm_withinExtendedWindow_isViolation() {
         Instant now = Instant.now();
-        assertThat(rule.evaluate(
+        RuleProperties props = new RuleProperties();
+        props.getDuplicate().setCardPresentWindowSeconds(120);
+        DuplicateTransactionRule extendedRule = new DuplicateTransactionRule(props);
+        // 60 s ago — inside the 120 s ATM window (was outside the old 30 s window)
+        assertThat(extendedRule.evaluate(
                 tx("ATM_A", new BigDecimal("200"), now, TransactionType.ATM),
                 ctx(List.of(tx("ATM_A", new BigDecimal("200"), now.minus(60, ChronoUnit.SECONDS), TransactionType.ATM)))
+        ).isViolation()).isTrue();
+    }
+
+    @Test
+    void atm_outsideExtendedWindow_passes() {
+        Instant now = Instant.now();
+        RuleProperties props = new RuleProperties();
+        props.getDuplicate().setCardPresentWindowSeconds(120);
+        DuplicateTransactionRule extendedRule = new DuplicateTransactionRule(props);
+        // 180 s ago — outside the 120 s ATM window
+        assertThat(extendedRule.evaluate(
+                tx("ATM_A", new BigDecimal("200"), now, TransactionType.ATM),
+                ctx(List.of(tx("ATM_A", new BigDecimal("200"), now.minus(180, ChronoUnit.SECONDS), TransactionType.ATM)))
         ).isViolation()).isFalse();
     }
 
-    // ---- Cross-currency check (intentional: window is currency-agnostic) ----
+    // ---- Currency check (Gap 7 fix): duplicate requires matching currency ----
 
     @Test
-    void sameMerchantAmountDifferentCurrency_isViolation() {
+    void sameMerchantAmountSameCurrency_isViolation() {
+        Instant now = Instant.now();
+        Transaction subject = Transaction.builder()
+                .id(UUID.randomUUID()).customerId("C").merchantId("M")
+                .amount(new BigDecimal("100")).currency("ZAR").timestamp(now).build();
+        Transaction history = Transaction.builder()
+                .id(UUID.randomUUID()).customerId("C").merchantId("M")
+                .amount(new BigDecimal("100")).currency("ZAR")
+                .timestamp(now.minus(1, ChronoUnit.MINUTES)).build();
+        assertThat(rule.evaluate(subject, ctx(List.of(history))).isViolation()).isTrue();
+    }
+
+    @Test
+    void sameMerchantAmountDifferentCurrency_passes() {
         Instant now = Instant.now();
         Transaction subject = Transaction.builder()
                 .id(UUID.randomUUID()).customerId("C").merchantId("M")
@@ -125,7 +161,7 @@ class DuplicateTransactionRuleTest {
                 .id(UUID.randomUUID()).customerId("C").merchantId("M")
                 .amount(new BigDecimal("100")).currency("ZAR")
                 .timestamp(now.minus(1, ChronoUnit.MINUTES)).build();
-        assertThat(rule.evaluate(subject, ctx(List.of(history))).isViolation()).isTrue();
+        assertThat(rule.evaluate(subject, ctx(List.of(history))).isViolation()).isFalse();
     }
 
     // ---- Helpers ----

@@ -34,7 +34,14 @@ public class GeographicAnomalyRule implements FraudRule {
 
     @Override
     public RuleResult evaluate(Transaction transaction, EvaluationContext context) {
-        if (transaction.getLatitude() == null || transaction.getLongitude() == null) {
+        // Prefer coordinates on the transaction; fall back to merchant-registered location
+        // (populated by EvaluationContextBuilder for physical channels only).
+        Double effectiveLat = transaction.getLatitude() != null
+                ? transaction.getLatitude() : context.getMerchantLatitude();
+        Double effectiveLon = transaction.getLongitude() != null
+                ? transaction.getLongitude() : context.getMerchantLongitude();
+
+        if (effectiveLat == null || effectiveLon == null) {
             return RuleResult.pass(RULE_NAME);
         }
 
@@ -42,27 +49,30 @@ public class GeographicAnomalyRule implements FraudRule {
         double maxSpeedKmh = properties.getGeographic().getMaxTravelSpeedKmh();
         Instant windowStart = transaction.getTimestamp().minus(windowMinutes, ChronoUnit.MINUTES);
 
+        final double lat = effectiveLat;
+        final double lon = effectiveLon;
+
         return context.getRecentCustomerTransactions().stream()
                 .filter(t -> t.getLatitude() != null && t.getLongitude() != null)
                 .filter(t -> t.getTimestamp().isAfter(windowStart))
-                .filter(t -> isPhysicallyImpossible(transaction, t, maxSpeedKmh))
+                .filter(t -> isPhysicallyImpossible(lat, lon, transaction.getTimestamp(),
+                        t.getLatitude(), t.getLongitude(), t.getTimestamp(), maxSpeedKmh))
                 .findFirst()
                 .map(conflicting -> RuleResult.violation(RULE_NAME, RULE_VERSION,
                         String.format("Physically impossible travel: [%.4f,%.4f] and [%.4f,%.4f] within %d minutes",
-                                transaction.getLatitude(), transaction.getLongitude(),
-                                conflicting.getLatitude(), conflicting.getLongitude(), windowMinutes),
+                                lat, lon, conflicting.getLatitude(), conflicting.getLongitude(), windowMinutes),
                         Severity.CRITICAL))
                 .orElseGet(() -> RuleResult.pass(RULE_NAME));
     }
 
-    private boolean isPhysicallyImpossible(Transaction a, Transaction b, double maxSpeedKmh) {
-        double timeDiffHours = Math.abs(
-                Duration.between(a.getTimestamp(), b.getTimestamp()).toMinutes()) / 60.0;
+    private boolean isPhysicallyImpossible(double lat1, double lon1, Instant ts1,
+                                            double lat2, double lon2, Instant ts2,
+                                            double maxSpeedKmh) {
+        double timeDiffHours = Math.abs(Duration.between(ts1, ts2).toMinutes()) / 60.0;
         if (timeDiffHours < MIN_TIME_DIFF_HOURS) {
             return false;
         }
-        double distanceKm = haversineDistanceKm(
-                a.getLatitude(), a.getLongitude(), b.getLatitude(), b.getLongitude());
+        double distanceKm = haversineDistanceKm(lat1, lon1, lat2, lon2);
         return (distanceKm / timeDiffHours) > maxSpeedKmh;
     }
 

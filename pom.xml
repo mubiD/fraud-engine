@@ -141,13 +141,6 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Spring Shell — interactive console for local/standalone dev -->
-        <dependency>
-            <groupId>org.springframework.shell</groupId>
-            <artifactId>spring-shell-starter</artifactId>
-            <version>3.3.0</version>
-        </dependency>
-
         <!-- OpenAPI / Swagger UI -->
         <dependency>
             <groupId>org.springdoc</groupId>

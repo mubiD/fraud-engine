@@ -41,6 +41,20 @@ stop:
 	docker compose -f docker-compose.yml -f docker-compose.$(_STOP_ENV).yml \
 	  -p fraud-$(_STOP_ENV) down --remove-orphans --volumes
 
+# ── Fake event streaming (local/standalone profiles only) ───────────────────
+# Usage:
+#   make stream ENV=dev COUNT=500
+COUNT ?= 10
+
+_STREAM_ENV := $(filter dev int qa load prod,$(MAKECMDGOALS))
+
+stream:
+	@if [ -z "$(ENV)" ]; then \
+	  echo "Usage: make stream ENV=<dev|int|qa|load|prod> [COUNT=<n>]"; exit 1; fi
+	$(eval APP_PORT := $(shell docker inspect --format='{{range $$p, $$b := .NetworkSettings.Ports}}{{if eq $$p "8080/tcp"}}{{(index $$b 0).HostPort}}{{end}}{{end}}' fraud-engine-$(ENV) 2>/dev/null))
+	@if [ -z "$(APP_PORT)" ]; then echo "fraud-engine-$(ENV) is not running"; exit 1; fi
+	curl -s -X POST "http://localhost:$(APP_PORT)/api/v1/standalone/stream?count=$(COUNT)" | python3 -m json.tool
+
 # ── Image build (no startup) ─────────────────────────────────────────────────
 
 build:
@@ -116,6 +130,7 @@ help:
 	@echo ""
 	@echo "  make stop int             Tear down the INT environment"
 	@echo "  make logs ENV=int         Tail fraud-engine logs for INT"
+	@echo "  make stream ENV=dev COUNT=500   Stream 500 fake transactions through the rule engine"
 	@echo "  make ps                   List all running fraud-* containers"
 	@echo ""
 	@echo "  make build                Build the Docker image locally (no containers)"

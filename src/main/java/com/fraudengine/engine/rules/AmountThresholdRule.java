@@ -26,11 +26,13 @@ public class AmountThresholdRule implements FraudRule {
 
     @Override
     public RuleResult evaluate(Transaction transaction, EvaluationContext context) {
-        BigDecimal threshold = properties.getAmountThreshold().getThreshold();
+        BigDecimal threshold = properties.getAmountThreshold().effectiveThreshold(transaction.getCategory());
         if (transaction.getAmount().compareTo(threshold) > 0) {
+            String categoryLabel = transaction.getCategory() != null && !transaction.getCategory().isBlank()
+                    ? transaction.getCategory() : "default";
             return RuleResult.violation(RULE_NAME, RULE_VERSION,
-                    String.format("Transaction amount %s %s exceeds threshold %s",
-                            transaction.getAmount(), transaction.getCurrency(), threshold),
+                    String.format("Transaction amount %s %s exceeds %s threshold %s",
+                            transaction.getAmount(), transaction.getCurrency(), categoryLabel, threshold),
                     Severity.HIGH);
         }
         return RuleResult.pass(RULE_NAME);

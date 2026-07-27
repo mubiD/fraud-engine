@@ -51,4 +51,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     Slice<Transaction> findByCustomerIdBefore(@Param("customerId") String customerId,
                                               @Param("cursor") Instant cursor,
                                               Pageable pageable);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.customerId = :customerId
+              AND t.timestamp >= :since
+            """)
+    java.math.BigDecimal sumAmountByCustomerSince(@Param("customerId") String customerId,
+                                                  @Param("since") Instant since);
 }

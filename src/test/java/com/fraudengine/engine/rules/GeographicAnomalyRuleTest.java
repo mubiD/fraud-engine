@@ -65,6 +65,63 @@ class GeographicAnomalyRuleTest {
         ).isViolation()).isFalse();
     }
 
+    // ---- Merchant location fallback (Gap 8) ----
+
+    @Test
+    void noCoordinates_merchantLocationInContext_usedAsFallback_isViolation() {
+        Instant now = Instant.now();
+        // Transaction has no coordinates — builder would have resolved merchant location
+        Transaction current = Transaction.builder().id(UUID.randomUUID()).customerId("C").merchantId("MERCH_LON")
+                .amount(BigDecimal.TEN).currency("GBP").timestamp(now).build();
+        // Prior transaction has explicit coordinates (Cape Town)
+        Transaction prior = tx(-33.9249, 18.4241, now.minus(30, ChronoUnit.MINUTES));
+
+        // Context carries the merchant's resolved location (London)
+        EvaluationContext ctx = EvaluationContext.builder()
+                .recentCustomerTransactions(List.of(prior))
+                .blacklistedMerchantIds(Set.of())
+                .merchantLatitude(51.5074)
+                .merchantLongitude(-0.1278)
+                .build();
+
+        assertThat(rule.evaluate(current, ctx).isViolation()).isTrue();
+    }
+
+    @Test
+    void noCoordinates_noMerchantLocationInContext_passes() {
+        Instant now = Instant.now();
+        Transaction current = Transaction.builder().id(UUID.randomUUID()).customerId("C").merchantId("UNKNOWN")
+                .amount(BigDecimal.TEN).currency("GBP").timestamp(now).build();
+        Transaction prior = tx(-33.9249, 18.4241, now.minus(30, ChronoUnit.MINUTES));
+
+        // No merchant location resolved — context carries nulls (CARD_NOT_PRESENT case)
+        EvaluationContext ctx = EvaluationContext.builder()
+                .recentCustomerTransactions(List.of(prior))
+                .blacklistedMerchantIds(Set.of())
+                .build();
+
+        assertThat(rule.evaluate(current, ctx).isViolation()).isFalse();
+    }
+
+    @Test
+    void transactionCoordinates_takePriorityOverMerchantLocation() {
+        Instant now = Instant.now();
+        // Transaction explicitly has NYC coordinates
+        Transaction current = tx(40.7128, -74.0060, now);
+        Transaction prior = tx(51.5074, -0.1278, now.minus(30, ChronoUnit.MINUTES));
+
+        // Context also has merchant location (London) — transaction coords must win
+        EvaluationContext ctx = EvaluationContext.builder()
+                .recentCustomerTransactions(List.of(prior))
+                .blacklistedMerchantIds(Set.of())
+                .merchantLatitude(51.5074)
+                .merchantLongitude(-0.1278)
+                .build();
+
+        // NYC → London in 30 min is impossible regardless of which coords source wins
+        assertThat(rule.evaluate(current, ctx).isViolation()).isTrue();
+    }
+
     private Transaction tx(double lat, double lon, Instant ts) {
         return Transaction.builder().id(UUID.randomUUID()).customerId("C").merchantId("M")
                 .amount(BigDecimal.TEN).currency("GBP").latitude(lat).longitude(lon).timestamp(ts).build();
