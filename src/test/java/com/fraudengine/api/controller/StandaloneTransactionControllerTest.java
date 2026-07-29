@@ -26,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(StandaloneTransactionController.class)
-@ActiveProfiles("local")
+@ActiveProfiles({"local", "test"})
 class StandaloneTransactionControllerTest {
 
     @Autowired

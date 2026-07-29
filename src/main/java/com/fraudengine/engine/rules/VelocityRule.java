@@ -60,4 +60,10 @@ public class VelocityRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 2; }
     @Override public boolean isEnabled()     { return properties.getVelocity().isEnabled(); }
+
+    @Override
+    public java.util.Map<String, Object> getConfig() {
+        RuleProperties.VelocityConfig c = properties.getVelocity();
+        return java.util.Map.of("windowMinutes", c.getWindowMinutes(), "maxTransactions", c.getMaxTransactions());
+    }
 }
