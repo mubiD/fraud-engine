@@ -58,4 +58,13 @@ public class DuplicateTransactionRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 3; }
     @Override public boolean isEnabled()     { return properties.getDuplicate().isEnabled(); }
+
+    @Override
+    public java.util.Map<String, Object> getConfig() {
+        RuleProperties.DuplicateConfig c = properties.getDuplicate();
+        return java.util.Map.of(
+            "cardPresentWindowSeconds", c.getCardPresentWindowSeconds(),
+            "cardNotPresentWindowSeconds", c.getCardNotPresentWindowSeconds()
+        );
+    }
 }

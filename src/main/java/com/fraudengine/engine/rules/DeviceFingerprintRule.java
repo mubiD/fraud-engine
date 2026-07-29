@@ -72,4 +72,9 @@ public class DeviceFingerprintRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 9; }
     @Override public boolean isEnabled()     { return properties.getDeviceFingerprint().isEnabled(); }
+
+    @Override
+    public java.util.Map<String, Object> getConfig() {
+        return java.util.Map.of("windowMinutes", properties.getDeviceFingerprint().getWindowMinutes());
+    }
 }

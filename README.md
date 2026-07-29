@@ -53,11 +53,21 @@ transactions.raw  ────────────────────�
                               transactions.passed
 
 Query API (read-only)
-  GET /api/v1/transactions?customerId=
-  GET /api/v1/transactions/{id}/assessment
-  GET /api/v1/transactions/flagged
-  GET /api/v1/transactions/passed
-  GET /api/v1/rules
+  Transactions
+    GET /api/v1/transactions                            — customer transaction history
+    GET /api/v1/transactions/{id}                       — single transaction by ID
+    GET /api/v1/transactions/{id}/assessment            — fraud assessment for a transaction
+    GET /api/v1/transactions/flagged                    — fraud queue (filterable by customer, rule, score band, date)
+    GET /api/v1/transactions/passed                     — cleared transactions (filterable by customer, min score, date)
+  Rules
+    GET /api/v1/rules                                   — registered rules with live config
+  Customers
+    GET /api/v1/customers/{id}/risk-summary             — pre-aggregated customer risk profile
+  Merchants
+    GET /api/v1/merchants/{id}/flagged                  — merchant fraud feed (filterable by rule, score, date)
+    GET /api/v1/merchants/{id}/risk-summary             — pre-aggregated merchant risk profile
+  Stats
+    GET /api/v1/stats/fraud-summary                     — global fraud aggregates with rule breakdown
 ```
 
 ---
@@ -127,10 +137,36 @@ make ps
 
 > There is no HTTP submission endpoint. Transactions enter the system exclusively via `transactions.raw` Kafka topic. The API is read-only.
 
-### List transactions for a customer
+All paginated endpoints return a consistent envelope:
+
+```json
+{ "data": [...], "hasMore": true, "nextCursor": "2026-07-23T09:00:00Z" }
+```
+
+Pass `nextCursor` as the `cursor` parameter on the next request to advance the page. All timestamps are ISO-8601 UTC.
+
+> Replace `8081` with the port for the environment you started (`8082` = int, `8083` = qa, etc.).
+
+---
+
+### Transactions
+
+#### List transactions for a customer
+
+```
+GET /api/v1/transactions
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `customerId` | string | yes | Customer identifier |
+| `from` | ISO-8601 | no | Include transactions at or after this timestamp |
+| `to` | ISO-8601 | no | Include transactions at or before this timestamp |
+| `cursor` | ISO-8601 | no | Pagination cursor from previous response |
+| `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
-curl "http://localhost:8081/api/v1/transactions?customerId=CUST_001&pageSize=20"
+curl "http://localhost:8081/api/v1/transactions?customerId=CUST-001&from=2026-07-01T00:00:00Z&pageSize=50"
 ```
 
 Response `200 OK`:
@@ -139,13 +175,13 @@ Response `200 OK`:
   "data": [
     {
       "transactionId": "550e8400-e29b-41d4-a716-446655440000",
-      "customerId": "CUST_001",
-      "merchantId": "MERCHANT_ABC",
+      "customerId": "CUST-001",
+      "merchantId": "MERCH-NIKE-ZA",
       "amount": "6500.00",
       "currency": "ZAR",
       "transactionType": "CARD_PRESENT",
       "status": "ASSESSED",
-      "timestamp": "2026-06-15T10:00:00Z",
+      "timestamp": "2026-07-23T09:00:00Z",
       "assessment": {
         "fraudulent": true,
         "riskScore": 50,
@@ -153,47 +189,262 @@ Response `200 OK`:
       }
     }
   ],
-  "nextCursor": "2026-06-15T09:59:00Z"
+  "hasMore": false,
+  "nextCursor": null
 }
 ```
 
-### Get full assessment for a transaction
+#### Get a single transaction
 
-```bash
-curl http://localhost:8081/api/v1/transactions/{transactionId}/assessment
+```
+GET /api/v1/transactions/{transactionId}
 ```
 
-Returns `200 OK` with `FraudAssessmentDto`, or `404` if the transaction does not exist.
-
-### List fraudulent assessments
+Returns `200 OK` with `TransactionSummaryDto` (including the embedded assessment if one exists), or `404` if not found.
 
 ```bash
-# All flagged transactions
-curl "http://localhost:8081/api/v1/transactions/flagged?pageSize=20"
-
-# Filter by rule that triggered
-curl "http://localhost:8081/api/v1/transactions/flagged?ruleViolated=AMOUNT_THRESHOLD"
-
-# Filter by minimum risk score
-curl "http://localhost:8081/api/v1/transactions/flagged?minRiskScore=75"
-
-# Paginate using cursor from previous response
-curl "http://localhost:8081/api/v1/transactions/flagged?cursor=2026-06-15T10:00:00Z"
+curl http://localhost:8081/api/v1/transactions/550e8400-e29b-41d4-a716-446655440000
 ```
 
-### List cleared assessments
+#### Get fraud assessment for a transaction
+
+```
+GET /api/v1/transactions/{transactionId}/assessment
+```
+
+Returns `200 OK` with the full assessment (risk score, all rule violations, severity), or `404` if no assessment exists for that transaction.
 
 ```bash
-curl "http://localhost:8081/api/v1/transactions/passed?pageSize=20"
+curl http://localhost:8081/api/v1/transactions/550e8400-e29b-41d4-a716-446655440000/assessment
 ```
 
-### List registered rules
+#### List flagged (fraudulent) transactions
+
+```
+GET /api/v1/transactions/flagged
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `customerId` | string | no | Narrow to a specific customer |
+| `ruleViolated` | string | no | Narrow to assessments where this rule fired (e.g. `VelocityRule`) |
+| `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
+| `maxRiskScore` | int | no | Upper bound on risk score (inclusive). Combine with `minRiskScore` to query a band — e.g. `50–65` isolates low-confidence fraud for false-positive review |
+| `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
+| `cursor` | ISO-8601 | no | Pagination cursor |
+| `pageSize` | int 1–1000 | no | Default 20 |
+
+```bash
+# All fraud in July
+curl "http://localhost:8081/api/v1/transactions/flagged?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z"
+
+# Low-confidence band — likely false positives, worth reviewing
+curl "http://localhost:8081/api/v1/transactions/flagged?minRiskScore=50&maxRiskScore=65"
+
+# Velocity violations for a specific customer
+curl "http://localhost:8081/api/v1/transactions/flagged?customerId=CUST-001&ruleViolated=VelocityRule"
+```
+
+#### List passed (cleared) transactions
+
+```
+GET /api/v1/transactions/passed
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `customerId` | string | no | Narrow to a specific customer |
+| `minRiskScore` | int | no | Near-miss filter — returns cleared transactions that still scored above this threshold. Use `minRiskScore=30` to find transactions the engine almost flagged, useful for rule calibration |
+| `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
+| `cursor` | ISO-8601 | no | Pagination cursor |
+| `pageSize` | int 1–1000 | no | Default 20 |
+
+```bash
+# Near-misses: cleared but scored >= 30
+curl "http://localhost:8081/api/v1/transactions/passed?minRiskScore=30"
+
+# Audit trail for a customer over the last month
+curl "http://localhost:8081/api/v1/transactions/passed?customerId=CUST-001&from=2026-07-01T00:00:00Z"
+```
+
+---
+
+### Rules
+
+#### List registered rules
+
+```
+GET /api/v1/rules
+```
+
+Returns all rules ordered by priority, each with its name, version, enabled status, priority, and **live configuration parameters**. Config reflects the values currently active in the running instance — useful for verifying deployments and debugging why a transaction was or was not flagged.
 
 ```bash
 curl http://localhost:8081/api/v1/rules
 ```
 
-Returns each rule's name, version, enabled status, and priority. Rule configuration changes require redeployment — there is no runtime PATCH endpoint.
+Response `200 OK` (excerpt):
+```json
+[
+  {
+    "ruleName": "AmountThresholdRule",
+    "ruleVersion": "1.0",
+    "priority": 1,
+    "enabled": true,
+    "config": {
+      "threshold": 5000.00,
+      "categoryThresholds": { "RETAIL": 15000.00, "GROCERY": 3000.00 }
+    }
+  },
+  {
+    "ruleName": "VelocityRule",
+    "ruleVersion": "1.0",
+    "priority": 2,
+    "enabled": true,
+    "config": { "windowMinutes": 10, "maxTransactions": 5 }
+  }
+]
+```
+
+Rule configuration changes require redeployment — there is no runtime PATCH endpoint.
+
+---
+
+### Customers
+
+#### Get customer risk summary
+
+```
+GET /api/v1/customers/{customerId}/risk-summary
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `since` | ISO-8601 | no | Scopes all activity metrics (counts, fraud rate, highest score, top rules) to this point in time onwards. `firstTransactionAt` and `lastTransactionAt` are always all-time values regardless of `since`. |
+
+Pre-aggregated risk profile for a customer. Designed for customer service agents who need a quick read before approving a dispute or escalating a case.
+
+```bash
+# All-time risk profile
+curl http://localhost:8081/api/v1/customers/CUST-001/risk-summary
+
+# Activity scoped to the last 30 days
+curl "http://localhost:8081/api/v1/customers/CUST-001/risk-summary?since=2026-07-01T00:00:00Z"
+```
+
+Response `200 OK`:
+```json
+{
+  "customerId": "CUST-001",
+  "totalTransactions": 342,
+  "flaggedCount": 4,
+  "passedCount": 338,
+  "fraudRate": 1.17,
+  "highestRiskScore": 75,
+  "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule", "TimeOfDayAnomalyRule"],
+  "firstTransactionAt": "2025-01-15T08:00:00Z",
+  "lastTransactionAt": "2026-07-23T09:00:00Z"
+}
+```
+
+---
+
+### Merchants
+
+#### List flagged transactions for a merchant
+
+```
+GET /api/v1/merchants/{merchantId}/flagged
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `ruleViolated` | string | no | Narrow to assessments where this rule fired |
+| `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
+| `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
+| `cursor` | ISO-8601 | no | Pagination cursor |
+| `pageSize` | int 1–1000 | no | Default 20 |
+
+```bash
+# All fraud at a merchant in July
+curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z"
+
+# High-severity fraud only
+curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?minRiskScore=75"
+
+# Which velocity violations occurred at this merchant?
+curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?ruleViolated=VelocityRule"
+```
+
+#### Get merchant risk summary
+
+```
+GET /api/v1/merchants/{merchantId}/risk-summary
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `since` | ISO-8601 | no | Scopes activity metrics to this point in time onwards. `uniqueCustomers`, `firstTransactionAt`, and `lastTransactionAt` are always all-time values. |
+
+Pre-aggregated risk profile for a merchant. Useful for merchant risk teams and onboarding reviews.
+
+```bash
+curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/risk-summary?since=2026-07-01T00:00:00Z"
+```
+
+Response `200 OK`:
+```json
+{
+  "merchantId": "MERCH-NIKE-ZA",
+  "totalTransactions": 1842,
+  "flaggedCount": 12,
+  "passedCount": 1830,
+  "fraudRate": 0.65,
+  "highestRiskScore": 85,
+  "uniqueCustomers": 534,
+  "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule"],
+  "firstTransactionAt": "2024-01-01T00:00:00Z",
+  "lastTransactionAt": "2026-07-23T09:00:00Z"
+}
+```
+
+---
+
+### Stats
+
+#### Global fraud summary
+
+```
+GET /api/v1/stats/fraud-summary
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `from` / `to` | ISO-8601 | no | Date range on `assessedAt`. Omit both for all-time totals. |
+
+Returns global fraud counts and a per-rule breakdown showing how often each rule contributed to a fraud flag within the window. Designed for operational dashboards and weekly fraud reports.
+
+```bash
+# July fraud summary
+curl "http://localhost:8081/api/v1/stats/fraud-summary?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z"
+```
+
+Response `200 OK`:
+```json
+{
+  "from": "2026-07-01T00:00:00Z",
+  "to": "2026-07-31T23:59:59Z",
+  "totalAssessed": 48320,
+  "totalFlagged": 241,
+  "totalPassed": 48079,
+  "fraudRate": 0.50,
+  "ruleBreakdown": [
+    { "ruleName": "AmountThresholdRule", "count": 98,  "percentage": 40.66 },
+    { "ruleName": "VelocityRule",        "count": 72,  "percentage": 29.88 },
+    { "ruleName": "BlacklistedMerchantRule", "count": 45, "percentage": 18.67 }
+  ]
+}
+```
 
 > Replace `8081` with the port for the environment you started.
 
@@ -260,6 +511,41 @@ make test-unit
 ```
 
 Each rule is tested in isolation with zero Spring context — fast and deterministic. Covers category-tiered thresholds, type-aware duplicate windows, geographic speed edge cases, merchant-location fallback, off-hours wrap-around, device fingerprint unknown/known paths, multi-channel switching, cross-merchant velocity boundaries, and hourly/daily spend limits.
+
+### REST controller tests
+
+`@WebMvcTest` slices — Spring MVC wiring with Mockito-backed service/mapper dependencies. No database or Kafka required. Each controller class has its own test class:
+
+| Test class | Controller | Tests |
+|---|---|---|
+| `TransactionQueryControllerTest` | `TransactionQueryController` | 22 |
+| `MerchantControllerTest` | `MerchantController` | 11 |
+| `StatsControllerTest` | `StatsController` | 4 |
+| `CustomerControllerTest` | `CustomerController` | 4 |
+| `RuleControllerTest` | `RuleController` | 4 |
+| `StandaloneTransactionControllerTest` | Standalone profile smoke test | 1 |
+
+Coverage per controller:
+
+**`GET /transactions`** — paginated results, cursor passthrough, date range parsing, `pageSize` min/max validation, malformed timestamp → 400
+
+**`GET /transactions/{id}`** — found → 200 with DTO, not found → 404, invalid UUID → 400
+
+**`GET /transactions/{id}/assessment`** — found → 200, not found → 404, invalid UUID → 400
+
+**`GET /transactions/flagged`** — no filters, per-filter isolation (customerId, ruleViolated, minRiskScore, maxRiskScore, date range), combined risk score band, `pageSize` validation
+
+**`GET /transactions/passed`** — no filters, cursor passthrough, customerId + date range, `minRiskScore` near-miss query
+
+**`GET /merchants/{id}/flagged`** — no filters, date range, ruleViolated, minRiskScore, combined ruleViolated + minRiskScore, next-cursor set when `hasMore=true`, `pageSize` validation, malformed date → 400
+
+**`GET /merchants/{id}/risk-summary`** — no since, with since (verifies Instant passed to service), malformed since → 400
+
+**`GET /customers/{id}/risk-summary`** — full response shape, with since, malformed since → 400, zeroed summary
+
+**`GET /stats/fraud-summary`** — no date range, with date range (verifies Instant passthrough), malformed from → 400, empty breakdown
+
+**`GET /rules`** — returns all rules, empty list, disabled rule included, `config` map populated
 
 ### Integration tests (Testcontainers)
 
@@ -412,7 +698,62 @@ Startup validation: if `velocity.window-minutes`, `geographic.window-minutes`, o
 | `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost` / `5432` / `frauddb` | PostgreSQL connection |
 | `DB_USER` / `DB_PASSWORD` | `fraud` / `fraud` | PostgreSQL credentials |
 | `VAULT_HOST` / `VAULT_TOKEN` | `vault` / `dev-root-token` | HashiCorp Vault |
+| `FRAUD_IDP_URI` | `https://idp.capitecbank.co.za/oauth2/default` | JWT issuer — JWKS fetched from `{issuer}/.well-known/openid-configuration` at startup |
 | `MANAGEMENT_OTLP_TRACING_ENDPOINT` | `http://localhost:4317` | OTel GRPC endpoint (Instana agent in K8s, unset locally — spans dropped gracefully) |
+
+---
+
+## Security
+
+### Profile-based behaviour
+
+Security is profile-gated so local development and tests require no credentials.
+
+| Profile | Behaviour |
+|---|---|
+| `local`, `standalone` | All requests permitted. No IDP contact. |
+| `test` | All requests permitted. `@WebMvcTest` tests pass without auth headers. |
+| All other profiles (`dev`, `int`, `qa`, `load`, prod) | JWT bearer token required on `/api/v1/**`. |
+
+### Authentication
+
+The API uses OAuth2 JWT bearer tokens issued by the Capitec IDP. Include the token as a standard `Authorization` header:
+
+```
+Authorization: Bearer <jwt>
+```
+
+The IDP base URI is read from `FRAUD_IDP_URI`. At startup the app fetches the JWKS from
+`{idpBaseUri}/.well-known/openid-configuration` and caches the public keys for signature
+validation. If the IDP is unreachable at startup, the app will fail to start — this is
+intentional (fail-fast over serving unauthenticated requests).
+
+### Authorisation
+
+JWT tokens must carry a `roles` claim containing at least one of the allowed roles:
+
+| Role | Purpose |
+|---|---|
+| `FRAUD_ANALYST` | Read-only access to fraud assessments, customer/merchant risk profiles |
+| `FRAUD_ENGINEER` | Same as above; intended for engineering team access |
+
+Roles are mapped to Spring Security authorities with a `ROLE_` prefix. The allowed roles and
+the protected/whitelisted path lists are configurable via `fraud.security.*` in `application.yml`.
+
+### Open endpoints (no token required in all profiles)
+
+| Path | Reason |
+|---|---|
+| `/actuator/health` | Docker and Kubernetes liveness/readiness probes |
+| `/actuator/info` | Non-sensitive build metadata |
+| `/actuator/prometheus` | Prometheus scrape target (network-restricted in K8s) |
+| `/swagger-ui/**`, `/swagger-ui.html` | API documentation |
+| `/v3/api-docs`, `/v3/api-docs/**` | OpenAPI spec |
+
+### Swagger UI
+
+The Swagger UI at `/swagger-ui.html` shows a lock icon on all endpoints and an `Authorize` button
+at the top. Paste a valid bearer token there to make authenticated requests directly from the UI.
 
 ---
 
@@ -491,13 +832,29 @@ src/
 ├── main/java/com/fraudengine/
 │   ├── FraudRuleEngineApplication.java
 │   ├── api/
-│   │   ├── controller/     # TransactionQueryController, RuleController
-│   │   ├── dto/            # TransactionSummaryDto, FraudAssessmentDto, PagedResponse
-│   │   └── mapper/         # MapStruct mappers
+│   │   ├── controller/
+│   │   │   ├── TransactionQueryController.java  # /api/v1/transactions — history, flagged, passed
+│   │   │   ├── RuleController.java              # /api/v1/rules
+│   │   │   ├── CustomerController.java          # /api/v1/customers/{id}/risk-summary
+│   │   │   ├── MerchantController.java          # /api/v1/merchants/{id}/flagged + risk-summary
+│   │   │   └── StatsController.java             # /api/v1/stats/fraud-summary
+│   │   ├── dto/
+│   │   │   ├── TransactionSummaryDto.java
+│   │   │   ├── FraudAssessmentDto.java
+│   │   │   ├── RuleViolationDto.java
+│   │   │   ├── RuleDto.java                     # includes live config map
+│   │   │   ├── PagedResponse.java
+│   │   │   ├── FraudSummaryDto.java             # global fraud aggregates
+│   │   │   ├── RuleBreakdownDto.java            # per-rule count/percentage in fraud summary
+│   │   │   ├── CustomerRiskSummaryDto.java      # pre-aggregated customer risk profile
+│   │   │   └── MerchantRiskSummaryDto.java      # pre-aggregated merchant risk profile
+│   │   └── mapper/
+│   │       └── TransactionMapper.java           # MapStruct — FraudAssessment, RuleViolation,
+│   │                                            # Transaction, FraudRule → DTOs
 │   ├── config/             # KafkaConfig, CacheConfig, RuleProperties, FraudMetrics, SchedulingConfig
 │   ├── consumer/           # TransactionConsumer (@KafkaListener + @DltHandler)
 │   ├── engine/
-│   │   ├── FraudRule.java                  # Strategy interface
+│   │   ├── FraudRule.java                  # Strategy interface (evaluate, getRuleName, getConfig, …)
 │   │   ├── RuleEngine.java                 # Orchestrates evaluation + risk scoring
 │   │   ├── EvaluationContext.java          # Carries pre-fetched context (transactions, blacklist,
 │   │   │                                   # merchant location, daily spend total)
@@ -515,15 +872,23 @@ src/
 │   │       ├── MultiChannelAnomalyRule.java   # priority 10
 │   │       ├── CrossMerchantVelocityRule.java # priority 11
 │   │       └── CumulativeSpendingRule.java    # priority 12
-│   ├── exception/          # GlobalExceptionHandler
+│   ├── exception/          # GlobalExceptionHandler (400 for validation, type mismatch, date parse)
 │   ├── filter/             # MdcLoggingFilter
 │   ├── kafka/              # AssessmentProducer, TransactionEvent (POJO), event POJO classes
 │   ├── model/              # Transaction (+ deviceFingerprint), FraudAssessment, RuleViolation,
 │   │                       # BlacklistedMerchant, MerchantLocation + enums
 │   ├── proto/              # ProtoMapper (Protobuf ↔ domain model conversion)
-│   ├── repository/         # TransactionRepository, BlacklistedMerchantRepository,
-│   │                       # MerchantLocationRepository
-│   └── service/            # TransactionQueryService, PartitionMaintenanceJob, RuleManagementService
+│   ├── repository/
+│   │   ├── TransactionRepository.java       # JPQL queries — customer/merchant history, counts,
+│   │   │                                    # timestamps, duplicate candidates
+│   │   ├── FraudAssessmentRepository.java   # JPQL queries — flagged/passed feeds, merchant feed,
+│   │   │                                    # aggregate counts and top-rule GROUP BY
+│   │   ├── BlacklistedMerchantRepository.java
+│   │   └── MerchantLocationRepository.java
+│   └── service/
+│       ├── TransactionQueryService.java     # All read operations for the API layer
+│       ├── RuleManagementService.java
+│       └── PartitionMaintenanceJob.java
 ├── main/proto/
 │   ├── transaction_event.proto           # TransactionEvent + TransactionType enum
 │   ├── cleared_transaction_event.proto   # ClearedTransactionEvent
@@ -538,9 +903,18 @@ src/
 │       ├── V5__add_device_fingerprint.sql      # device_fingerprint column + index
 │       └── V6__add_merchant_locations.sql      # merchant_locations table + seed data
 └── test/java/com/fraudengine/
-    ├── engine/rules/       # Unit tests — one per rule (12 rule test classes)
-    ├── kafka/              # AssessmentProducerTest (Mockito)
-    └── integration/        # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
+    ├── api/controller/
+    │   ├── TransactionQueryControllerTest.java  # 22 tests
+    │   ├── MerchantControllerTest.java          # 11 tests
+    │   ├── CustomerControllerTest.java          # 4 tests
+    │   ├── StatsControllerTest.java             # 4 tests
+    │   ├── RuleControllerTest.java              # 4 tests
+    │   └── StandaloneTransactionControllerTest.java
+    ├── engine/
+    │   ├── RuleEngineTest.java
+    │   └── rules/              # Unit tests — one per rule (12 rule test classes)
+    ├── kafka/                  # AssessmentProducerTest (Mockito)
+    └── integration/            # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
 
 load-tests/
 ├── config.js               # Shared BASE_URL, thresholds, data pools
