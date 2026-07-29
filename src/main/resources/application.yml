@@ -74,6 +74,18 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{requestId:--}] [txn=%X{transactionId:--}] [%X{kafkaTopic:--}:%X{kafkaOffset:--}] %-40.40logger{39} : %m%n"
 
 fraud:
+  security:
+    idp-base-uri: ${FRAUD_IDP_URI:https://idp.acmebank.example/oauth2/default}
+    allowed-roles:
+      - FRAUD_ANALYST
+      - FRAUD_ENGINEER
+    whitelisted-paths:
+      - /actuator/health
+      - /actuator/info
+      - /actuator/prometheus
+    protected-paths:
+      - /api/v1/**
+
   schema-registry:
     url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
   kafka:

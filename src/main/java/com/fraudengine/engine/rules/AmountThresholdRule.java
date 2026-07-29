@@ -42,4 +42,13 @@ public class AmountThresholdRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 1; }
     @Override public boolean isEnabled()     { return properties.getAmountThreshold().isEnabled(); }
+
+    @Override
+    public java.util.Map<String, Object> getConfig() {
+        RuleProperties.AmountThresholdConfig c = properties.getAmountThreshold();
+        java.util.Map<String, Object> cfg = new java.util.LinkedHashMap<>();
+        cfg.put("threshold", c.getThreshold());
+        cfg.put("categoryThresholds", c.getCategoryThresholds());
+        return cfg;
+    }
 }

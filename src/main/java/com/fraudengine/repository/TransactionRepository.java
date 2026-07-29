@@ -46,11 +46,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
             LEFT JOIN FETCH t.assessment a
             WHERE t.customerId = :customerId
               AND (:cursor IS NULL OR t.timestamp < :cursor)
+              AND (:from IS NULL OR t.timestamp >= :from)
+              AND (:to IS NULL OR t.timestamp <= :to)
             ORDER BY t.timestamp DESC
             """)
-    Slice<Transaction> findByCustomerIdBefore(@Param("customerId") String customerId,
-                                              @Param("cursor") Instant cursor,
-                                              Pageable pageable);
+    Slice<Transaction> findByCustomerInRange(@Param("customerId") String customerId,
+                                             @Param("from") Instant from,
+                                             @Param("to") Instant to,
+                                             @Param("cursor") Instant cursor,
+                                             Pageable pageable);
 
     @Query("""
             SELECT COALESCE(SUM(t.amount), 0)
@@ -60,4 +64,33 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
             """)
     java.math.BigDecimal sumAmountByCustomerSince(@Param("customerId") String customerId,
                                                   @Param("since") Instant since);
+
+    @Query("""
+            SELECT COUNT(t) FROM Transaction t
+            WHERE t.customerId = :customerId
+              AND (:since IS NULL OR t.timestamp >= :since)
+            """)
+    long countByCustomerId(@Param("customerId") String customerId, @Param("since") Instant since);
+
+    @Query("SELECT MIN(t.timestamp) FROM Transaction t WHERE t.customerId = :customerId")
+    Optional<Instant> findFirstTransactionTimestamp(@Param("customerId") String customerId);
+
+    @Query("SELECT MAX(t.timestamp) FROM Transaction t WHERE t.customerId = :customerId")
+    Optional<Instant> findLastTransactionTimestamp(@Param("customerId") String customerId);
+
+    @Query("""
+            SELECT COUNT(t) FROM Transaction t
+            WHERE t.merchantId = :merchantId
+              AND (:since IS NULL OR t.timestamp >= :since)
+            """)
+    long countByMerchantId(@Param("merchantId") String merchantId, @Param("since") Instant since);
+
+    @Query("SELECT COUNT(DISTINCT t.customerId) FROM Transaction t WHERE t.merchantId = :merchantId")
+    long countDistinctCustomersByMerchantId(@Param("merchantId") String merchantId);
+
+    @Query("SELECT MIN(t.timestamp) FROM Transaction t WHERE t.merchantId = :merchantId")
+    Optional<Instant> findFirstTransactionTimestampByMerchantId(@Param("merchantId") String merchantId);
+
+    @Query("SELECT MAX(t.timestamp) FROM Transaction t WHERE t.merchantId = :merchantId")
+    Optional<Instant> findLastTransactionTimestampByMerchantId(@Param("merchantId") String merchantId);
 }
