@@ -2,7 +2,7 @@
 
 **Author:** Mubashir  
 **Date:** 2026-06-15  
-**Stack:** Java 25 · Spring Boot · Apache Kafka · PostgreSQL · Docker · JUnit 5 · Mockito · Testcontainers · k6  
+**Stack:** Java 21 · Spring Boot · Apache Kafka · PostgreSQL · Docker · JUnit 5 · Mockito · Testcontainers · k6  
 **Status:** In Progress
 
 ---

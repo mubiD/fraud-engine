@@ -43,7 +43,7 @@ export default function () {
 
   const start = Date.now();
   const res = http.post(
-    `${BASE_URL}/api/v1/transactions`,
+    `${BASE_URL}/api/v1/standalone`,
     transactionPayload({
       customerId: pick(CUSTOMERS),
       merchantId: pick(MERCHANTS.clean),
