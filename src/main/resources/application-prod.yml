@@ -1,0 +1,41 @@
+# PROD profile — active when SPRING_PROFILES_ACTIVE=prod (set in docker-compose.prod.yml).
+#
+# Overrides the base application.yml with:
+#   - Kafka SASL_SSL (PLAIN credentials over TLS)
+#   - Vault AppRole authentication (scoped policy, not root token)
+
+spring:
+  cloud:
+    vault:
+      # Switch from the dev-mode root token to AppRole (minimum-privilege identity).
+      # VAULT_ROLE_ID and VAULT_SECRET_ID are output by scripts/vault-init.sh on
+      # first run and must be injected as env vars at deployment time.
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      # Inherit host/port/kv settings from base application.yml (vault:8200, secret/).
+
+  kafka:
+    # Bootstrap via the SASL_SSL listener — overrides the INTERNAL address used in dev/local.
+    # Resolved from KAFKA_BOOTSTRAP_SERVERS env var set in docker-compose.prod.yml.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka1:9092,kafka2:9092,kafka3:9092}
+
+    properties:
+      # ── Transport + authentication ────────────────────────────────────────
+      security.protocol: SASL_SSL
+      sasl.mechanism: PLAIN
+      # KAFKA_CLIENT_PASSWORD is injected by docker-compose.prod.yml (sourced from Vault in prod).
+      sasl.jaas.config: >-
+        org.apache.kafka.common.security.plain.PlainLoginModule required
+        username="fraud-engine"
+        password="${KAFKA_CLIENT_PASSWORD}";
+
+      # ── TLS ───────────────────────────────────────────────────────────────
+      ssl.truststore.location: ${KAFKA_SSL_TRUSTSTORE_LOCATION:/etc/ssl/kafka/truststore.p12}
+      ssl.truststore.type: PKCS12
+      ssl.truststore.password: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+      # Disable hostname verification for self-signed certs (showcase only).
+      # Remove this property when using CA-signed certs with proper SANs.
+      ssl.endpoint.identification.algorithm: ""
