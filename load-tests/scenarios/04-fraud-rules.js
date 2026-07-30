@@ -58,14 +58,14 @@ export default function () {
       });
     }
 
-    const res = http.post(`${BASE_URL}/api/v1/transactions`, payload, { headers });
+    const res = http.post(`${BASE_URL}/api/v1/standalone`, payload, { headers });
     check(res, { 'submit: 202': (r) => r.status === 202 });
     sleep(0.5);
   });
 
   group('read path', () => {
     // List all fraud flags
-    const listRes = http.get(`${BASE_URL}/api/v1/fraud-flags?pageSize=20`, { headers });
+    const listRes = http.get(`${BASE_URL}/api/v1/transactions/flagged?pageSize=20`, { headers });
     check(listRes, { 'list flags: 200': (r) => r.status === 200 });
 
     if (listRes.status === 200) {
@@ -77,7 +77,7 @@ export default function () {
 
     // Filter by specific rule
     const ruleRes = http.get(
-      `${BASE_URL}/api/v1/fraud-flags?ruleViolated=AMOUNT_THRESHOLD&pageSize=10`,
+      `${BASE_URL}/api/v1/transactions/flagged?ruleViolated=AMOUNT_THRESHOLD&pageSize=10`,
       { headers }
     );
     check(ruleRes, { 'filter by rule: 200': (r) => r.status === 200 });
