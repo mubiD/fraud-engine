@@ -3,6 +3,7 @@ package com.fraudengine.api.controller;
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.dto.MerchantRiskSummaryDto;
 import com.fraudengine.api.mapper.TransactionMapper;
+import com.fraudengine.config.SecurityConfig;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionStatus;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.SliceImpl;
 import org.springframework.test.context.ActiveProfiles;
@@ -31,6 +33,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(MerchantController.class)
+@Import(SecurityConfig.class)
 @ActiveProfiles("test")
 class MerchantControllerTest {
 

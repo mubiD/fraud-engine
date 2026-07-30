@@ -1,11 +1,13 @@
 package com.fraudengine.api.controller;
 
 import com.fraudengine.api.dto.CustomerRiskSummaryDto;
+import com.fraudengine.config.SecurityConfig;
 import com.fraudengine.service.TransactionQueryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -20,6 +22,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(CustomerController.class)
+@Import(SecurityConfig.class)
 @ActiveProfiles("test")
 class CustomerControllerTest {
 
