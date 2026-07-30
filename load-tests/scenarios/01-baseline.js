@@ -30,7 +30,7 @@ export default function () {
 
   // Submit transaction
   const submitRes = http.post(
-    `${BASE_URL}/api/v1/transactions`,
+    `${BASE_URL}/api/v1/standalone`,
     transactionPayload(),
     { headers }
   );

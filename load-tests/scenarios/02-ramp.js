@@ -35,7 +35,7 @@ export default function () {
   const headers = { 'Content-Type': 'application/json' };
 
   const res = http.post(
-    `${BASE_URL}/api/v1/transactions`,
+    `${BASE_URL}/api/v1/standalone`,
     transactionPayload({ customerId: pick(CUSTOMERS) }),
     { headers }
   );
