@@ -122,8 +122,8 @@ services:
 
   fraud-engine:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -159,7 +159,7 @@ services:
   prometheus:
     image: prom/prometheus:v2.52.0
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"

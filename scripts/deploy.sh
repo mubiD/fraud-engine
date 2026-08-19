@@ -24,11 +24,11 @@ if [[ "$VALID" == false ]]; then
   exit 1
 fi
 
-COMPOSE_FILES="-f docker-compose.yml -f docker-compose.${ENV}.yml"
+COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.${ENV}.yml"
 PROJECT="fraud-${ENV}"
 
 echo "==> [$ENV] Building JAR..."
-mvn package -DskipTests -q
+JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn package -DskipTests -q
 
 echo "==> [$ENV] Stopping existing containers..."
 docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans --volumes

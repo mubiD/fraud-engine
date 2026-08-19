@@ -39,7 +39,7 @@ services:
     ports:
       - "9592:9092"
     volumes:
-      - ./certs/prod:/etc/kafka/secrets:ro
+      - ../certs/prod:/etc/kafka/secrets:ro
     environment:
       KAFKA_LISTENERS: SASL_SSL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: SASL_SSL://kafka1:9092,INTERNAL://kafka1:29092
@@ -65,7 +65,7 @@ services:
     ports:
       - "9593:9092"
     volumes:
-      - ./certs/prod:/etc/kafka/secrets:ro
+      - ../certs/prod:/etc/kafka/secrets:ro
     environment:
       KAFKA_LISTENERS: SASL_SSL://0.0.0.0:9092,INTERNAL://0.0.0.0:29093,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: SASL_SSL://kafka2:9092,INTERNAL://kafka2:29093
@@ -89,7 +89,7 @@ services:
     ports:
       - "9594:9092"
     volumes:
-      - ./certs/prod:/etc/kafka/secrets:ro
+      - ../certs/prod:/etc/kafka/secrets:ro
     environment:
       KAFKA_LISTENERS: SASL_SSL://0.0.0.0:9092,INTERNAL://0.0.0.0:29094,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: SASL_SSL://kafka3:9092,INTERNAL://kafka3:29094
@@ -120,7 +120,7 @@ services:
       VAULT_DEV_ROOT_TOKEN_ID: ""
       VAULT_DEV_LISTEN_ADDRESS: ""
     volumes:
-      - ./vault/config:/vault/config:ro
+      - ../vault/config:/vault/config:ro
       - vault_data_prod:/vault/data
     cap_add:
       - IPC_LOCK
@@ -144,7 +144,7 @@ services:
       vault:
         condition: service_healthy
     volumes:
-      - ./scripts/vault-init.sh:/vault-init.sh:ro
+      - ../scripts/vault-init.sh:/vault-init.sh:ro
       - vault_init_prod:/vault/init
     environment:
       VAULT_ADDR: http://vault:8200
@@ -167,7 +167,7 @@ services:
     ports:
       - "8085:8080"
     volumes:
-      - ./certs/prod/kafka.truststore.p12:/etc/ssl/kafka/truststore.p12:ro
+      - ../certs/prod/kafka.truststore.p12:/etc/ssl/kafka/truststore.p12:ro
     environment:
       SPRING_PROFILES_ACTIVE: prod
       KAFKA_BOOTSTRAP_SERVERS: kafka1:9092,kafka2:9092,kafka3:9092

@@ -38,7 +38,7 @@ prod:
 stop:
 	@if [ -z "$(_STOP_ENV)" ]; then \
 	  echo "Usage: make stop <dev|int|qa|load|prod>"; exit 1; fi
-	docker compose -f docker-compose.yml -f docker-compose.$(_STOP_ENV).yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(_STOP_ENV).yml \
 	  -p fraud-$(_STOP_ENV) down --remove-orphans --volumes
 
 # ── Fake event streaming (local/standalone profiles only) ───────────────────
@@ -58,14 +58,14 @@ stream:
 # ── Image build (no startup) ─────────────────────────────────────────────────
 
 build:
-	docker build -t fraud-engine:local .
+	docker build -f docker/Dockerfile -t fraud-engine:local .
 
 # ── Observability ────────────────────────────────────────────────────────────
 
 logs:
 	@if [ -z "$(ENV)" ]; then \
 	  echo "Usage: make logs ENV=<dev|int|qa|load|prod>"; exit 1; fi
-	docker compose -f docker-compose.yml -f docker-compose.$(ENV).yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(ENV).yml \
 	  -p fraud-$(ENV) logs -f fraud-engine
 
 ps:
@@ -83,23 +83,23 @@ SCENARIO ?= 01-baseline
 
 load-test:
 	@echo "  Live dashboard → http://localhost:3000"
-	docker compose -f docker-compose.yml -f docker-compose.load.yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load.yml \
 	  -p fraud-load --profile k6 \
 	  run --rm k6 run /scripts/scenarios/$(SCENARIO).js
 
 # Run all four scenarios sequentially (mirrors load-tests/run-all.sh but fully containerised)
 load-test-all:
 	@echo "  Live dashboard → http://localhost:3000"
-	docker compose -f docker-compose.yml -f docker-compose.load.yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load.yml \
 	  -p fraud-load --profile k6 \
 	  run --rm k6 run /scripts/scenarios/01-baseline.js
-	docker compose -f docker-compose.yml -f docker-compose.load.yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load.yml \
 	  -p fraud-load --profile k6 \
 	  run --rm k6 run /scripts/scenarios/02-ramp.js
-	docker compose -f docker-compose.yml -f docker-compose.load.yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load.yml \
 	  -p fraud-load --profile k6 \
 	  run --rm k6 run /scripts/scenarios/03-spike.js
-	docker compose -f docker-compose.yml -f docker-compose.load.yml \
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load.yml \
 	  -p fraud-load --profile k6 \
 	  run --rm k6 run /scripts/scenarios/04-fraud-rules.js
 

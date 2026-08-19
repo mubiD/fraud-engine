@@ -60,8 +60,8 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     volumes:
-      - ./load-tests/grafana/provisioning:/etc/grafana/provisioning
-      - ./load-tests/grafana/dashboards:/var/lib/grafana/dashboards
+      - ../load-tests/grafana/provisioning:/etc/grafana/provisioning
+      - ../load-tests/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - influxdb
 
@@ -73,7 +73,7 @@ services:
     image: grafana/k6:latest
     container_name: fraud-k6-load
     volumes:
-      - ./load-tests:/scripts
+      - ../load-tests:/scripts
     environment:
       BASE_URL: http://fraud-engine:8080
       K6_OUT: influxdb=http://influxdb:8086/k6
