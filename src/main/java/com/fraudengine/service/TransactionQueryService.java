@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class TransactionQueryService {
@@ -25,18 +27,40 @@ public class TransactionQueryService {
 
     private final TransactionRepository transactionRepository;
     private final FraudAssessmentRepository assessmentRepository;
+    private final RuleManagementService ruleManagementService;
 
     public TransactionQueryService(TransactionRepository transactionRepository,
-                                   FraudAssessmentRepository assessmentRepository) {
+                                   FraudAssessmentRepository assessmentRepository,
+                                   RuleManagementService ruleManagementService) {
         this.transactionRepository = transactionRepository;
         this.assessmentRepository = assessmentRepository;
+        this.ruleManagementService = ruleManagementService;
+    }
+
+    private void validateDateRange(Instant from, Instant to) {
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new IllegalArgumentException(
+                    "'to' (" + to + ") must not be before 'from' (" + from + ")");
+        }
+    }
+
+    private void validateRuleViolated(String ruleViolated) {
+        if (ruleViolated == null) return;
+        Set<String> valid = ruleManagementService.getRules().stream()
+                .map(r -> r.getRuleName())
+                .collect(Collectors.toSet());
+        if (!valid.contains(ruleViolated)) {
+            throw new IllegalArgumentException(
+                    "Unknown ruleViolated value '" + ruleViolated + "'. Valid values: " + valid);
+        }
     }
 
     @Transactional(readOnly = true)
     public Slice<Transaction> getByCustomerId(String customerId, Instant from, Instant to,
-                                              Instant cursor, int pageSize) {
+                                              Instant cursorTimestamp, UUID cursorId, int pageSize) {
+        validateDateRange(from, to);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        return transactionRepository.findByCustomerInRange(customerId, from, to, cursor,
+        return transactionRepository.findByCustomerInRange(customerId, from, to, cursorTimestamp, cursorId,
                 PageRequest.of(0, size));
     }
 
@@ -54,18 +78,21 @@ public class TransactionQueryService {
     public Slice<FraudAssessment> getFlagged(String customerId, String ruleViolated,
                                              Integer minRiskScore, Integer maxRiskScore,
                                              Instant from, Instant to,
-                                             Instant cursor, int pageSize) {
+                                             Instant cursorTimestamp, UUID cursorId, int pageSize) {
+        validateDateRange(from, to);
+        validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
         return assessmentRepository.findFlagged(customerId, ruleViolated, minRiskScore, maxRiskScore,
-                from, to, cursor, PageRequest.of(0, size));
+                from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
     }
 
     @Transactional(readOnly = true)
     public Slice<FraudAssessment> getPassed(String customerId, Integer minRiskScore,
                                             Instant from, Instant to,
-                                            Instant cursor, int pageSize) {
+                                            Instant cursorTimestamp, UUID cursorId, int pageSize) {
+        validateDateRange(from, to);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        return assessmentRepository.findPassed(customerId, minRiskScore, from, to, cursor,
+        return assessmentRepository.findPassed(customerId, minRiskScore, from, to, cursorTimestamp, cursorId,
                 PageRequest.of(0, size));
     }
 
@@ -73,14 +100,17 @@ public class TransactionQueryService {
     public Slice<FraudAssessment> getFlaggedByMerchant(String merchantId, String ruleViolated,
                                                         Integer minRiskScore,
                                                         Instant from, Instant to,
-                                                        Instant cursor, int pageSize) {
+                                                        Instant cursorTimestamp, UUID cursorId, int pageSize) {
+        validateDateRange(from, to);
+        validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
         return assessmentRepository.findFlaggedByMerchant(merchantId, ruleViolated, minRiskScore,
-                from, to, cursor, PageRequest.of(0, size));
+                from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
     }
 
     @Transactional(readOnly = true)
     public FraudSummaryDto getFraudSummary(Instant from, Instant to) {
+        validateDateRange(from, to);
         long totalAssessed = assessmentRepository.countInRange(from, to);
         long totalFlagged = assessmentRepository.countFlaggedInRange(from, to);
         long totalPassed = totalAssessed - totalFlagged;

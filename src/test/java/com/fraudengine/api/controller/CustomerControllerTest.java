@@ -54,16 +54,16 @@ class CustomerControllerTest {
 
         mockMvc.perform(get("/api/v1/customers/{customerId}/risk-summary", CUSTOMER))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.customerId").value(CUSTOMER))
-                .andExpect(jsonPath("$.totalTransactions").value(342))
-                .andExpect(jsonPath("$.flaggedCount").value(4))
-                .andExpect(jsonPath("$.passedCount").value(338))
-                .andExpect(jsonPath("$.fraudRate").value(1.17))
-                .andExpect(jsonPath("$.highestRiskScore").value(75))
-                .andExpect(jsonPath("$.mostTriggeredRules", hasSize(3)))
-                .andExpect(jsonPath("$.mostTriggeredRules[0]").value("AmountThresholdRule"))
-                .andExpect(jsonPath("$.firstTransactionAt").value("2025-01-15T08:00:00Z"))
-                .andExpect(jsonPath("$.lastTransactionAt").value("2026-07-23T09:00:00Z"));
+                .andExpect(jsonPath("$.data.customerId").value(CUSTOMER))
+                .andExpect(jsonPath("$.data.totalTransactions").value(342))
+                .andExpect(jsonPath("$.data.flaggedCount").value(4))
+                .andExpect(jsonPath("$.data.passedCount").value(338))
+                .andExpect(jsonPath("$.data.fraudRate").value(1.17))
+                .andExpect(jsonPath("$.data.highestRiskScore").value(75))
+                .andExpect(jsonPath("$.data.mostTriggeredRules", hasSize(3)))
+                .andExpect(jsonPath("$.data.mostTriggeredRules[0]").value("AmountThresholdRule"))
+                .andExpect(jsonPath("$.data.firstTransactionAt").value("2025-01-15T08:00:00Z"))
+                .andExpect(jsonPath("$.data.lastTransactionAt").value("2026-07-23T09:00:00Z"));
     }
 
     private static final Instant SINCE = Instant.parse("2026-07-01T00:00:00Z");
@@ -80,7 +80,7 @@ class CustomerControllerTest {
         mockMvc.perform(get("/api/v1/customers/{customerId}/risk-summary", CUSTOMER)
                         .param("since", "2026-07-01T00:00:00Z"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalTransactions").value(12));
+                .andExpect(jsonPath("$.data.totalTransactions").value(12));
 
         verify(queryService).getCustomerRiskSummary(CUSTOMER, SINCE);
     }
@@ -107,8 +107,8 @@ class CustomerControllerTest {
 
         mockMvc.perform(get("/api/v1/customers/{customerId}/risk-summary", CUSTOMER))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalTransactions").value(0))
-                .andExpect(jsonPath("$.fraudRate").value(0.0))
-                .andExpect(jsonPath("$.mostTriggeredRules", hasSize(0)));
+                .andExpect(jsonPath("$.data.totalTransactions").value(0))
+                .andExpect(jsonPath("$.data.fraudRate").value(0.0))
+                .andExpect(jsonPath("$.data.mostTriggeredRules", hasSize(0)));
     }
 }

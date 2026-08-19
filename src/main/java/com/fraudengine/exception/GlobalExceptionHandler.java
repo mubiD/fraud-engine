@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import org.springframework.http.converter.HttpMessageNotReadableException;
+
 import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -62,6 +64,19 @@ public class GlobalExceptionHandler {
         log.warn("Type mismatch for parameter '{}': value='{}'", ex.getName(), ex.getValue());
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
                 "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName() + "'");
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleUnreadableMessage(HttpMessageNotReadableException ex) {
+        log.warn("Malformed request body: {}", ex.getMessage());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+                "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present.");
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
+        log.warn("Resource not found: {}", ex.getMessage());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

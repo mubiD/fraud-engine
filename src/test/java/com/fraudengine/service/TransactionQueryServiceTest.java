@@ -3,6 +3,7 @@ package com.fraudengine.service;
 import com.fraudengine.api.dto.CustomerRiskSummaryDto;
 import com.fraudengine.api.dto.FraudSummaryDto;
 import com.fraudengine.api.dto.MerchantRiskSummaryDto;
+import com.fraudengine.engine.FraudRule;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionStatus;
@@ -25,9 +26,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,18 +39,72 @@ class TransactionQueryServiceTest {
 
     @Mock TransactionRepository transactionRepository;
     @Mock FraudAssessmentRepository assessmentRepository;
+    @Mock RuleManagementService ruleManagementService;
 
     TransactionQueryService service;
 
-    static final String CUSTOMER  = "CUST-001";
-    static final String MERCHANT  = "MERCH-001";
-    static final Instant FROM     = Instant.parse("2026-07-01T00:00:00Z");
-    static final Instant TO       = Instant.parse("2026-07-31T23:59:59Z");
-    static final Instant CURSOR   = Instant.parse("2026-07-15T12:00:00Z");
+    static final String CUSTOMER   = "CUST-001";
+    static final String MERCHANT   = "MERCH-001";
+    static final Instant FROM      = Instant.parse("2026-07-01T00:00:00Z");
+    static final Instant TO        = Instant.parse("2026-07-31T23:59:59Z");
+    static final Instant CURSOR_TS = Instant.parse("2026-07-15T12:00:00Z");
+    static final UUID CURSOR_ID    = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     @BeforeEach
     void setUp() {
-        service = new TransactionQueryService(transactionRepository, assessmentRepository);
+        service = new TransactionQueryService(transactionRepository, assessmentRepository, ruleManagementService);
+    }
+
+    private FraudRule mockRule(String name) {
+        FraudRule rule = mock(FraudRule.class);
+        when(rule.getRuleName()).thenReturn(name);
+        return rule;
+    }
+
+    // ── validateDateRange ────────────────────────────────────────────────────
+
+    @Test
+    void getByCustomerId_toBeforeFrom_throwsIllegalArgument() {
+        assertThatThrownBy(() ->
+                service.getByCustomerId(CUSTOMER, TO, FROM, null, null, 20))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'to'")
+                .hasMessageContaining("'from'");
+    }
+
+    @Test
+    void getFlagged_toBeforeFrom_throwsIllegalArgument() {
+        assertThatThrownBy(() ->
+                service.getFlagged(null, null, null, null, TO, FROM, null, null, 20))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getPassed_toBeforeFrom_throwsIllegalArgument() {
+        assertThatThrownBy(() ->
+                service.getPassed(null, null, TO, FROM, null, null, 20))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getFlaggedByMerchant_toBeforeFrom_throwsIllegalArgument() {
+        assertThatThrownBy(() ->
+                service.getFlaggedByMerchant(MERCHANT, null, null, TO, FROM, null, null, 20))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getFraudSummary_toBeforeFrom_throwsIllegalArgument() {
+        assertThatThrownBy(() -> service.getFraudSummary(TO, FROM))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void getByCustomerId_equalFromAndTo_isAccepted() {
+        when(transactionRepository.findByCustomerInRange(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SliceImpl<>(List.of()));
+        // same instant for both — should not throw
+        service.getByCustomerId(CUSTOMER, FROM, FROM, null, null, 20);
     }
 
     // ── getByCustomerId ──────────────────────────────────────────────────────
@@ -56,25 +113,25 @@ class TransactionQueryServiceTest {
     void getByCustomerId_delegatesToRepository() {
         Slice<Transaction> expected = new SliceImpl<>(List.of());
         when(transactionRepository.findByCustomerInRange(
-                eq(CUSTOMER), eq(FROM), eq(TO), eq(CURSOR), any(PageRequest.class)))
+                eq(CUSTOMER), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any(PageRequest.class)))
                 .thenReturn(expected);
 
-        Slice<Transaction> result = service.getByCustomerId(CUSTOMER, FROM, TO, CURSOR, 10);
+        Slice<Transaction> result = service.getByCustomerId(CUSTOMER, FROM, TO, CURSOR_TS, CURSOR_ID, 10);
 
         assertThat(result).isSameAs(expected);
         verify(transactionRepository).findByCustomerInRange(
-                CUSTOMER, FROM, TO, CURSOR, PageRequest.of(0, 10));
+                CUSTOMER, FROM, TO, CURSOR_TS, CURSOR_ID, PageRequest.of(0, 10));
     }
 
     @Test
     void getByCustomerId_zeroPageSize_usesDefaultOf20() {
-        when(transactionRepository.findByCustomerInRange(any(), any(), any(), any(), any()))
+        when(transactionRepository.findByCustomerInRange(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        service.getByCustomerId(CUSTOMER, null, null, null, 0);
+        service.getByCustomerId(CUSTOMER, null, null, null, null, 0);
 
         verify(transactionRepository).findByCustomerInRange(
-                CUSTOMER, null, null, null, PageRequest.of(0, 20));
+                CUSTOMER, null, null, null, null, PageRequest.of(0, 20));
     }
 
     // ── getById ──────────────────────────────────────────────────────────────
@@ -115,29 +172,55 @@ class TransactionQueryServiceTest {
 
     @Test
     void getFlagged_delegatesAllParametersToRepository() {
+        FraudRule amountRule = mockRule("AmountThresholdRule");
+        when(ruleManagementService.getRules()).thenReturn(List.of(amountRule));
         Slice<FraudAssessment> expected = new SliceImpl<>(List.of());
         when(assessmentRepository.findFlagged(
                 eq(CUSTOMER), eq("AmountThresholdRule"), eq(50), eq(80),
-                eq(FROM), eq(TO), eq(CURSOR), any(PageRequest.class)))
+                eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any(PageRequest.class)))
                 .thenReturn(expected);
 
         Slice<FraudAssessment> result = service.getFlagged(
-                CUSTOMER, "AmountThresholdRule", 50, 80, FROM, TO, CURSOR, 15);
+                CUSTOMER, "AmountThresholdRule", 50, 80, FROM, TO, CURSOR_TS, CURSOR_ID, 15);
 
         assertThat(result).isSameAs(expected);
         verify(assessmentRepository).findFlagged(
-                CUSTOMER, "AmountThresholdRule", 50, 80, FROM, TO, CURSOR, PageRequest.of(0, 15));
+                CUSTOMER, "AmountThresholdRule", 50, 80, FROM, TO, CURSOR_TS, CURSOR_ID, PageRequest.of(0, 15));
     }
 
     @Test
     void getFlagged_zeroPageSize_usesDefaultOf20() {
-        when(assessmentRepository.findFlagged(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(assessmentRepository.findFlagged(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        service.getFlagged(null, null, null, null, null, null, null, 0);
+        service.getFlagged(null, null, null, null, null, null, null, null, 0);
 
         verify(assessmentRepository).findFlagged(
-                null, null, null, null, null, null, null, PageRequest.of(0, 20));
+                null, null, null, null, null, null, null, null, PageRequest.of(0, 20));
+    }
+
+    @Test
+    void getFlagged_unknownRuleViolated_throws400Message() {
+        FraudRule amountRule = mockRule("AmountThresholdRule");
+        when(ruleManagementService.getRules()).thenReturn(List.of(amountRule));
+
+        assertThatThrownBy(() ->
+                service.getFlagged(null, "TypoRule", null, null, null, null, null, null, 20))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("TypoRule")
+                .hasMessageContaining("AmountThresholdRule");
+    }
+
+    @Test
+    void getFlaggedByMerchant_unknownRuleViolated_throws400Message() {
+        FraudRule amountRule = mockRule("AmountThresholdRule");
+        FraudRule velocityRule = mockRule("VelocityRule");
+        when(ruleManagementService.getRules()).thenReturn(List.of(amountRule, velocityRule));
+
+        assertThatThrownBy(() ->
+                service.getFlaggedByMerchant(MERCHANT, "NoSuchRule", null, null, null, null, null, 20))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("NoSuchRule");
     }
 
     // ── getPassed ─────────────────────────────────────────────────────────────
@@ -146,10 +229,10 @@ class TransactionQueryServiceTest {
     void getPassed_delegatesAllParametersToRepository() {
         Slice<FraudAssessment> expected = new SliceImpl<>(List.of());
         when(assessmentRepository.findPassed(
-                eq(CUSTOMER), eq(30), eq(FROM), eq(TO), eq(CURSOR), any(PageRequest.class)))
+                eq(CUSTOMER), eq(30), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any(PageRequest.class)))
                 .thenReturn(expected);
 
-        Slice<FraudAssessment> result = service.getPassed(CUSTOMER, 30, FROM, TO, CURSOR, 5);
+        Slice<FraudAssessment> result = service.getPassed(CUSTOMER, 30, FROM, TO, CURSOR_TS, CURSOR_ID, 5);
 
         assertThat(result).isSameAs(expected);
     }
@@ -158,13 +241,15 @@ class TransactionQueryServiceTest {
 
     @Test
     void getFlaggedByMerchant_delegatesAllParametersToRepository() {
+        FraudRule velocityRule = mockRule("VelocityRule");
+        when(ruleManagementService.getRules()).thenReturn(List.of(velocityRule));
         Slice<FraudAssessment> expected = new SliceImpl<>(List.of());
         when(assessmentRepository.findFlaggedByMerchant(
-                eq(MERCHANT), eq("VelocityRule"), eq(60), eq(FROM), eq(TO), eq(CURSOR), any()))
+                eq(MERCHANT), eq("VelocityRule"), eq(60), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any()))
                 .thenReturn(expected);
 
         Slice<FraudAssessment> result = service.getFlaggedByMerchant(
-                MERCHANT, "VelocityRule", 60, FROM, TO, CURSOR, 10);
+                MERCHANT, "VelocityRule", 60, FROM, TO, CURSOR_TS, CURSOR_ID, 10);
 
         assertThat(result).isSameAs(expected);
     }

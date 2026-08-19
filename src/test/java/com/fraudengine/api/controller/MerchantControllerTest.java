@@ -1,5 +1,6 @@
 package com.fraudengine.api.controller;
 
+import com.fraudengine.api.cursor.CursorUtils;
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.dto.MerchantRiskSummaryDto;
 import com.fraudengine.api.mapper.TransactionMapper;
@@ -89,7 +90,7 @@ class MerchantControllerTest {
 
     @Test
     void getFlaggedByMerchant_returns200WithData() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -103,7 +104,7 @@ class MerchantControllerTest {
 
     @Test
     void getFlaggedByMerchant_withDateRange_passesInstantsToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), eq(FROM), eq(TO), isNull(), eq(20)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20)))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
@@ -111,24 +112,24 @@ class MerchantControllerTest {
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, null, null, FROM, TO, null, 20);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, null, null, FROM, TO, null, null, 20);
     }
 
     @Test
     void getFlaggedByMerchant_withNextPage_setsNextCursor() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), true));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasMore").value(true))
-                .andExpect(jsonPath("$.nextCursor").value("2026-07-23T09:00:01Z"));
+                .andExpect(jsonPath("$.nextCursor").value(CursorUtils.encode(TS.plusSeconds(1), ASSESS_ID)));
     }
 
     @Test
     void getFlaggedByMerchant_withRuleViolated_passesRuleToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -137,12 +138,12 @@ class MerchantControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)));
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", null, null, null, null, 20);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", null, null, null, null, null, 20);
     }
 
     @Test
     void getFlaggedByMerchant_withMinRiskScore_passesScoreToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), eq(75), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), eq(75), isNull(), isNull(), isNull(), isNull(), eq(20)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -151,12 +152,12 @@ class MerchantControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)));
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, null, 75, null, null, null, 20);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, null, 75, null, null, null, null, 20);
     }
 
     @Test
     void getFlaggedByMerchant_withRuleViolatedAndMinRiskScore_passesBothToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), eq(60), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), eq(60), isNull(), isNull(), isNull(), isNull(), eq(20)))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
@@ -164,7 +165,21 @@ class MerchantControllerTest {
                         .param("minRiskScore", "60"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", 60, null, null, null, 20);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", 60, null, null, null, null, 20);
+    }
+
+    @Test
+    void getFlaggedByMerchant_minRiskScoreAbove100_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
+                        .param("minRiskScore", "101"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getFlaggedByMerchant_minRiskScoreBelow0_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
+                        .param("minRiskScore", "-1"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -207,16 +222,16 @@ class MerchantControllerTest {
 
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/risk-summary", MERCHANT))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.merchantId").value(MERCHANT))
-                .andExpect(jsonPath("$.totalTransactions").value(1842))
-                .andExpect(jsonPath("$.flaggedCount").value(12))
-                .andExpect(jsonPath("$.passedCount").value(1830))
-                .andExpect(jsonPath("$.fraudRate").value(0.65))
-                .andExpect(jsonPath("$.highestRiskScore").value(85))
-                .andExpect(jsonPath("$.uniqueCustomers").value(534))
-                .andExpect(jsonPath("$.mostTriggeredRules", hasSize(2)))
-                .andExpect(jsonPath("$.firstTransactionAt").value("2024-01-01T00:00:00Z"))
-                .andExpect(jsonPath("$.lastTransactionAt").value("2026-07-23T09:00:00Z"));
+                .andExpect(jsonPath("$.data.merchantId").value(MERCHANT))
+                .andExpect(jsonPath("$.data.totalTransactions").value(1842))
+                .andExpect(jsonPath("$.data.flaggedCount").value(12))
+                .andExpect(jsonPath("$.data.passedCount").value(1830))
+                .andExpect(jsonPath("$.data.fraudRate").value(0.65))
+                .andExpect(jsonPath("$.data.highestRiskScore").value(85))
+                .andExpect(jsonPath("$.data.uniqueCustomers").value(534))
+                .andExpect(jsonPath("$.data.mostTriggeredRules", hasSize(2)))
+                .andExpect(jsonPath("$.data.firstTransactionAt").value("2024-01-01T00:00:00Z"))
+                .andExpect(jsonPath("$.data.lastTransactionAt").value("2026-07-23T09:00:00Z"));
     }
 
     @Test
@@ -231,7 +246,7 @@ class MerchantControllerTest {
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/risk-summary", MERCHANT)
                         .param("since", "2026-07-01T00:00:00Z"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalTransactions").value(42));
+                .andExpect(jsonPath("$.data.totalTransactions").value(42));
 
         verify(queryService).getMerchantRiskSummary(MERCHANT, FROM);
     }

@@ -58,14 +58,14 @@ class StatsControllerTest {
 
         mockMvc.perform(get("/api/v1/stats/fraud-summary"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalAssessed").value(1000))
-                .andExpect(jsonPath("$.totalFlagged").value(50))
-                .andExpect(jsonPath("$.totalPassed").value(950))
-                .andExpect(jsonPath("$.fraudRate").value(5.0))
-                .andExpect(jsonPath("$.ruleBreakdown", hasSize(2)))
-                .andExpect(jsonPath("$.ruleBreakdown[0].ruleName").value("AmountThresholdRule"))
-                .andExpect(jsonPath("$.ruleBreakdown[0].count").value(30))
-                .andExpect(jsonPath("$.ruleBreakdown[0].percentage").value(60.0));
+                .andExpect(jsonPath("$.data.totalAssessed").value(1000))
+                .andExpect(jsonPath("$.data.totalFlagged").value(50))
+                .andExpect(jsonPath("$.data.totalPassed").value(950))
+                .andExpect(jsonPath("$.data.fraudRate").value(5.0))
+                .andExpect(jsonPath("$.data.ruleBreakdown", hasSize(2)))
+                .andExpect(jsonPath("$.data.ruleBreakdown[0].ruleName").value("AmountThresholdRule"))
+                .andExpect(jsonPath("$.data.ruleBreakdown[0].count").value(30))
+                .andExpect(jsonPath("$.data.ruleBreakdown[0].percentage").value(60.0));
     }
 
     @Test
@@ -77,8 +77,8 @@ class StatsControllerTest {
                         .param("from", "2026-07-01T00:00:00Z")
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.from").value("2026-07-01T00:00:00Z"))
-                .andExpect(jsonPath("$.to").value("2026-07-31T23:59:59Z"));
+                .andExpect(jsonPath("$.data.from").value("2026-07-01T00:00:00Z"))
+                .andExpect(jsonPath("$.data.to").value("2026-07-31T23:59:59Z"));
 
         verify(queryService).getFraudSummary(FROM, TO);
     }
@@ -102,6 +102,6 @@ class StatsControllerTest {
 
         mockMvc.perform(get("/api/v1/stats/fraud-summary"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ruleBreakdown", hasSize(0)));
+                .andExpect(jsonPath("$.data.ruleBreakdown", hasSize(0)));
     }
 }

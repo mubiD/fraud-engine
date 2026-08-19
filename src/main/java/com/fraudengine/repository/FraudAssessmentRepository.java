@@ -26,7 +26,9 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
             SELECT fa FROM FraudAssessment fa
             JOIN FETCH fa.transaction t
             WHERE fa.fraudulent = true
-              AND (:cursor IS NULL OR fa.assessedAt < :cursor)
+              AND (:cursorTimestamp IS NULL
+                   OR fa.assessedAt < :cursorTimestamp
+                   OR (fa.assessedAt = :cursorTimestamp AND fa.id < :cursorId))
               AND (:from IS NULL OR fa.assessedAt >= :from)
               AND (:to IS NULL OR fa.assessedAt <= :to)
               AND (:customerId IS NULL OR t.customerId = :customerId)
@@ -36,7 +38,7 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
                   SELECT rv FROM RuleViolation rv
                   WHERE rv.assessment = fa AND rv.ruleName = :ruleViolated
               ))
-            ORDER BY fa.assessedAt DESC
+            ORDER BY fa.assessedAt DESC, fa.id DESC
             """)
     Slice<FraudAssessment> findFlagged(@Param("customerId") String customerId,
                                        @Param("ruleViolated") String ruleViolated,
@@ -44,7 +46,8 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
                                        @Param("maxRiskScore") Integer maxRiskScore,
                                        @Param("from") Instant from,
                                        @Param("to") Instant to,
-                                       @Param("cursor") Instant cursor,
+                                       @Param("cursorTimestamp") Instant cursorTimestamp,
+                                       @Param("cursorId") UUID cursorId,
                                        Pageable pageable);
 
     @Query("""
@@ -52,7 +55,9 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
             JOIN FETCH fa.transaction t
             WHERE fa.fraudulent = true
               AND t.merchantId = :merchantId
-              AND (:cursor IS NULL OR fa.assessedAt < :cursor)
+              AND (:cursorTimestamp IS NULL
+                   OR fa.assessedAt < :cursorTimestamp
+                   OR (fa.assessedAt = :cursorTimestamp AND fa.id < :cursorId))
               AND (:from IS NULL OR fa.assessedAt >= :from)
               AND (:to IS NULL OR fa.assessedAt <= :to)
               AND (:minRiskScore IS NULL OR fa.riskScore >= :minRiskScore)
@@ -60,14 +65,15 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
                   SELECT rv FROM RuleViolation rv
                   WHERE rv.assessment = fa AND rv.ruleName = :ruleViolated
               ))
-            ORDER BY fa.assessedAt DESC
+            ORDER BY fa.assessedAt DESC, fa.id DESC
             """)
     Slice<FraudAssessment> findFlaggedByMerchant(@Param("merchantId") String merchantId,
                                                   @Param("ruleViolated") String ruleViolated,
                                                   @Param("minRiskScore") Integer minRiskScore,
                                                   @Param("from") Instant from,
                                                   @Param("to") Instant to,
-                                                  @Param("cursor") Instant cursor,
+                                                  @Param("cursorTimestamp") Instant cursorTimestamp,
+                                                  @Param("cursorId") UUID cursorId,
                                                   Pageable pageable);
 
     // -----------------------------------------------------------------------
@@ -78,18 +84,21 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
             SELECT fa FROM FraudAssessment fa
             JOIN FETCH fa.transaction t
             WHERE fa.fraudulent = false
-              AND (:cursor IS NULL OR fa.assessedAt < :cursor)
+              AND (:cursorTimestamp IS NULL
+                   OR fa.assessedAt < :cursorTimestamp
+                   OR (fa.assessedAt = :cursorTimestamp AND fa.id < :cursorId))
               AND (:from IS NULL OR fa.assessedAt >= :from)
               AND (:to IS NULL OR fa.assessedAt <= :to)
               AND (:customerId IS NULL OR t.customerId = :customerId)
               AND (:minRiskScore IS NULL OR fa.riskScore >= :minRiskScore)
-            ORDER BY fa.assessedAt DESC
+            ORDER BY fa.assessedAt DESC, fa.id DESC
             """)
     Slice<FraudAssessment> findPassed(@Param("customerId") String customerId,
                                       @Param("minRiskScore") Integer minRiskScore,
                                       @Param("from") Instant from,
                                       @Param("to") Instant to,
-                                      @Param("cursor") Instant cursor,
+                                      @Param("cursorTimestamp") Instant cursorTimestamp,
+                                      @Param("cursorId") UUID cursorId,
                                       Pageable pageable);
 
     // -----------------------------------------------------------------------

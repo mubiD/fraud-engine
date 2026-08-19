@@ -23,6 +23,7 @@ import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -70,6 +71,29 @@ class StandaloneTransactionControllerTest {
 
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(fraudAssessmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    // ── POST /api/v1/standalone/submit ──────────────────────────────────────
+
+    @Test
+    void submit_malformedJson_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("{bad json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.detail").value(
+                        "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present."));
+    }
+
+    @Test
+    void submit_missingBody_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.detail").value(
+                        "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present."));
     }
 
     // ── POST /api/v1/standalone/stream ──────────────────────────────────────

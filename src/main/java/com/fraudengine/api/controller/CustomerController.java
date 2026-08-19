@@ -1,17 +1,20 @@
 package com.fraudengine.api.controller;
 
+import com.fraudengine.api.dto.DataResponse;
 import com.fraudengine.api.dto.CustomerRiskSummaryDto;
 import com.fraudengine.service.TransactionQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/v1/customers")
+@Validated
 @Tag(name = "Customers", description = "Customer-level risk views")
 public class CustomerController {
 
@@ -34,12 +37,12 @@ public class CustomerController {
             """
     )
     @ApiResponse(responseCode = "200", description = "Risk summary returned")
-    public CustomerRiskSummaryDto getCustomerRiskSummary(
+    public DataResponse<CustomerRiskSummaryDto> getCustomerRiskSummary(
             @Parameter(description = "Customer identifier", required = true)
             @PathVariable String customerId,
             @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards")
             @RequestParam(required = false) String since) {
         Instant sinceInstant = since != null ? Instant.parse(since) : null;
-        return queryService.getCustomerRiskSummary(customerId, sinceInstant);
+        return DataResponse.of(queryService.getCustomerRiskSummary(customerId, sinceInstant));
     }
 }

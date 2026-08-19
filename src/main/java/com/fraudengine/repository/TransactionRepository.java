@@ -45,15 +45,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
             SELECT t FROM Transaction t
             LEFT JOIN FETCH t.assessment a
             WHERE t.customerId = :customerId
-              AND (:cursor IS NULL OR t.timestamp < :cursor)
+              AND (:cursorTimestamp IS NULL
+                   OR t.timestamp < :cursorTimestamp
+                   OR (t.timestamp = :cursorTimestamp AND t.id < :cursorId))
               AND (:from IS NULL OR t.timestamp >= :from)
               AND (:to IS NULL OR t.timestamp <= :to)
-            ORDER BY t.timestamp DESC
+            ORDER BY t.timestamp DESC, t.id DESC
             """)
     Slice<Transaction> findByCustomerInRange(@Param("customerId") String customerId,
                                              @Param("from") Instant from,
                                              @Param("to") Instant to,
-                                             @Param("cursor") Instant cursor,
+                                             @Param("cursorTimestamp") Instant cursorTimestamp,
+                                             @Param("cursorId") UUID cursorId,
                                              Pageable pageable);
 
     @Query("""

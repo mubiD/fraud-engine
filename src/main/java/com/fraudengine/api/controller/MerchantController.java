@@ -1,5 +1,6 @@
 package com.fraudengine.api.controller;
 
+import com.fraudengine.api.dto.DataResponse;
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.dto.MerchantRiskSummaryDto;
 import com.fraudengine.api.dto.PagedResponse;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import com.fraudengine.api.cursor.CursorUtils;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.data.domain.Slice;
@@ -48,8 +50,8 @@ public class MerchantController {
             @PathVariable String merchantId,
             @Parameter(description = "Filter by the name of the rule that was violated (e.g. VelocityRule)")
             @RequestParam(required = false) String ruleViolated,
-            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive)")
-            @RequestParam(required = false) Integer minRiskScore,
+            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
+            @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
             @RequestParam(required = false) String from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
@@ -59,19 +61,24 @@ public class MerchantController {
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
 
-        Instant fromInstant   = from   != null ? Instant.parse(from)   : null;
-        Instant toInstant     = to     != null ? Instant.parse(to)     : null;
-        Instant cursorInstant = cursor != null ? Instant.parse(cursor) : null;
+        Instant fromInstant = from != null ? Instant.parse(from) : null;
+        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
+        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<FraudAssessment> slice = queryService.getFlaggedByMerchant(
-                merchantId, ruleViolated, minRiskScore, fromInstant, toInstant, cursorInstant, pageSize);
+                merchantId, ruleViolated, minRiskScore, fromInstant, toInstant,
+                decoded != null ? decoded.timestamp() : null,
+                decoded != null ? decoded.id() : null,
+                pageSize);
 
         List<FraudAssessmentDto> data = slice.getContent().stream()
                 .map(mapper::toDto)
                 .toList();
 
-        Instant nextCursor = slice.hasNext() && !data.isEmpty()
-                ? data.get(data.size() - 1).getAssessedAt()
+        String nextCursor = slice.hasNext() && !data.isEmpty()
+                ? CursorUtils.encode(
+                        data.get(data.size() - 1).getAssessedAt(),
+                        data.get(data.size() - 1).getAssessmentId())
                 : null;
 
         return PagedResponse.<FraudAssessmentDto>builder()
@@ -93,12 +100,12 @@ public class MerchantController {
             """
     )
     @ApiResponse(responseCode = "200", description = "Merchant risk summary returned")
-    public MerchantRiskSummaryDto getMerchantRiskSummary(
+    public DataResponse<MerchantRiskSummaryDto> getMerchantRiskSummary(
             @Parameter(description = "Merchant identifier", required = true)
             @PathVariable String merchantId,
             @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards")
             @RequestParam(required = false) String since) {
         Instant sinceInstant = since != null ? Instant.parse(since) : null;
-        return queryService.getMerchantRiskSummary(merchantId, sinceInstant);
+        return DataResponse.of(queryService.getMerchantRiskSummary(merchantId, sinceInstant));
     }
 }

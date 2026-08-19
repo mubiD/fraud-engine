@@ -1,5 +1,6 @@
 package com.fraudengine.api.controller;
 
+import com.fraudengine.api.dto.DataResponse;
 import com.fraudengine.api.dto.RuleDto;
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.service.RuleManagementService;
@@ -31,7 +32,7 @@ public class RuleController {
         description = "Returns each registered fraud rule with its name, version, priority, and whether it is currently enabled."
     )
     @ApiResponse(responseCode = "200", description = "Rules returned")
-    public List<RuleDto> getRules() {
-        return ruleManagementService.getRules().stream().map(mapper::toDto).toList();
+    public DataResponse<List<RuleDto>> getRules() {
+        return DataResponse.of(ruleManagementService.getRules().stream().map(mapper::toDto).toList());
     }
 }

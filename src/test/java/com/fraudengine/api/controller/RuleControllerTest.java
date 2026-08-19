@@ -50,12 +50,12 @@ class RuleControllerTest {
 
         mockMvc.perform(get("/api/v1/rules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].ruleName").value("AmountThresholdRule"))
-                .andExpect(jsonPath("$[0].ruleVersion").value("1.0"))
-                .andExpect(jsonPath("$[0].priority").value(10))
-                .andExpect(jsonPath("$[0].enabled").value(true))
-                .andExpect(jsonPath("$[1].ruleName").value("VelocityRule"));
+                .andExpect(jsonPath("$.data", hasSize(2)))
+                .andExpect(jsonPath("$.data[0].ruleName").value("AmountThresholdRule"))
+                .andExpect(jsonPath("$.data[0].ruleVersion").value("1.0"))
+                .andExpect(jsonPath("$.data[0].priority").value(10))
+                .andExpect(jsonPath("$.data[0].enabled").value(true))
+                .andExpect(jsonPath("$.data[1].ruleName").value("VelocityRule"));
     }
 
     @Test
@@ -64,7 +64,7 @@ class RuleControllerTest {
 
         mockMvc.perform(get("/api/v1/rules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(0)));
+                .andExpect(jsonPath("$.data", hasSize(0)));
     }
 
     @Test
@@ -78,9 +78,9 @@ class RuleControllerTest {
 
         mockMvc.perform(get("/api/v1/rules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].config").isMap())
-                .andExpect(jsonPath("$[0].config.windowMinutes").value(10))
-                .andExpect(jsonPath("$[0].config.maxTransactions").value(5));
+                .andExpect(jsonPath("$.data[0].config").isMap())
+                .andExpect(jsonPath("$.data[0].config.windowMinutes").value(10))
+                .andExpect(jsonPath("$.data[0].config.maxTransactions").value(5));
     }
 
     @Test
@@ -93,7 +93,7 @@ class RuleControllerTest {
 
         mockMvc.perform(get("/api/v1/rules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].enabled").value(false));
+                .andExpect(jsonPath("$.data[0].enabled").value(false));
     }
 
     // -----------------------------------------------------------------------
