@@ -7,14 +7,17 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 
 @RestController
-@RequestMapping("/api/v1/customers")
+@RequestMapping(value = "/api/v1/customers", produces = MediaType.APPLICATION_JSON_VALUE)
 @Validated
+@RateLimiter(name = "api")
 @Tag(name = "Customers", description = "Customer-level risk views")
 public class CustomerController {
 

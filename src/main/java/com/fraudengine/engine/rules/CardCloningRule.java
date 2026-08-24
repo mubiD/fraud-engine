@@ -61,9 +61,4 @@ public class CardCloningRule implements FraudRule {
     @Override public int getPriority()       { return 6; }
     @Override public boolean isEnabled()     { return properties.getCardCloning().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        RuleProperties.CardCloningConfig c = properties.getCardCloning();
-        return java.util.Map.of("windowMinutes", c.getWindowMinutes(), "minDifferentMerchants", c.getMinDifferentMerchants());
-    }
 }

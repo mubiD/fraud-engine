@@ -48,9 +48,4 @@ public class CrossMerchantVelocityRule implements FraudRule {
     @Override public int getPriority()       { return 11; }
     @Override public boolean isEnabled()     { return properties.getCrossMerchantVelocity().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        RuleProperties.CrossMerchantVelocityConfig c = properties.getCrossMerchantVelocity();
-        return java.util.Map.of("windowMinutes", c.getWindowMinutes(), "maxTransactions", c.getMaxTransactions());
-    }
 }

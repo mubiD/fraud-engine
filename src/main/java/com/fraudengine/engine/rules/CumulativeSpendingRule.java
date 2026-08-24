@@ -64,13 +64,4 @@ public class CumulativeSpendingRule implements FraudRule {
     @Override public int getPriority()       { return 12; }
     @Override public boolean isEnabled()     { return properties.getCumulativeSpending().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        RuleProperties.CumulativeSpendingConfig c = properties.getCumulativeSpending();
-        java.util.Map<String, Object> cfg = new java.util.LinkedHashMap<>();
-        cfg.put("hourlyWindowMinutes", c.getHourlyWindowMinutes());
-        cfg.put("hourlyLimit", c.getHourlyLimit());
-        cfg.put("dailyLimit", c.getDailyLimit());
-        return cfg;
-    }
 }

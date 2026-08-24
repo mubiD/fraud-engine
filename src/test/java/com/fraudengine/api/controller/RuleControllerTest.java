@@ -14,7 +14,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.Mockito.mock;
@@ -41,8 +40,8 @@ class RuleControllerTest {
         FraudRule rule1 = mockRule("AmountThresholdRule", "1.0", 10, true);
         FraudRule rule2 = mockRule("VelocityRule", "1.0", 20, true);
 
-        RuleDto dto1 = ruleDto("AmountThresholdRule", "1.0", 10, true, Map.of("threshold", "5000.00"));
-        RuleDto dto2 = ruleDto("VelocityRule", "1.0", 20, true, Map.of("windowMinutes", 10));
+        RuleDto dto1 = ruleDto("AmountThresholdRule", "1.0", 10, true);
+        RuleDto dto2 = ruleDto("VelocityRule", "1.0", 20, true);
 
         when(ruleManagementService.getRules()).thenReturn(List.of(rule1, rule2));
         when(mapper.toDto(rule1)).thenReturn(dto1);
@@ -68,25 +67,9 @@ class RuleControllerTest {
     }
 
     @Test
-    void getRules_configIsPopulated() throws Exception {
-        FraudRule rule = mockRule("VelocityRule", "1.0", 20, true);
-        RuleDto dto = ruleDto("VelocityRule", "1.0", 20, true,
-                Map.of("windowMinutes", 10, "maxTransactions", 5));
-
-        when(ruleManagementService.getRules()).thenReturn(List.of(rule));
-        when(mapper.toDto(rule)).thenReturn(dto);
-
-        mockMvc.perform(get("/api/v1/rules"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].config").isMap())
-                .andExpect(jsonPath("$.data[0].config.windowMinutes").value(10))
-                .andExpect(jsonPath("$.data[0].config.maxTransactions").value(5));
-    }
-
-    @Test
     void getRules_disabledRule_isIncludedWithEnabledFalse() throws Exception {
         FraudRule disabledRule = mockRule("GeographicAnomalyRule", "1.0", 30, false);
-        RuleDto dto = ruleDto("GeographicAnomalyRule", "1.0", 30, false, Map.of());
+        RuleDto dto = ruleDto("GeographicAnomalyRule", "1.0", 30, false);
 
         when(ruleManagementService.getRules()).thenReturn(List.of(disabledRule));
         when(mapper.toDto(disabledRule)).thenReturn(dto);
@@ -106,18 +89,15 @@ class RuleControllerTest {
         when(rule.getRuleVersion()).thenReturn(version);
         when(rule.getPriority()).thenReturn(priority);
         when(rule.isEnabled()).thenReturn(enabled);
-        when(rule.getConfig()).thenReturn(Map.of());
         return rule;
     }
 
-    private RuleDto ruleDto(String name, String version, int priority, boolean enabled,
-                            Map<String, Object> config) {
+    private RuleDto ruleDto(String name, String version, int priority, boolean enabled) {
         RuleDto dto = new RuleDto();
         dto.setRuleName(name);
         dto.setRuleVersion(version);
         dto.setPriority(priority);
         dto.setEnabled(enabled);
-        dto.setConfig(config);
         return dto;
     }
 }

@@ -90,9 +90,4 @@ public class GeographicAnomalyRule implements FraudRule {
     @Override public int getPriority()       { return 5; }
     @Override public boolean isEnabled()     { return properties.getGeographic().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        RuleProperties.GeographicConfig c = properties.getGeographic();
-        return java.util.Map.of("windowMinutes", c.getWindowMinutes(), "maxTravelSpeedKmh", c.getMaxTravelSpeedKmh());
-    }
 }

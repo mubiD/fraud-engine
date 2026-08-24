@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
@@ -105,7 +107,7 @@ class TransactionQueryControllerTest {
 
     @Test
     void getByCustomerId_returnsPagedSummaries() throws Exception {
-        when(queryService.getByCustomerId(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getByCustomerId(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(tx), PageRequest.of(0, 20), false));
         when(mapper.toSummaryDto(tx)).thenReturn(summaryDto);
 
@@ -120,7 +122,7 @@ class TransactionQueryControllerTest {
 
     @Test
     void getByCustomerId_withNextPage_setsNextCursorAndHasMore() throws Exception {
-        when(queryService.getByCustomerId(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getByCustomerId(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(tx), PageRequest.of(0, 20), true));
         when(mapper.toSummaryDto(tx)).thenReturn(summaryDto);
 
@@ -133,7 +135,7 @@ class TransactionQueryControllerTest {
     @Test
     void getByCustomerId_withCursorAndPageSize_passesParamsToService() throws Exception {
         String encodedCursor = CursorUtils.encode(TS, TX_ID);
-        when(queryService.getByCustomerId(eq(CUSTOMER), isNull(), isNull(), eq(TS), eq(TX_ID), eq(5)))
+        when(queryService.getByCustomerId(eq(CUSTOMER), isNull(), isNull(), eq(TS), eq(TX_ID), eq(5), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 5), false));
 
         mockMvc.perform(get("/api/v1/transactions")
@@ -142,12 +144,12 @@ class TransactionQueryControllerTest {
                         .param("pageSize", "5"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getByCustomerId(CUSTOMER, null, null, TS, TX_ID, 5);
+        verify(queryService).getByCustomerId(CUSTOMER, null, null, TS, TX_ID, 5, "desc");
     }
 
     @Test
     void getByCustomerId_withDateRange_passesInstantsToService() throws Exception {
-        when(queryService.getByCustomerId(eq(CUSTOMER), eq(FROM), eq(TO), isNull(), isNull(), eq(20)))
+        when(queryService.getByCustomerId(eq(CUSTOMER), eq(FROM), eq(TO), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions")
@@ -156,7 +158,7 @@ class TransactionQueryControllerTest {
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getByCustomerId(CUSTOMER, FROM, TO, null, null, 20);
+        verify(queryService).getByCustomerId(CUSTOMER, FROM, TO, null, null, 20, "desc");
     }
 
     @Test
@@ -184,8 +186,20 @@ class TransactionQueryControllerTest {
     }
 
     @Test
+    void getByCustomerId_rateLimitExceeded_returns429WithRetryAfter() throws Exception {
+        when(queryService.getByCustomerId(any(), any(), any(), any(), any(), anyInt(), anyString()))
+                .thenThrow(RequestNotPermitted.createRequestNotPermitted(
+                        io.github.resilience4j.ratelimiter.RateLimiter.ofDefaults("test")));
+
+        mockMvc.perform(get("/api/v1/transactions").param("customerId", CUSTOMER))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(header().string("Retry-After", "10"));
+    }
+
+    @Test
     void getByCustomerId_toBeforeFrom_returns400() throws Exception {
-        when(queryService.getByCustomerId(any(), any(), any(), any(), any(), anyInt()))
+        when(queryService.getByCustomerId(any(), any(), any(), any(), any(), anyInt(), anyString()))
                 .thenThrow(new IllegalArgumentException("'to' must not be before 'from'"));
 
         mockMvc.perform(get("/api/v1/transactions")
@@ -201,6 +215,13 @@ class TransactionQueryControllerTest {
         mockMvc.perform(get("/api/v1/transactions")
                         .param("customerId", CUSTOMER)
                         .param("from", "2026-07-01"))  // missing time component
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getByCustomerId_blankCustomerId_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/transactions")
+                        .param("customerId", "   "))
                 .andExpect(status().isBadRequest());
     }
 
@@ -270,7 +291,7 @@ class TransactionQueryControllerTest {
 
     @Test
     void getFlagged_noFilters_returns200() throws Exception {
-        when(queryService.getFlagged(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -282,51 +303,51 @@ class TransactionQueryControllerTest {
 
     @Test
     void getFlagged_withCustomerId_passesCustomerIdToService() throws Exception {
-        when(queryService.getFlagged(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/flagged").param("customerId", CUSTOMER))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlagged(CUSTOMER, null, null, null, null, null, null, null, 20);
+        verify(queryService).getFlagged(CUSTOMER, null, null, null, null, null, null, null, 20, "desc");
     }
 
     @Test
     void getFlagged_withRuleViolated_passesRuleToService() throws Exception {
-        when(queryService.getFlagged(isNull(), eq("AmountThresholdRule"), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(isNull(), eq("AmountThresholdRule"), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/flagged").param("ruleViolated", "AmountThresholdRule"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlagged(null, "AmountThresholdRule", null, null, null, null, null, null, 20);
+        verify(queryService).getFlagged(null, "AmountThresholdRule", null, null, null, null, null, null, 20, "desc");
     }
 
     @Test
     void getFlagged_withMinRiskScore_passesScoreToService() throws Exception {
-        when(queryService.getFlagged(isNull(), isNull(), eq(50), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(isNull(), isNull(), eq(50), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/flagged").param("minRiskScore", "50"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlagged(null, null, 50, null, null, null, null, null, 20);
+        verify(queryService).getFlagged(null, null, 50, null, null, null, null, null, 20, "desc");
     }
 
     @Test
     void getFlagged_withMaxRiskScore_passesScoreToService() throws Exception {
-        when(queryService.getFlagged(isNull(), isNull(), isNull(), eq(65), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(isNull(), isNull(), isNull(), eq(65), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/flagged").param("maxRiskScore", "65"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlagged(null, null, null, 65, null, null, null, null, 20);
+        verify(queryService).getFlagged(null, null, null, 65, null, null, null, null, 20, "desc");
     }
 
     @Test
     void getFlagged_withRiskScoreBand_passesBothScoresToService() throws Exception {
-        when(queryService.getFlagged(isNull(), isNull(), eq(50), eq(65), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(isNull(), isNull(), eq(50), eq(65), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -336,12 +357,12 @@ class TransactionQueryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)));
 
-        verify(queryService).getFlagged(null, null, 50, 65, null, null, null, null, 20);
+        verify(queryService).getFlagged(null, null, 50, 65, null, null, null, null, 20, "desc");
     }
 
     @Test
     void getFlagged_withDateRange_passesInstantsToService() throws Exception {
-        when(queryService.getFlagged(isNull(), isNull(), isNull(), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20)))
+        when(queryService.getFlagged(isNull(), isNull(), isNull(), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/flagged")
@@ -349,7 +370,7 @@ class TransactionQueryControllerTest {
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlagged(null, null, null, null, FROM, TO, null, null, 20);
+        verify(queryService).getFlagged(null, null, null, null, FROM, TO, null, null, 20, "desc");
     }
 
     @Test
@@ -367,6 +388,12 @@ class TransactionQueryControllerTest {
     @Test
     void getPassed_minRiskScoreAbove100_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/transactions/passed").param("minRiskScore", "999"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getFlagged_invalidSort_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/transactions/flagged").param("sort", "random"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -399,7 +426,7 @@ class TransactionQueryControllerTest {
         passedAssessment.setAssessedAt(TS.plusSeconds(1));
         passedAssessment.setRuleViolations(List.of());
 
-        when(queryService.getPassed(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getPassed(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(passedAssessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(passedAssessment)).thenReturn(passedDto);
 
@@ -413,18 +440,18 @@ class TransactionQueryControllerTest {
     @Test
     void getPassed_withCursor_passesTimestampAndIdToService() throws Exception {
         String encodedCursor = CursorUtils.encode(TS, ASSESS_ID);
-        when(queryService.getPassed(isNull(), isNull(), isNull(), isNull(), eq(TS), eq(ASSESS_ID), eq(20)))
+        when(queryService.getPassed(isNull(), isNull(), isNull(), isNull(), eq(TS), eq(ASSESS_ID), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/passed").param("cursor", encodedCursor))
                 .andExpect(status().isOk());
 
-        verify(queryService).getPassed(null, null, null, null, TS, ASSESS_ID, 20);
+        verify(queryService).getPassed(null, null, null, null, TS, ASSESS_ID, 20, "desc");
     }
 
     @Test
     void getPassed_withCustomerIdAndDateRange_passesParamsToService() throws Exception {
-        when(queryService.getPassed(eq(CUSTOMER), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20)))
+        when(queryService.getPassed(eq(CUSTOMER), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/transactions/passed")
@@ -433,7 +460,7 @@ class TransactionQueryControllerTest {
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getPassed(CUSTOMER, null, FROM, TO, null, null, 20);
+        verify(queryService).getPassed(CUSTOMER, null, FROM, TO, null, null, 20, "desc");
     }
 
     @Test
@@ -453,7 +480,7 @@ class TransactionQueryControllerTest {
         nearMiss.setAssessedAt(TS.plusSeconds(1));
         nearMiss.setRuleViolations(List.of());
 
-        when(queryService.getPassed(isNull(), eq(30), isNull(), isNull(), isNull(), isNull(), eq(20)))
+        when(queryService.getPassed(isNull(), eq(30), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
                 .thenReturn(new SliceImpl<>(List.of(nearMiss), PageRequest.of(0, 20), false));
         when(mapper.toDto(nearMiss)).thenReturn(nearMissDto);
 
@@ -463,6 +490,6 @@ class TransactionQueryControllerTest {
                 .andExpect(jsonPath("$.data[0].fraudulent").value(false))
                 .andExpect(jsonPath("$.data[0].riskScore").value(35));
 
-        verify(queryService).getPassed(null, 30, null, null, null, null, 20);
+        verify(queryService).getPassed(null, 30, null, null, null, null, 20, "desc");
     }
 }

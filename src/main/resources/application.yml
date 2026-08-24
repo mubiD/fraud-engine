@@ -177,3 +177,15 @@ management:
 server:
   port: 8080
   shutdown: graceful
+
+resilience4j:
+  ratelimiter:
+    instances:
+      api:
+        limit-for-period: 100
+        limit-refresh-period: 10s
+        timeout-duration: 0
+      standalone-submit:
+        limit-for-period: 20
+        limit-refresh-period: 10s
+        timeout-duration: 0

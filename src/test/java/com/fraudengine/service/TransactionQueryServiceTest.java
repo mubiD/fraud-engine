@@ -66,7 +66,7 @@ class TransactionQueryServiceTest {
     @Test
     void getByCustomerId_toBeforeFrom_throwsIllegalArgument() {
         assertThatThrownBy(() ->
-                service.getByCustomerId(CUSTOMER, TO, FROM, null, null, 20))
+                service.getByCustomerId(CUSTOMER, TO, FROM, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("'to'")
                 .hasMessageContaining("'from'");
@@ -75,21 +75,21 @@ class TransactionQueryServiceTest {
     @Test
     void getFlagged_toBeforeFrom_throwsIllegalArgument() {
         assertThatThrownBy(() ->
-                service.getFlagged(null, null, null, null, TO, FROM, null, null, 20))
+                service.getFlagged(null, null, null, null, TO, FROM, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void getPassed_toBeforeFrom_throwsIllegalArgument() {
         assertThatThrownBy(() ->
-                service.getPassed(null, null, TO, FROM, null, null, 20))
+                service.getPassed(null, null, TO, FROM, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void getFlaggedByMerchant_toBeforeFrom_throwsIllegalArgument() {
         assertThatThrownBy(() ->
-                service.getFlaggedByMerchant(MERCHANT, null, null, TO, FROM, null, null, 20))
+                service.getFlaggedByMerchant(MERCHANT, null, null, TO, FROM, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -104,7 +104,7 @@ class TransactionQueryServiceTest {
         when(transactionRepository.findByCustomerInRange(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SliceImpl<>(List.of()));
         // same instant for both — should not throw
-        service.getByCustomerId(CUSTOMER, FROM, FROM, null, null, 20);
+        service.getByCustomerId(CUSTOMER, FROM, FROM, null, null, 20, "desc");
     }
 
     // ── getByCustomerId ──────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ class TransactionQueryServiceTest {
                 eq(CUSTOMER), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any(PageRequest.class)))
                 .thenReturn(expected);
 
-        Slice<Transaction> result = service.getByCustomerId(CUSTOMER, FROM, TO, CURSOR_TS, CURSOR_ID, 10);
+        Slice<Transaction> result = service.getByCustomerId(CUSTOMER, FROM, TO, CURSOR_TS, CURSOR_ID, 10, "desc");
 
         assertThat(result).isSameAs(expected);
         verify(transactionRepository).findByCustomerInRange(
@@ -128,7 +128,7 @@ class TransactionQueryServiceTest {
         when(transactionRepository.findByCustomerInRange(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        service.getByCustomerId(CUSTOMER, null, null, null, null, 0);
+        service.getByCustomerId(CUSTOMER, null, null, null, null, 0, "desc");
 
         verify(transactionRepository).findByCustomerInRange(
                 CUSTOMER, null, null, null, null, PageRequest.of(0, 20));
@@ -181,7 +181,7 @@ class TransactionQueryServiceTest {
                 .thenReturn(expected);
 
         Slice<FraudAssessment> result = service.getFlagged(
-                CUSTOMER, "AmountThresholdRule", 50, 80, FROM, TO, CURSOR_TS, CURSOR_ID, 15);
+                CUSTOMER, "AmountThresholdRule", 50, 80, FROM, TO, CURSOR_TS, CURSOR_ID, 15, "desc");
 
         assertThat(result).isSameAs(expected);
         verify(assessmentRepository).findFlagged(
@@ -193,7 +193,7 @@ class TransactionQueryServiceTest {
         when(assessmentRepository.findFlagged(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SliceImpl<>(List.of()));
 
-        service.getFlagged(null, null, null, null, null, null, null, null, 0);
+        service.getFlagged(null, null, null, null, null, null, null, null, 0, "desc");
 
         verify(assessmentRepository).findFlagged(
                 null, null, null, null, null, null, null, null, PageRequest.of(0, 20));
@@ -205,7 +205,7 @@ class TransactionQueryServiceTest {
         when(ruleManagementService.getRules()).thenReturn(List.of(amountRule));
 
         assertThatThrownBy(() ->
-                service.getFlagged(null, "TypoRule", null, null, null, null, null, null, 20))
+                service.getFlagged(null, "TypoRule", null, null, null, null, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("TypoRule")
                 .hasMessageContaining("AmountThresholdRule");
@@ -218,7 +218,7 @@ class TransactionQueryServiceTest {
         when(ruleManagementService.getRules()).thenReturn(List.of(amountRule, velocityRule));
 
         assertThatThrownBy(() ->
-                service.getFlaggedByMerchant(MERCHANT, "NoSuchRule", null, null, null, null, null, 20))
+                service.getFlaggedByMerchant(MERCHANT, "NoSuchRule", null, null, null, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("NoSuchRule");
     }
@@ -232,7 +232,7 @@ class TransactionQueryServiceTest {
                 eq(CUSTOMER), eq(30), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any(PageRequest.class)))
                 .thenReturn(expected);
 
-        Slice<FraudAssessment> result = service.getPassed(CUSTOMER, 30, FROM, TO, CURSOR_TS, CURSOR_ID, 5);
+        Slice<FraudAssessment> result = service.getPassed(CUSTOMER, 30, FROM, TO, CURSOR_TS, CURSOR_ID, 5, "desc");
 
         assertThat(result).isSameAs(expected);
     }
@@ -249,7 +249,7 @@ class TransactionQueryServiceTest {
                 .thenReturn(expected);
 
         Slice<FraudAssessment> result = service.getFlaggedByMerchant(
-                MERCHANT, "VelocityRule", 60, FROM, TO, CURSOR_TS, CURSOR_ID, 10);
+                MERCHANT, "VelocityRule", 60, FROM, TO, CURSOR_TS, CURSOR_ID, 10, "desc");
 
         assertThat(result).isSameAs(expected);
     }

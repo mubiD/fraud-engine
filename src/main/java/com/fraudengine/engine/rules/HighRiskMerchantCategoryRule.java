@@ -63,12 +63,4 @@ public class HighRiskMerchantCategoryRule implements FraudRule {
     @Override public int getPriority()       { return 8; }
     @Override public boolean isEnabled()     { return properties.getHighRiskCategory().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        RuleProperties.HighRiskCategoryConfig c = properties.getHighRiskCategory();
-        return java.util.Map.of(
-            "highRiskKeywords", c.getHighRiskKeywords(),
-            "mediumRiskKeywords", c.getMediumRiskKeywords()
-        );
-    }
 }

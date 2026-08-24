@@ -67,8 +67,4 @@ public class MultiChannelAnomalyRule implements FraudRule {
     @Override public int getPriority()       { return 10; }
     @Override public boolean isEnabled()     { return properties.getMultiChannel().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        return java.util.Map.of("windowMinutes", properties.getMultiChannel().getWindowMinutes());
-    }
 }

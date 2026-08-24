@@ -16,9 +16,13 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fraudengine.api.cursor.CursorUtils;
 import com.fraudengine.exception.ResourceNotFoundException;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import org.springframework.data.domain.Slice;
+import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,8 +31,9 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/transactions")
+@RequestMapping(value = "/api/v1/transactions", produces = MediaType.APPLICATION_JSON_VALUE)
 @Validated
+@RateLimiter(name = "api")
 @Tag(name = "Transactions", description = "Query transactions and their fraud assessments")
 public class TransactionQueryController {
 
@@ -50,7 +55,7 @@ public class TransactionQueryController {
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<TransactionSummaryDto> getByCustomerId(
             @Parameter(description = "Customer identifier", required = true)
-            @RequestParam String customerId,
+            @RequestParam @NotBlank String customerId,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
             @RequestParam(required = false) String from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
@@ -58,7 +63,9 @@ public class TransactionQueryController {
             @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
-            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
 
         Instant fromInstant = from != null ? Instant.parse(from) : null;
         Instant toInstant   = to   != null ? Instant.parse(to)   : null;
@@ -68,7 +75,7 @@ public class TransactionQueryController {
                 customerId, fromInstant, toInstant,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize);
+                pageSize, sort);
 
         List<TransactionSummaryDto> data = slice.getContent().stream()
                 .map(mapper::toSummaryDto)
@@ -143,7 +150,9 @@ public class TransactionQueryController {
             @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
-            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
 
         Instant fromInstant = from != null ? Instant.parse(from) : null;
         Instant toInstant   = to   != null ? Instant.parse(to)   : null;
@@ -153,7 +162,7 @@ public class TransactionQueryController {
                 customerId, ruleViolated, minRiskScore, maxRiskScore, fromInstant, toInstant,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize);
+                pageSize, sort);
 
         return toAssessmentPage(slice);
     }
@@ -178,7 +187,9 @@ public class TransactionQueryController {
             @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
-            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
 
         Instant fromInstant = from != null ? Instant.parse(from) : null;
         Instant toInstant   = to   != null ? Instant.parse(to)   : null;
@@ -188,7 +199,7 @@ public class TransactionQueryController {
                 customerId, minRiskScore, fromInstant, toInstant,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize);
+                pageSize, sort);
 
         return toAssessmentPage(slice);
     }

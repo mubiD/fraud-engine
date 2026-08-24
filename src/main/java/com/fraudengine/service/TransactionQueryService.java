@@ -57,9 +57,14 @@ public class TransactionQueryService {
 
     @Transactional(readOnly = true)
     public Slice<Transaction> getByCustomerId(String customerId, Instant from, Instant to,
-                                              Instant cursorTimestamp, UUID cursorId, int pageSize) {
+                                              Instant cursorTimestamp, UUID cursorId, int pageSize,
+                                              String sort) {
         validateDateRange(from, to);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
+        if ("asc".equals(sort)) {
+            return transactionRepository.findByCustomerInRangeAsc(customerId, from, to, cursorTimestamp, cursorId,
+                    PageRequest.of(0, size));
+        }
         return transactionRepository.findByCustomerInRange(customerId, from, to, cursorTimestamp, cursorId,
                 PageRequest.of(0, size));
     }
@@ -78,10 +83,15 @@ public class TransactionQueryService {
     public Slice<FraudAssessment> getFlagged(String customerId, String ruleViolated,
                                              Integer minRiskScore, Integer maxRiskScore,
                                              Instant from, Instant to,
-                                             Instant cursorTimestamp, UUID cursorId, int pageSize) {
+                                             Instant cursorTimestamp, UUID cursorId, int pageSize,
+                                             String sort) {
         validateDateRange(from, to);
         validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
+        if ("asc".equals(sort)) {
+            return assessmentRepository.findFlaggedAsc(customerId, ruleViolated, minRiskScore, maxRiskScore,
+                    from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+        }
         return assessmentRepository.findFlagged(customerId, ruleViolated, minRiskScore, maxRiskScore,
                 from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
     }
@@ -89,9 +99,14 @@ public class TransactionQueryService {
     @Transactional(readOnly = true)
     public Slice<FraudAssessment> getPassed(String customerId, Integer minRiskScore,
                                             Instant from, Instant to,
-                                            Instant cursorTimestamp, UUID cursorId, int pageSize) {
+                                            Instant cursorTimestamp, UUID cursorId, int pageSize,
+                                            String sort) {
         validateDateRange(from, to);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
+        if ("asc".equals(sort)) {
+            return assessmentRepository.findPassedAsc(customerId, minRiskScore, from, to, cursorTimestamp, cursorId,
+                    PageRequest.of(0, size));
+        }
         return assessmentRepository.findPassed(customerId, minRiskScore, from, to, cursorTimestamp, cursorId,
                 PageRequest.of(0, size));
     }
@@ -100,10 +115,15 @@ public class TransactionQueryService {
     public Slice<FraudAssessment> getFlaggedByMerchant(String merchantId, String ruleViolated,
                                                         Integer minRiskScore,
                                                         Instant from, Instant to,
-                                                        Instant cursorTimestamp, UUID cursorId, int pageSize) {
+                                                        Instant cursorTimestamp, UUID cursorId, int pageSize,
+                                                        String sort) {
         validateDateRange(from, to);
         validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
+        if ("asc".equals(sort)) {
+            return assessmentRepository.findFlaggedByMerchantAsc(merchantId, ruleViolated, minRiskScore,
+                    from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+        }
         return assessmentRepository.findFlaggedByMerchant(merchantId, ruleViolated, minRiskScore,
                 from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
     }

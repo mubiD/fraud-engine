@@ -60,6 +60,24 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
                                              Pageable pageable);
 
     @Query("""
+            SELECT t FROM Transaction t
+            LEFT JOIN FETCH t.assessment a
+            WHERE t.customerId = :customerId
+              AND (:cursorTimestamp IS NULL
+                   OR t.timestamp > :cursorTimestamp
+                   OR (t.timestamp = :cursorTimestamp AND t.id > :cursorId))
+              AND (:from IS NULL OR t.timestamp >= :from)
+              AND (:to IS NULL OR t.timestamp <= :to)
+            ORDER BY t.timestamp ASC, t.id ASC
+            """)
+    Slice<Transaction> findByCustomerInRangeAsc(@Param("customerId") String customerId,
+                                                @Param("from") Instant from,
+                                                @Param("to") Instant to,
+                                                @Param("cursorTimestamp") Instant cursorTimestamp,
+                                                @Param("cursorId") UUID cursorId,
+                                                Pageable pageable);
+
+    @Query("""
             SELECT COALESCE(SUM(t.amount), 0)
             FROM Transaction t
             WHERE t.customerId = :customerId

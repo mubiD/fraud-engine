@@ -26,7 +26,6 @@ public interface TransactionMapper {
     @Mapping(target = "ruleVersion", expression = "java(rule.getRuleVersion())")
     @Mapping(target = "priority", expression = "java(rule.getPriority())")
     @Mapping(target = "enabled", expression = "java(rule.isEnabled())")
-    @Mapping(target = "config", expression = "java(rule.getConfig())")
     RuleDto toDto(FraudRule rule);
 
     @Mapping(target = "transactionId", source = "id")

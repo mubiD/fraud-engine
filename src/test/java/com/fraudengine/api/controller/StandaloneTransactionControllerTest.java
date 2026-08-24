@@ -20,8 +20,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -94,6 +98,79 @@ class StandaloneTransactionControllerTest {
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.detail").value(
                         "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present."));
+    }
+
+    @Test
+    void submit_lowercaseCurrency_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "zar"
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_latitudeOutOfRange_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR",
+                              "latitude": -9999.0,
+                              "longitude": 18.4241
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_longitudeOutOfRange_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR",
+                              "latitude": -33.9249,
+                              "longitude": 500.0
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_duplicateTransactionId_returnsExistingAssessmentWithoutReprocessing() throws Exception {
+        UUID existingId = UUID.randomUUID();
+
+        when(transactionRepository.findByIdOnly(existingId)).thenReturn(Optional.of(savedTx));
+        when(fraudAssessmentRepository.findByTransactionId(existingId)).thenReturn(Optional.of(passedAssessment));
+        when(mapper.toDto(passedAssessment)).thenReturn(new com.fraudengine.api.dto.FraudAssessmentDto());
+
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "transactionId": "%s",
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR"
+                            }
+                            """.formatted(existingId)))
+                .andExpect(status().isOk());
+
+        verify(ruleEngine, never()).evaluate(any());
     }
 
     // ── POST /api/v1/standalone/stream ──────────────────────────────────────

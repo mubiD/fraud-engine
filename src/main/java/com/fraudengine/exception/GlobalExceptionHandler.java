@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.time.format.DateTimeParseException;
@@ -64,6 +67,16 @@ public class GlobalExceptionHandler {
         log.warn("Type mismatch for parameter '{}': value='{}'", ex.getName(), ex.getValue());
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
                 "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName() + "'");
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ResponseEntity<ProblemDetail> handleRateLimit(RequestNotPermitted ex) {
+        log.warn("Rate limit exceeded: {}", ex.getMessage());
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS, "Too many requests — please retry after a moment.");
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Retry-After", "10");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).headers(headers).body(detail);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

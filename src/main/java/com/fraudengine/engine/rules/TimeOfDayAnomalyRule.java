@@ -57,9 +57,4 @@ public class TimeOfDayAnomalyRule implements FraudRule {
     @Override public int getPriority()       { return 7; }
     @Override public boolean isEnabled()     { return properties.getTimeOfDay().isEnabled(); }
 
-    @Override
-    public java.util.Map<String, Object> getConfig() {
-        RuleProperties.TimeOfDayConfig c = properties.getTimeOfDay();
-        return java.util.Map.of("offHoursStartHour", c.getOffHoursStartHour(), "offHoursEndHour", c.getOffHoursEndHour());
-    }
 }

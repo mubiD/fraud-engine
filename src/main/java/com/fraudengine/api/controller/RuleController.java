@@ -2,11 +2,13 @@ package com.fraudengine.api.controller;
 
 import com.fraudengine.api.dto.DataResponse;
 import com.fraudengine.api.dto.RuleDto;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.service.RuleManagementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,7 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/rules")
+@RequestMapping(value = "/api/v1/rules", produces = MediaType.APPLICATION_JSON_VALUE)
+@RateLimiter(name = "api")
 @Tag(name = "Rules", description = "Inspect the active fraud rule configuration")
 public class RuleController {
 

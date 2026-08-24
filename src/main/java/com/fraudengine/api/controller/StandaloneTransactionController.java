@@ -13,11 +13,15 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.context.annotation.Profile;
@@ -30,9 +34,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.http.MediaType;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -49,7 +57,7 @@ import java.util.concurrent.ThreadLocalRandom;
  *   local      — real PostgreSQL + Kafka (docker-compose), JSON wire format.
  */
 @RestController
-@RequestMapping("/api/v1/standalone")
+@RequestMapping(value = "/api/v1/standalone", produces = MediaType.APPLICATION_JSON_VALUE)
 @Profile("standalone | local")
 @Validated
 @Tag(
@@ -78,7 +86,8 @@ public class StandaloneTransactionController {
         this.mapper = mapper;
     }
 
-    @PostMapping("/submit")
+    @PostMapping(value = "/submit", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RateLimiter(name = "standalone-submit")
     @Transactional
     @Operation(
         summary = "Submit a transaction for fraud assessment (standalone demo)",
@@ -86,12 +95,28 @@ public class StandaloneTransactionController {
             STUB: Persists the transaction, runs it through the fraud rule engine, and returns the assessment.
             In production this path is replaced by the Kafka consumer pipeline
             (TransactionConsumer → RuleEngine → AssessmentProducer).
+
+            Idempotency: supply a `transactionId` UUID in the request body. If a transaction with that ID
+            has already been processed, the existing assessment is returned immediately without re-evaluation.
+            Omit `transactionId` to let the server assign one (no idempotency guarantee).
             """
     )
     @ApiResponse(responseCode = "200", description = "Assessment completed")
     @ApiResponse(responseCode = "400", description = "Invalid request body")
     public ResponseEntity<FraudAssessmentDto> submit(@RequestBody @Valid TransactionRequest request) {
+        if (request.transactionId() != null) {
+            Optional<Transaction> existing = transactionRepository.findByIdOnly(request.transactionId());
+            if (existing.isPresent()) {
+                FraudAssessment existingAssessment = fraudAssessmentRepository
+                        .findByTransactionId(request.transactionId())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Transaction " + request.transactionId() + " exists but has no assessment"));
+                return ResponseEntity.ok(mapper.toDto(existingAssessment));
+            }
+        }
+
         Transaction tx = Transaction.builder()
+                .id(request.transactionId())
                 .customerId(request.customerId())
                 .merchantId(request.merchantId())
                 .amount(request.amount())
@@ -201,6 +226,10 @@ public class StandaloneTransactionController {
     @Schema(description = "Transaction to submit for fraud assessment")
     record TransactionRequest(
 
+        @Schema(description = "Idempotency key — if provided and already processed, the existing assessment is returned without reprocessing",
+                example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        UUID transactionId,
+
         @Schema(description = "Customer identifier", example = "CUST-001")
         @NotBlank String customerId,
 
@@ -213,7 +242,7 @@ public class StandaloneTransactionController {
         @NotNull @Positive BigDecimal amount,
 
         @Schema(description = "ISO 4217 currency code", example = "ZAR")
-        @NotBlank @Size(min = 3, max = 3) String currency,
+        @NotBlank @Size(min = 3, max = 3) @Pattern(regexp = "[A-Z]{3}", message = "must be a 3-letter uppercase ISO 4217 currency code") String currency,
 
         @Schema(description = "Merchant category", example = "RETAIL")
         String category,
@@ -225,9 +254,11 @@ public class StandaloneTransactionController {
         String location,
 
         @Schema(description = "Latitude", example = "-33.9249")
+        @DecimalMin("-90.0") @DecimalMax("90.0")
         Double latitude,
 
         @Schema(description = "Longitude", example = "18.4241")
+        @DecimalMin("-180.0") @DecimalMax("180.0")
         Double longitude,
 
         @Schema(description = "Device fingerprint (e.g. hashed user-agent + IP). "
