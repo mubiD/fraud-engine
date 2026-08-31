@@ -11,9 +11,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Scores transactions based on the risk tier of the merchant category.
- * HIGH tier (crypto exchanges, money transfers) contributes 50 pts — enough
- * to trigger a fraud verdict alone. MEDIUM tier (gambling, payday loans)
- * contributes 25 pts as an additive signal alongside other rules.
+ * HIGH tier (crypto exchanges, money transfers) is calibrated as standalone-
+ * sufficient evidence of fraud. MEDIUM tier (gambling, payday loans) is
+ * calibrated as weak evidence that needs a corroborating signal from another
+ * rule to cross the fraud threshold — see RuleEngine/ScoringProperties.
  */
 @Component
 @Order(8)

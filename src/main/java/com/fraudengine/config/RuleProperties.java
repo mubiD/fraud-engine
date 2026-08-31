@@ -51,23 +51,29 @@ public class RuleProperties {
     public CumulativeSpendingConfig getCumulativeSpending() { return cumulativeSpending; }
     public void setCumulativeSpending(CumulativeSpendingConfig v) { this.cumulativeSpending = v; }
 
+    // Every config below whose window is measured against EvaluationContextBuilder's
+    // recentCustomerTransactions list (i.e. bounded by contextLookbackMinutes) must be
+    // listed here. Missing an entry means that rule silently under-counts once its
+    // window is configured wider than the lookback, with no startup error to catch it —
+    // add new rules' window fields to this map, not as a one-off if-check.
     @PostConstruct
     public void validate() {
-        if (velocity.getWindowMinutes() > contextLookbackMinutes) {
-            throw new IllegalStateException(String.format(
-                    "fraud.rules.velocity.window-minutes (%d) exceeds context-lookback-minutes (%d)",
-                    velocity.getWindowMinutes(), contextLookbackMinutes));
-        }
-        if (geographic.getWindowMinutes() > contextLookbackMinutes) {
-            throw new IllegalStateException(String.format(
-                    "fraud.rules.geographic.window-minutes (%d) exceeds context-lookback-minutes (%d)",
-                    geographic.getWindowMinutes(), contextLookbackMinutes));
-        }
-        if (cardCloning.getWindowMinutes() > contextLookbackMinutes) {
-            throw new IllegalStateException(String.format(
-                    "fraud.rules.card-cloning.window-minutes (%d) exceeds context-lookback-minutes (%d)",
-                    cardCloning.getWindowMinutes(), contextLookbackMinutes));
-        }
+        Map<String, Integer> windowMinutesByRule = Map.of(
+                "velocity", velocity.getWindowMinutes(),
+                "geographic", geographic.getWindowMinutes(),
+                "card-cloning", cardCloning.getWindowMinutes(),
+                "device-fingerprint", deviceFingerprint.getWindowMinutes(),
+                "multi-channel", multiChannel.getWindowMinutes(),
+                "cross-merchant-velocity", crossMerchantVelocity.getWindowMinutes(),
+                "cumulative-spending.hourly-window", cumulativeSpending.getHourlyWindowMinutes());
+
+        windowMinutesByRule.forEach((name, minutes) -> {
+            if (minutes > contextLookbackMinutes) {
+                throw new IllegalStateException(String.format(
+                        "fraud.rules.%s.window-minutes (%d) exceeds context-lookback-minutes (%d)",
+                        name, minutes, contextLookbackMinutes));
+            }
+        });
     }
 
     public static class AmountThresholdConfig {

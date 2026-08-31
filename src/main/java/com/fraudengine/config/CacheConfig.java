@@ -17,6 +17,15 @@ public class CacheConfig {
         manager.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(5, TimeUnit.MINUTES)
                 .maximumSize(10_000));
+
+        // Merchant locations are near-static reference data (registered address) —
+        // safe to cache far longer than the blacklist. Registered explicitly since
+        // it needs its own TTL, separate from the default spec above.
+        manager.registerCustomCache("merchantLocations", Caffeine.newBuilder()
+                .expireAfterWrite(60, TimeUnit.MINUTES)
+                .maximumSize(10_000)
+                .build());
+
         return manager;
     }
 }

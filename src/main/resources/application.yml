@@ -47,6 +47,7 @@ spring:
     properties:
       schema.registry.url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
     listener:
+      concurrency: 6
       shutdown-timeout: 30000
 
   cache:

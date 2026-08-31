@@ -1,5 +1,6 @@
 package com.fraudengine.engine;
 
+import com.fraudengine.config.ScoringProperties;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.RuleViolation;
 import com.fraudengine.model.Transaction;
@@ -20,10 +21,13 @@ public class RuleEngine {
 
     private final List<FraudRule> rules;
     private final EvaluationContextBuilder contextBuilder;
+    private final ScoringProperties scoringProperties;
 
-    public RuleEngine(List<FraudRule> rules, EvaluationContextBuilder contextBuilder) {
+    public RuleEngine(List<FraudRule> rules, EvaluationContextBuilder contextBuilder,
+                       ScoringProperties scoringProperties) {
         this.rules = rules;
         this.contextBuilder = contextBuilder;
+        this.scoringProperties = scoringProperties;
     }
 
     public FraudAssessment evaluate(Transaction transaction) {
@@ -46,8 +50,9 @@ public class RuleEngine {
                 log.warn("Rule violated: rule={}, severity={}, detail={}",
                         v.getRuleName(), v.getSeverity(), v.getDescription()));
 
-        int riskScore = calculateRiskScore(violations);
-        boolean isFraudulent = riskScore >= 50;
+        double fraudProbability = calculateFraudProbability(violations);
+        int riskScore = probabilityToRiskScore(fraudProbability);
+        boolean isFraudulent = fraudProbability >= scoringProperties.getFraudProbabilityThreshold();
 
         FraudAssessment assessment = FraudAssessment.builder()
                 .transaction(transaction)
@@ -74,11 +79,37 @@ public class RuleEngine {
         return assessment;
     }
 
-    private int calculateRiskScore(List<RuleResult> violations) {
-        int raw = violations.stream()
-                .mapToInt(v -> v.getSeverity().getScoreWeight())
-                .sum();
-        return Math.min(raw, 100);
+    // Log-odds (naive-Bayes) combination — see ScoringProperties for rationale.
+    // Treats each fired rule as evidence with a calibrated likelihood ratio and
+    // combines them additively in log-space, which is the mathematically correct
+    // way to combine (assumed-independent) probabilistic evidence — as opposed to
+    // summing arbitrary point values, which the likelihood-ratio approach replaces.
+    private double calculateFraudProbability(List<RuleResult> violations) {
+        double prior = scoringProperties.getPriorFraudProbability();
+        double logOdds = Math.log(prior / (1 - prior));
+
+        for (RuleResult violation : violations) {
+            logOdds += Math.log(likelihoodRatioFor(violation));
+        }
+
+        return 1.0 / (1.0 + Math.exp(-logOdds));
+    }
+
+    private double likelihoodRatioFor(RuleResult violation) {
+        String key = violation.getRuleName() + ":" + violation.getSeverity().name();
+        Double ratio = scoringProperties.getLikelihoodRatios().get(key);
+        if (ratio != null) {
+            return ratio;
+        }
+        log.warn("No calibrated likelihood ratio for '{}' — falling back to the {} severity default. "
+                + "Add an explicit entry to fraud.scoring.likelihood-ratios.",
+                key, violation.getSeverity());
+        return scoringProperties.defaultLikelihoodRatioFor(violation.getSeverity());
+    }
+
+    private int probabilityToRiskScore(double probability) {
+        int score = (int) Math.round(probability * 100);
+        return Math.max(0, Math.min(score, 100));
     }
 
     public List<FraudRule> getRules() {

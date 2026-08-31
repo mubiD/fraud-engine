@@ -1,5 +1,6 @@
 package com.fraudengine.engine;
 
+import com.fraudengine.config.ScoringProperties;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
@@ -29,6 +30,10 @@ class RuleEngineTest {
     @Mock private FraudRule violatingRule;
     @Mock private EvaluationContextBuilder contextBuilder;
 
+    // Real instance (not mocked) so these tests exercise the actual scoring
+    // constants/fallbacks in ScoringProperties, not a stand-in for them.
+    private final ScoringProperties scoringProperties = new ScoringProperties();
+
     private EvaluationContext emptyContext;
 
     @BeforeEach
@@ -43,39 +48,69 @@ class RuleEngineTest {
         when(passingRule.getPriority()).thenReturn(1);
         when(passingRule.evaluate(any(), any())).thenReturn(RuleResult.pass("PASSING"));
 
+        // "VIOLATING" has no entry in ScoringProperties.likelihoodRatios, so every
+        // test using it exercises the per-severity fallback path deliberately.
         when(violatingRule.isEnabled()).thenReturn(true);
         when(violatingRule.getPriority()).thenReturn(2);
         when(violatingRule.evaluate(any(), any())).thenReturn(
-                RuleResult.violation("VIOLATING", "1.0", "desc", Severity.HIGH));
+                RuleResult.violation("VIOLATING", "1.0", "desc", Severity.CRITICAL));
     }
 
     @Test
-    void noViolations_notFraudulent_scoreZero() {
-        FraudAssessment result = new RuleEngine(List.of(passingRule), contextBuilder).evaluate(tx());
+    void noViolations_notFraudulent_scoreMatchesPrior() {
+        FraudAssessment result = new RuleEngine(List.of(passingRule), contextBuilder, scoringProperties).evaluate(tx());
         assertThat(result.isFraudulent()).isFalse();
-        assertThat(result.getRiskScore()).isZero();
+        // No evidence fired — the score should sit near the assumed base rate
+        // (ScoringProperties.priorFraudProbability, default 1%), not zero: a
+        // clean transaction isn't proof of innocence, just the absence of signal.
+        assertThat(result.getRiskScore()).isBetween(0, 5);
     }
 
     @Test
-    void highSeverityViolation_fraudulent() {
-        FraudAssessment result = new RuleEngine(List.of(violatingRule), contextBuilder).evaluate(tx());
+    void criticalSeverityViolation_fallsBackToSeverityDefault_isFraudulent() {
+        FraudAssessment result = new RuleEngine(List.of(violatingRule), contextBuilder, scoringProperties).evaluate(tx());
         assertThat(result.isFraudulent()).isTrue();
-        assertThat(result.getRiskScore()).isEqualTo(50);
+        assertThat(result.getRiskScore()).isGreaterThanOrEqualTo(50);
         assertThat(result.getRuleViolations()).hasSize(1);
+    }
+
+    @Test
+    void lowSeverityViolationAlone_notFraudulent() {
+        FraudRule lowRule = mock(FraudRule.class);
+        when(lowRule.isEnabled()).thenReturn(true);
+        when(lowRule.getPriority()).thenReturn(1);
+        when(lowRule.evaluate(any(), any())).thenReturn(
+                RuleResult.violation("SOME_LOW_SEVERITY_RULE", "1.0", "d", Severity.LOW));
+
+        FraudAssessment result = new RuleEngine(List.of(lowRule), contextBuilder, scoringProperties).evaluate(tx());
+        assertThat(result.isFraudulent()).isFalse();
     }
 
     @Test
     void disabledRule_skipped() {
         when(violatingRule.isEnabled()).thenReturn(false);
-        FraudAssessment result = new RuleEngine(List.of(passingRule, violatingRule), contextBuilder).evaluate(tx());
+        FraudAssessment result = new RuleEngine(List.of(passingRule, violatingRule), contextBuilder, scoringProperties).evaluate(tx());
         assertThat(result.isFraudulent()).isFalse();
     }
 
     @Test
-    void riskScoreCappedAt100() {
+    void moreCorroboratingViolations_neverLowersRiskScore() {
         FraudRule c1 = criticalRule(1), c2 = criticalRule(2);
-        FraudAssessment result = new RuleEngine(List.of(c1, c2), contextBuilder).evaluate(tx());
-        assertThat(result.getRiskScore()).isEqualTo(100);
+        int oneViolationScore = new RuleEngine(List.of(c1), contextBuilder, scoringProperties)
+                .evaluate(tx()).getRiskScore();
+        int twoViolationScore = new RuleEngine(List.of(c1, c2), contextBuilder, scoringProperties)
+                .evaluate(tx()).getRiskScore();
+
+        assertThat(twoViolationScore).isGreaterThanOrEqualTo(oneViolationScore);
+        assertThat(twoViolationScore).isLessThanOrEqualTo(100);
+    }
+
+    @Test
+    void riskScoreNeverExceeds100() {
+        List<FraudRule> manyRules = List.of(
+                criticalRule(1), criticalRule(2), criticalRule(3), criticalRule(4));
+        FraudAssessment result = new RuleEngine(manyRules, contextBuilder, scoringProperties).evaluate(tx());
+        assertThat(result.getRiskScore()).isLessThanOrEqualTo(100);
     }
 
     private FraudRule criticalRule(int priority) {

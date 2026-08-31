@@ -176,16 +176,16 @@ Response `200 OK`:
     {
       "transactionId": "550e8400-e29b-41d4-a716-446655440000",
       "customerId": "CUST-001",
-      "merchantId": "MERCH-NIKE-ZA",
-      "amount": "6500.00",
+      "merchantId": "MERCH-FRAUD-003",
+      "amount": "350.00",
       "currency": "ZAR",
       "transactionType": "CARD_PRESENT",
       "status": "ASSESSED",
       "timestamp": "2026-07-23T09:00:00Z",
       "assessment": {
         "fraudulent": true,
-        "riskScore": 50,
-        "violations": [{ "ruleName": "AMOUNT_THRESHOLD", "severity": "HIGH" }]
+        "riskScore": 89,
+        "violations": [{ "ruleName": "BLACKLISTED_MERCHANT", "severity": "CRITICAL" }]
       }
     }
   ],
@@ -467,7 +467,11 @@ Response `200 OK`:
 | `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes — provides an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
 | `CUMULATIVE_SPENDING` | Rolling spend exceeds the hourly limit (default R10,000) or daily limit (default R25,000). Hourly is computed from in-context recent transactions; daily is a pre-aggregated DB query. | HIGH | 12 |
 
-**Risk scoring:** Each violation contributes a weighted score (LOW=10, MEDIUM=25, HIGH=50, CRITICAL=100), capped at 100. A transaction is marked fraudulent when `riskScore ≥ 50`.
+**Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points — each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100), and a transaction is marked fraudulent when the probability crosses `fraud.scoring.fraud-probability-threshold` (default 0.5).
+
+This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would — some rules (`BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be fraudulent on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the threshold. Two transactions that fired only a weak rule each still score well above a clean transaction's baseline — that band is exactly what `/transactions/passed?minRiskScore=N` (the near-miss query above) is for.
+
+The likelihood ratios in `ScoringProperties` are domain-judgment starting points, not values derived from labelled outcome data — this system doesn't yet have a confirmed-fraud / false-positive feedback loop to calibrate against, so treat them as a reasoned first pass rather than ground truth.
 
 ---
 
@@ -685,9 +689,21 @@ fraud:
       hourly-limit: 10000.00
       daily-limit: 25000.00
       hourly-window-minutes: 60
+
+fraud:
+  scoring:
+    prior-fraud-probability: 0.01       # assumed base fraud rate, before any rule evidence
+    fraud-probability-threshold: 0.5    # posterior probability at/above which a transaction is flagged
+    likelihood-ratios:                  # "RULE_NAME:SEVERITY" -> ratio; see ScoringProperties.java
+      "AMOUNT_THRESHOLD:HIGH": 2.0      # example override — Java defaults apply if omitted; note the
+                                         # quoted key — YAML requires quoting a key containing a colon
+    default-likelihood-ratio-low: 1.3
+    default-likelihood-ratio-medium: 3.0
+    default-likelihood-ratio-high: 9.0
+    default-likelihood-ratio-critical: 120.0
 ```
 
-Startup validation: if `velocity.window-minutes`, `geographic.window-minutes`, or `card-cloning.window-minutes` exceeds `context-lookback-minutes`, the app fails to start with an `IllegalStateException`.
+Startup validation: every rule window measured against `recentCustomerTransactions` (currently `velocity`, `geographic`, `card-cloning`, `device-fingerprint`, `multi-channel`, `cross-merchant-velocity`, and `cumulative-spending`'s hourly window) is checked against `context-lookback-minutes` in one exhaustive map (`RuleProperties.validate()`) — if any exceeds it, the app fails to start with an `IllegalStateException` rather than silently under-counting.
 
 ### Environment variables
 
@@ -859,6 +875,8 @@ src/
 │   │   ├── EvaluationContext.java          # Carries pre-fetched context (transactions, blacklist,
 │   │   │                                   # merchant location, daily spend total)
 │   │   ├── EvaluationContextBuilder.java   # All DB queries run here before rule evaluation
+│   │   ├── ReferenceDataCache.java         # Caffeine-cached blacklist + merchant location reads
+│   │   │                                   # (separate bean so @Cacheable isn't bypassed by self-invocation)
 │   │   └── rules/
 │   │       ├── AmountThresholdRule.java    # priority 1  — category-tiered thresholds
 │   │       ├── VelocityRule.java           # priority 2  — with high-risk category boost

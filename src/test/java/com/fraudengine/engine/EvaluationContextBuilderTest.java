@@ -1,12 +1,9 @@
 package com.fraudengine.engine;
 
 import com.fraudengine.config.RuleProperties;
-import com.fraudengine.model.BlacklistedMerchant;
 import com.fraudengine.model.MerchantLocation;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionType;
-import com.fraudengine.repository.BlacklistedMerchantRepository;
-import com.fraudengine.repository.MerchantLocationRepository;
 import com.fraudengine.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +17,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,8 +29,7 @@ import static org.mockito.Mockito.*;
 class EvaluationContextBuilderTest {
 
     @Mock private TransactionRepository transactionRepository;
-    @Mock private BlacklistedMerchantRepository blacklistedMerchantRepository;
-    @Mock private MerchantLocationRepository merchantLocationRepository;
+    @Mock private ReferenceDataCache referenceDataCache;
 
     private RuleProperties properties;
     private EvaluationContextBuilder builder;
@@ -41,10 +38,10 @@ class EvaluationContextBuilderTest {
     void setUp() {
         properties = new RuleProperties();
         properties.setContextLookbackMinutes(60);
-        builder = new EvaluationContextBuilder(
-                transactionRepository, blacklistedMerchantRepository, merchantLocationRepository, properties);
+        builder = new EvaluationContextBuilder(transactionRepository, referenceDataCache, properties);
 
-        when(blacklistedMerchantRepository.findAll()).thenReturn(List.of());
+        when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of());
+        when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
         when(transactionRepository.sumAmountByCustomerSince(any(), any())).thenReturn(BigDecimal.ZERO);
     }
 
@@ -76,12 +73,8 @@ class EvaluationContextBuilderTest {
     }
 
     @Test
-    void blacklistedMerchantIds_populatedFromRepository() {
-        BlacklistedMerchant bm1 = new BlacklistedMerchant();
-        bm1.setMerchantId("BAD_M1");
-        BlacklistedMerchant bm2 = new BlacklistedMerchant();
-        bm2.setMerchantId("BAD_M2");
-        when(blacklistedMerchantRepository.findAll()).thenReturn(List.of(bm1, bm2));
+    void blacklistedMerchantIds_populatedFromCache() {
+        when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of("BAD_M1", "BAD_M2"));
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
 
         Transaction tx = tx("C", "M", null, TransactionType.CARD_NOT_PRESENT);
@@ -115,7 +108,7 @@ class EvaluationContextBuilderTest {
         loc.setMerchantId("M_GEO");
         loc.setLatitude(-33.9249);
         loc.setLongitude(18.4241);
-        when(merchantLocationRepository.findById("M_GEO")).thenReturn(Optional.of(loc));
+        when(referenceDataCache.getMerchantLocation("M_GEO")).thenReturn(Optional.of(loc));
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
 
         EvaluationContext ctx = builder.build(tx);
@@ -132,7 +125,7 @@ class EvaluationContextBuilderTest {
         loc.setMerchantId("M_GEO");
         loc.setLatitude(51.5074);
         loc.setLongitude(-0.1278);
-        when(merchantLocationRepository.findById("M_GEO")).thenReturn(Optional.of(loc));
+        when(referenceDataCache.getMerchantLocation("M_GEO")).thenReturn(Optional.of(loc));
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
 
         EvaluationContext ctx = builder.build(tx);
@@ -147,7 +140,7 @@ class EvaluationContextBuilderTest {
 
         EvaluationContext ctx = builder.build(tx);
 
-        verify(merchantLocationRepository, never()).findById(any());
+        verify(referenceDataCache, never()).getMerchantLocation(any());
         assertThat(ctx.getMerchantLatitude()).isNull();
         assertThat(ctx.getMerchantLongitude()).isNull();
     }
@@ -165,7 +158,7 @@ class EvaluationContextBuilderTest {
 
         EvaluationContext ctx = builder.build(tx);
 
-        verify(merchantLocationRepository, never()).findById(any());
+        verify(referenceDataCache, never()).getMerchantLocation(any());
         // coords come from the transaction, not the context (context only holds fallback coords)
         assertThat(ctx.getMerchantLatitude()).isNull();
         assertThat(ctx.getMerchantLongitude()).isNull();
@@ -174,7 +167,7 @@ class EvaluationContextBuilderTest {
     @Test
     void merchantLocationAbsent_coordinatesRemainsNull() {
         Transaction tx = tx("C", "UNKNOWN_MERCHANT", null, TransactionType.CARD_PRESENT);
-        when(merchantLocationRepository.findById("UNKNOWN_MERCHANT")).thenReturn(Optional.empty());
+        when(referenceDataCache.getMerchantLocation("UNKNOWN_MERCHANT")).thenReturn(Optional.empty());
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
 
         EvaluationContext ctx = builder.build(tx);

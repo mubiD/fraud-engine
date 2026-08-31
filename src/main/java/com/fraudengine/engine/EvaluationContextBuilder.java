@@ -1,16 +1,12 @@
 package com.fraudengine.engine;
 
 import com.fraudengine.config.RuleProperties;
-import com.fraudengine.model.BlacklistedMerchant;
 import com.fraudengine.model.MerchantLocation;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionType;
-import com.fraudengine.repository.BlacklistedMerchantRepository;
-import com.fraudengine.repository.MerchantLocationRepository;
 import com.fraudengine.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -25,17 +21,14 @@ public class EvaluationContextBuilder {
     private static final Logger log = LoggerFactory.getLogger(EvaluationContextBuilder.class);
 
     private final TransactionRepository transactionRepository;
-    private final BlacklistedMerchantRepository blacklistedMerchantRepository;
-    private final MerchantLocationRepository merchantLocationRepository;
+    private final ReferenceDataCache referenceDataCache;
     private final RuleProperties properties;
 
     public EvaluationContextBuilder(TransactionRepository transactionRepository,
-                                    BlacklistedMerchantRepository blacklistedMerchantRepository,
-                                    MerchantLocationRepository merchantLocationRepository,
+                                    ReferenceDataCache referenceDataCache,
                                     RuleProperties properties) {
         this.transactionRepository = transactionRepository;
-        this.blacklistedMerchantRepository = blacklistedMerchantRepository;
-        this.merchantLocationRepository = merchantLocationRepository;
+        this.referenceDataCache = referenceDataCache;
         this.properties = properties;
     }
 
@@ -49,7 +42,7 @@ public class EvaluationContextBuilder {
                 .filter(t -> !t.getId().equals(transaction.getId()))
                 .collect(Collectors.toList());
 
-        Set<String> blacklisted = getBlacklistedMerchantIds();
+        Set<String> blacklisted = referenceDataCache.getBlacklistedMerchantIds();
 
         // For physical-channel transactions with no coordinates, fall back to the
         // merchant's registered location so the geographic rule can still fire.
@@ -59,8 +52,8 @@ public class EvaluationContextBuilder {
         Double merchantLon = null;
         if (transaction.getLatitude() == null
                 && transaction.getTransactionType() != TransactionType.CARD_NOT_PRESENT) {
-            MerchantLocation loc = merchantLocationRepository
-                    .findById(transaction.getMerchantId()).orElse(null);
+            MerchantLocation loc = referenceDataCache
+                    .getMerchantLocation(transaction.getMerchantId()).orElse(null);
             if (loc != null) {
                 merchantLat = loc.getLatitude();
                 merchantLon = loc.getLongitude();
@@ -83,12 +76,5 @@ public class EvaluationContextBuilder {
                 .merchantLongitude(merchantLon)
                 .dailySpendTotal(dailySpend)
                 .build();
-    }
-
-    @Cacheable("blacklistedMerchants")
-    public Set<String> getBlacklistedMerchantIds() {
-        return blacklistedMerchantRepository.findAll().stream()
-                .map(BlacklistedMerchant::getMerchantId)
-                .collect(Collectors.toSet());
     }
 }
