@@ -7,6 +7,7 @@ import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.config.SecurityConfig;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.service.TransactionQueryService;
@@ -72,7 +73,7 @@ class MerchantControllerTest {
 
         assessment = FraudAssessment.builder()
                 .transaction(tx)
-                .fraudulent(true)
+                .disposition(Disposition.FLAGGED)
                 .riskScore(50)
                 .build();
         assessment.setId(ASSESS_ID);
@@ -82,7 +83,7 @@ class MerchantControllerTest {
         assessmentDto = new FraudAssessmentDto();
         assessmentDto.setAssessmentId(ASSESS_ID);
         assessmentDto.setTransactionId(TX_ID);
-        assessmentDto.setFraudulent(true);
+        assessmentDto.setDisposition("FLAGGED");
         assessmentDto.setRiskScore(50);
         assessmentDto.setAssessedAt(TS.plusSeconds(1));
         assessmentDto.setViolations(List.of());
@@ -97,7 +98,7 @@ class MerchantControllerTest {
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
-                .andExpect(jsonPath("$.data[0].fraudulent").value(true))
+                .andExpect(jsonPath("$.data[0].disposition").value("FLAGGED"))
                 .andExpect(jsonPath("$.data[0].riskScore").value(50))
                 .andExpect(jsonPath("$.hasMore").value(false));
     }

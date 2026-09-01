@@ -23,6 +23,7 @@ public class RuleProperties {
     private MultiChannelConfig multiChannel = new MultiChannelConfig();
     private CrossMerchantVelocityConfig crossMerchantVelocity = new CrossMerchantVelocityConfig();
     private CumulativeSpendingConfig cumulativeSpending = new CumulativeSpendingConfig();
+    private CustomerAmountAnomalyConfig customerAmountAnomaly = new CustomerAmountAnomalyConfig();
 
     public int getContextLookbackMinutes() { return contextLookbackMinutes; }
     public void setContextLookbackMinutes(int v) { this.contextLookbackMinutes = v; }
@@ -50,12 +51,19 @@ public class RuleProperties {
     public void setCrossMerchantVelocity(CrossMerchantVelocityConfig v) { this.crossMerchantVelocity = v; }
     public CumulativeSpendingConfig getCumulativeSpending() { return cumulativeSpending; }
     public void setCumulativeSpending(CumulativeSpendingConfig v) { this.cumulativeSpending = v; }
+    public CustomerAmountAnomalyConfig getCustomerAmountAnomaly() { return customerAmountAnomaly; }
+    public void setCustomerAmountAnomaly(CustomerAmountAnomalyConfig v) { this.customerAmountAnomaly = v; }
 
     // Every config below whose window is measured against EvaluationContextBuilder's
     // recentCustomerTransactions list (i.e. bounded by contextLookbackMinutes) must be
     // listed here. Missing an entry means that rule silently under-counts once its
     // window is configured wider than the lookback, with no startup error to catch it —
     // add new rules' window fields to this map, not as a one-off if-check.
+    //
+    // customerAmountAnomaly.lookbackDays is deliberately NOT in this map: it's measured
+    // in days (not minutes) against a separate, independently-fetched
+    // customerBaselineTransactions list, not recentCustomerTransactions — there's no
+    // contextLookbackMinutes relationship to cross-check.
     @PostConstruct
     public void validate() {
         Map<String, Integer> windowMinutesByRule = Map.of(
@@ -202,6 +210,21 @@ public class RuleProperties {
         public void setDailyLimit(BigDecimal v) { this.dailyLimit = v; }
         public int getHourlyWindowMinutes() { return hourlyWindowMinutes; }
         public void setHourlyWindowMinutes(int v) { this.hourlyWindowMinutes = v; }
+    }
+
+    public static class CustomerAmountAnomalyConfig {
+        private boolean enabled = true;
+        private int lookbackDays = 90;
+        private int minHistoryCount = 5;
+        private double stddevMultiplier = 3.0;
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean v) { this.enabled = v; }
+        public int getLookbackDays() { return lookbackDays; }
+        public void setLookbackDays(int v) { this.lookbackDays = v; }
+        public int getMinHistoryCount() { return minHistoryCount; }
+        public void setMinHistoryCount(int v) { this.minHistoryCount = v; }
+        public double getStddevMultiplier() { return stddevMultiplier; }
+        public void setStddevMultiplier(double v) { this.stddevMultiplier = v; }
     }
 
     public static class HighRiskCategoryConfig {

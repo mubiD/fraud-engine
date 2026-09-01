@@ -3,6 +3,7 @@ package com.fraudengine.engine;
 import com.fraudengine.config.ScoringProperties;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.Severity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -57,9 +59,9 @@ class RuleEngineTest {
     }
 
     @Test
-    void noViolations_notFraudulent_scoreMatchesPrior() {
+    void noViolations_cleared_scoreMatchesPrior() {
         FraudAssessment result = new RuleEngine(List.of(passingRule), contextBuilder, scoringProperties).evaluate(tx());
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
         // No evidence fired — the score should sit near the assumed base rate
         // (ScoringProperties.priorFraudProbability, default 1%), not zero: a
         // clean transaction isn't proof of innocence, just the absence of signal.
@@ -67,15 +69,15 @@ class RuleEngineTest {
     }
 
     @Test
-    void criticalSeverityViolation_fallsBackToSeverityDefault_isFraudulent() {
+    void criticalSeverityViolation_fallsBackToSeverityDefault_isFlagged() {
         FraudAssessment result = new RuleEngine(List.of(violatingRule), contextBuilder, scoringProperties).evaluate(tx());
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
         assertThat(result.getRiskScore()).isGreaterThanOrEqualTo(50);
         assertThat(result.getRuleViolations()).hasSize(1);
     }
 
     @Test
-    void lowSeverityViolationAlone_notFraudulent() {
+    void lowSeverityViolationAlone_cleared() {
         FraudRule lowRule = mock(FraudRule.class);
         when(lowRule.isEnabled()).thenReturn(true);
         when(lowRule.getPriority()).thenReturn(1);
@@ -83,14 +85,33 @@ class RuleEngineTest {
                 RuleResult.violation("SOME_LOW_SEVERITY_RULE", "1.0", "d", Severity.LOW));
 
         FraudAssessment result = new RuleEngine(List.of(lowRule), contextBuilder, scoringProperties).evaluate(tx());
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test
-    void disabledRule_skipped() {
+    void threeWeakViolations_combinedCrossesReviewThreshold_pendingReview() {
+        // Three independent MEDIUM-fallback violations (ratio 3.0 each) combine to
+        // ~21% posterior probability — above reviewProbabilityThreshold (10%) but
+        // well below fraudProbabilityThreshold (50%). Mirrors the effectiveness
+        // suite's "combined weak signals" scenarios at the RuleEngine level.
+        FraudRule m1 = mediumRule(1), m2 = mediumRule(2), m3 = mediumRule(3);
+        FraudAssessment result = new RuleEngine(List.of(m1, m2, m3), contextBuilder, scoringProperties).evaluate(tx());
+        assertThat(result.getDisposition()).isEqualTo(Disposition.PENDING_REVIEW);
+    }
+
+    @Test
+    void disabledRule_skipped_cleared() {
         when(violatingRule.isEnabled()).thenReturn(false);
         FraudAssessment result = new RuleEngine(List.of(passingRule, violatingRule), contextBuilder, scoringProperties).evaluate(tx());
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
+    }
+
+    @Test
+    void scoringProperties_reviewThresholdNotBelowFraudThreshold_throws() {
+        ScoringProperties props = new ScoringProperties();
+        props.setReviewProbabilityThreshold(0.6);
+        props.setFraudProbabilityThreshold(0.5);
+        assertThatThrownBy(props::validate).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -118,6 +139,14 @@ class RuleEngineTest {
         when(r.isEnabled()).thenReturn(true);
         when(r.getPriority()).thenReturn(priority);
         when(r.evaluate(any(), any())).thenReturn(RuleResult.violation("R" + priority, "1.0", "d", Severity.CRITICAL));
+        return r;
+    }
+
+    private FraudRule mediumRule(int priority) {
+        FraudRule r = mock(FraudRule.class);
+        when(r.isEnabled()).thenReturn(true);
+        when(r.getPriority()).thenReturn(priority);
+        when(r.evaluate(any(), any())).thenReturn(RuleResult.violation("M" + priority, "1.0", "d", Severity.MEDIUM));
         return r;
     }
 

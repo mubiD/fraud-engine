@@ -1,6 +1,7 @@
 package com.fraudengine.config;
 
 import com.fraudengine.model.enums.Severity;
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.HashMap;
@@ -30,8 +31,17 @@ public class ScoringProperties {
     // Assumed base rate of fraud across all transactions, before any rule evidence.
     private double priorFraudProbability = 0.01;
 
-    // Posterior probability at or above which a transaction is marked fraudulent.
+    // Posterior probability at or above which a transaction is marked FLAGGED.
     private double fraudProbabilityThreshold = 0.5;
+
+    // Posterior probability at or above which a transaction is marked PENDING_REVIEW
+    // instead of CLEARED (but below fraudProbabilityThreshold, which takes precedence).
+    // Default 0.10 is chosen from the effectiveness suite's own measured behavior: a
+    // single weak signal alone scores ~0.02-0.06, two corroborating weak signals
+    // combined score ~0.15 — this sits between them, so isolated weak signals stay
+    // CLEARED but corroborated combinations move to PENDING_REVIEW instead of being
+    // silently treated the same as a clean transaction.
+    private double reviewProbabilityThreshold = 0.10;
 
     // Fallback likelihood ratios used when a fired (ruleName:severity) combination
     // has no specific entry below — keeps scoring functional (rather than throwing)
@@ -80,6 +90,13 @@ public class ScoringProperties {
         m.put("CROSS_MERCHANT_VELOCITY:MEDIUM", 3.0);
 
         m.put("CUMULATIVE_SPENDING:HIGH", 140.0);
+
+        // Weak alone, like AMOUNT_THRESHOLD, but a more specific signal — this fires on
+        // deviation from the customer's OWN history, not a global size cutoff, so it's
+        // valued slightly above the generic weak-alone cluster. Still a domain-judgment
+        // starting point: no confirmed-fraud/false-positive data exists yet to calibrate
+        // against (see the outcome-recording endpoint this is meant to eventually use).
+        m.put("CUSTOMER_AMOUNT_ANOMALY:MEDIUM", 5.0);
         return m;
     }
 
@@ -87,6 +104,18 @@ public class ScoringProperties {
     public void setPriorFraudProbability(double v) { this.priorFraudProbability = v; }
     public double getFraudProbabilityThreshold() { return fraudProbabilityThreshold; }
     public void setFraudProbabilityThreshold(double v) { this.fraudProbabilityThreshold = v; }
+    public double getReviewProbabilityThreshold() { return reviewProbabilityThreshold; }
+    public void setReviewProbabilityThreshold(double v) { this.reviewProbabilityThreshold = v; }
+
+    @PostConstruct
+    public void validate() {
+        if (reviewProbabilityThreshold >= fraudProbabilityThreshold) {
+            throw new IllegalStateException(String.format(
+                    "fraud.scoring.review-probability-threshold (%s) must be less than "
+                    + "fraud.scoring.fraud-probability-threshold (%s)",
+                    reviewProbabilityThreshold, fraudProbabilityThreshold));
+        }
+    }
     public double getDefaultLikelihoodRatioLow() { return defaultLikelihoodRatioLow; }
     public void setDefaultLikelihoodRatioLow(double v) { this.defaultLikelihoodRatioLow = v; }
     public double getDefaultLikelihoodRatioMedium() { return defaultLikelihoodRatioMedium; }

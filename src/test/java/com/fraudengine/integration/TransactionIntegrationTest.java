@@ -2,6 +2,7 @@ package com.fraudengine.integration;
 
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.proto.TransactionEventProto;
 import com.fraudengine.repository.FraudAssessmentRepository;
@@ -115,7 +116,7 @@ class TransactionIntegrationTest {
                     assessmentRepository.findByTransactionId(txId).isPresent());
 
             FraudAssessment assessment = assessmentRepository.findByTransactionId(txId).orElseThrow();
-            assertThat(assessment.isFraudulent()).isFalse();
+            assertThat(assessment.getDisposition()).isEqualTo(Disposition.CLEARED);
             assertThat(assessment.getRiskScore()).isZero();
 
             ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofSeconds(5));
@@ -142,7 +143,7 @@ class TransactionIntegrationTest {
                     assessmentRepository.findByTransactionId(txId).isPresent());
 
             FraudAssessment assessment = assessmentRepository.findByTransactionId(txId).orElseThrow();
-            assertThat(assessment.isFraudulent()).isTrue();
+            assertThat(assessment.getDisposition()).isEqualTo(Disposition.FLAGGED);
             assertThat(assessment.getRiskScore()).isGreaterThanOrEqualTo(50);
 
             ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofSeconds(5));
@@ -161,7 +162,8 @@ class TransactionIntegrationTest {
         await().atMost(10, TimeUnit.SECONDS).until(() ->
                 assessmentRepository.findByTransactionId(txId).isPresent());
 
-        assertThat(assessmentRepository.findByTransactionId(txId).orElseThrow().isFraudulent()).isTrue();
+        assertThat(assessmentRepository.findByTransactionId(txId).orElseThrow().getDisposition())
+                .isEqualTo(Disposition.FLAGGED);
     }
 
     // -----------------------------------------------------------------------

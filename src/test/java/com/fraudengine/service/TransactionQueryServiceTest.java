@@ -6,6 +6,7 @@ import com.fraudengine.api.dto.MerchantRiskSummaryDto;
 import com.fraudengine.engine.FraudRule;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.FraudAssessmentRepository;
@@ -160,7 +161,7 @@ class TransactionQueryServiceTest {
     @Test
     void getAssessment_delegatesToRepository() {
         UUID id = UUID.randomUUID();
-        FraudAssessment assessment = buildAssessment(buildTransaction(id), false, 0);
+        FraudAssessment assessment = buildAssessment(buildTransaction(id), Disposition.CLEARED, 0);
         when(assessmentRepository.findByTransactionId(id)).thenReturn(Optional.of(assessment));
 
         Optional<FraudAssessment> result = service.getAssessment(id);
@@ -221,6 +222,49 @@ class TransactionQueryServiceTest {
                 service.getFlaggedByMerchant(MERCHANT, "NoSuchRule", null, null, null, null, null, 20, "desc"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("NoSuchRule");
+    }
+
+    // ── getPendingReview ──────────────────────────────────────────────────────
+
+    @Test
+    void getPendingReview_delegatesAllParametersToRepository() {
+        FraudRule amountRule = mockRule("AmountThresholdRule");
+        when(ruleManagementService.getRules()).thenReturn(List.of(amountRule));
+        Slice<FraudAssessment> expected = new SliceImpl<>(List.of());
+        when(assessmentRepository.findPendingReview(
+                eq(CUSTOMER), eq("AmountThresholdRule"), eq(10), eq(49),
+                eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), any(PageRequest.class)))
+                .thenReturn(expected);
+
+        Slice<FraudAssessment> result = service.getPendingReview(
+                CUSTOMER, "AmountThresholdRule", 10, 49, FROM, TO, CURSOR_TS, CURSOR_ID, 15, "desc");
+
+        assertThat(result).isSameAs(expected);
+        verify(assessmentRepository).findPendingReview(
+                CUSTOMER, "AmountThresholdRule", 10, 49, FROM, TO, CURSOR_TS, CURSOR_ID, PageRequest.of(0, 15));
+    }
+
+    @Test
+    void getPendingReview_zeroPageSize_usesDefaultOf20() {
+        when(assessmentRepository.findPendingReview(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SliceImpl<>(List.of()));
+
+        service.getPendingReview(null, null, null, null, null, null, null, null, 0, "desc");
+
+        verify(assessmentRepository).findPendingReview(
+                null, null, null, null, null, null, null, null, PageRequest.of(0, 20));
+    }
+
+    @Test
+    void getPendingReview_unknownRuleViolated_throws400Message() {
+        FraudRule amountRule = mockRule("AmountThresholdRule");
+        when(ruleManagementService.getRules()).thenReturn(List.of(amountRule));
+
+        assertThatThrownBy(() ->
+                service.getPendingReview(null, "TypoRule", null, null, null, null, null, null, 20, "desc"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("TypoRule")
+                .hasMessageContaining("AmountThresholdRule");
     }
 
     // ── getPassed ─────────────────────────────────────────────────────────────
@@ -559,10 +603,10 @@ class TransactionQueryServiceTest {
                 .build();
     }
 
-    private FraudAssessment buildAssessment(Transaction tx, boolean fraudulent, int score) {
+    private FraudAssessment buildAssessment(Transaction tx, Disposition disposition, int score) {
         FraudAssessment a = FraudAssessment.builder()
                 .transaction(tx)
-                .fraudulent(fraudulent)
+                .disposition(disposition)
                 .riskScore(score)
                 .build();
         a.setRuleViolations(List.of());

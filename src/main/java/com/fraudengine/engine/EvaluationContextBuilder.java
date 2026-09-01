@@ -66,8 +66,21 @@ public class EvaluationContextBuilder {
                 transaction.getCustomerId(),
                 transaction.getTimestamp().minus(24, ChronoUnit.HOURS));
 
-        log.debug("Evaluation context built: recentTransactions={}, blacklistedMerchants={}, lookbackMinutes={}, dailySpend={}",
-                recent.size(), blacklisted.size(), properties.getContextLookbackMinutes(), dailySpend);
+        // Longer, independent window for personal-baseline statistics — skipped entirely
+        // when the rule is disabled to avoid an unnecessary query on the hot path.
+        List<Transaction> baselineTransactions = List.of();
+        if (properties.getCustomerAmountAnomaly().isEnabled()) {
+            Instant baselineStart = transaction.getTimestamp()
+                    .minus(properties.getCustomerAmountAnomaly().getLookbackDays(), ChronoUnit.DAYS);
+            baselineTransactions = transactionRepository
+                    .findRecentByCustomer(transaction.getCustomerId(), baselineStart)
+                    .stream()
+                    .filter(t -> !t.getId().equals(transaction.getId()))
+                    .collect(Collectors.toList());
+        }
+
+        log.debug("Evaluation context built: recentTransactions={}, blacklistedMerchants={}, lookbackMinutes={}, dailySpend={}, baselineTransactions={}",
+                recent.size(), blacklisted.size(), properties.getContextLookbackMinutes(), dailySpend, baselineTransactions.size());
 
         return EvaluationContext.builder()
                 .recentCustomerTransactions(recent)
@@ -75,6 +88,7 @@ public class EvaluationContextBuilder {
                 .merchantLatitude(merchantLat)
                 .merchantLongitude(merchantLon)
                 .dailySpendTotal(dailySpend)
+                .customerBaselineTransactions(baselineTransactions)
                 .build();
     }
 }

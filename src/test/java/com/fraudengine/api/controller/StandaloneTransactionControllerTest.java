@@ -5,6 +5,7 @@ import com.fraudengine.config.SecurityConfig;
 import com.fraudengine.engine.RuleEngine;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.FraudAssessmentRepository;
@@ -63,13 +64,13 @@ class StandaloneTransactionControllerTest {
 
         passedAssessment = FraudAssessment.builder()
                 .transaction(savedTx)
-                .fraudulent(false)
+                .disposition(Disposition.CLEARED)
                 .riskScore(10)
                 .build();
 
         fraudulentAssessment = FraudAssessment.builder()
                 .transaction(savedTx)
-                .fraudulent(true)
+                .disposition(Disposition.FLAGGED)
                 .riskScore(80)
                 .build();
 
@@ -183,6 +184,7 @@ class StandaloneTransactionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(5))
                 .andExpect(jsonPath("$.passed").value(5))
+                .andExpect(jsonPath("$.pendingReview").value(0))
                 .andExpect(jsonPath("$.flagged").value(0));
     }
 
@@ -194,6 +196,7 @@ class StandaloneTransactionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(3))
                 .andExpect(jsonPath("$.passed").value(0))
+                .andExpect(jsonPath("$.pendingReview").value(0))
                 .andExpect(jsonPath("$.flagged").value(3));
     }
 

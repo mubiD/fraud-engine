@@ -17,6 +17,8 @@ public interface TransactionMapper {
     @Mapping(target = "assessmentId", source = "id")
     @Mapping(target = "transactionId", source = "transaction.id")
     @Mapping(target = "violations", source = "ruleViolations")
+    @Mapping(target = "outcome", expression = "java(assessment.getOutcome().name())")
+    @Mapping(target = "disposition", expression = "java(assessment.getDisposition().name())")
     FraudAssessmentDto toDto(FraudAssessment assessment);
 
     @Mapping(target = "severity", expression = "java(violation.getSeverity().name())")

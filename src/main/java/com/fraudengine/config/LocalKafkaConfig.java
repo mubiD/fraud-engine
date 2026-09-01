@@ -38,6 +38,9 @@ public class LocalKafkaConfig {
     @Value("${fraud.kafka.topics.transactions-flagged}")
     private String transactionsFlaggedTopic;
 
+    @Value("${fraud.kafka.topics.transactions-pending-review}")
+    private String transactionsPendingReviewTopic;
+
     @Value("${fraud.kafka.topics.transactions-passed}")
     private String transactionsPassedTopic;
 
@@ -58,6 +61,11 @@ public class LocalKafkaConfig {
     @Bean
     public NewTopic localTransactionsFlaggedTopic() {
         return TopicBuilder.name(transactionsFlaggedTopic).partitions(1).replicas(1).build();
+    }
+
+    @Bean
+    public NewTopic localTransactionsPendingReviewTopic() {
+        return TopicBuilder.name(transactionsPendingReviewTopic).partitions(1).replicas(1).build();
     }
 
     @Bean

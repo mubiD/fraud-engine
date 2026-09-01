@@ -15,8 +15,9 @@ public class FraudAssessmentDto {
     @Schema(description = "Transaction this assessment belongs to", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID transactionId;
 
-    @Schema(description = "True if the rule engine determined the transaction to be fraudulent")
-    private boolean fraudulent;
+    @Schema(description = "The rule engine's real-time verdict for this transaction",
+            allowableValues = {"CLEARED", "PENDING_REVIEW", "FLAGGED"}, example = "FLAGGED")
+    private String disposition;
 
     @Schema(description = "Aggregate risk score (0–100); higher values indicate greater fraud likelihood", example = "72")
     private int riskScore;
@@ -27,19 +28,26 @@ public class FraudAssessmentDto {
     @Schema(description = "List of individual rule violations that contributed to the assessment")
     private List<RuleViolationDto> violations;
 
+    @Schema(description = "Ground-truth outcome recorded by an analyst, if any — distinct from disposition, "
+            + "which is the system's real-time verdict",
+            allowableValues = {"UNRESOLVED", "CONFIRMED_FRAUD", "FALSE_POSITIVE"}, example = "UNRESOLVED")
+    private String outcome;
+
     public FraudAssessmentDto() {}
 
     public UUID getAssessmentId() { return assessmentId; }
     public UUID getTransactionId() { return transactionId; }
-    public boolean isFraudulent() { return fraudulent; }
+    public String getDisposition() { return disposition; }
     public int getRiskScore() { return riskScore; }
     public Instant getAssessedAt() { return assessedAt; }
     public List<RuleViolationDto> getViolations() { return violations; }
+    public String getOutcome() { return outcome; }
 
     public void setAssessmentId(UUID v) { this.assessmentId = v; }
     public void setTransactionId(UUID v) { this.transactionId = v; }
-    public void setFraudulent(boolean v) { this.fraudulent = v; }
+    public void setDisposition(String v) { this.disposition = v; }
     public void setRiskScore(int v) { this.riskScore = v; }
     public void setAssessedAt(Instant v) { this.assessedAt = v; }
     public void setViolations(List<RuleViolationDto> v) { this.violations = v; }
+    public void setOutcome(String v) { this.outcome = v; }
 }

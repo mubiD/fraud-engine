@@ -52,11 +52,11 @@ The system is asynchronous and **post-authorisation only** — see [§11](#11-kn
                     ↓                           ↓
 ┌───────────────────────────────┐   ┌─────────────────────────────┐
 │   MESSAGING LAYER (outbound)   │   │        QUERY LAYER          │
-│  transactions.flagged/.passed  │   │  REST API (read-only, JWT)  │
+│  transactions.flagged/.passed  │   │        REST API (JWT)       │
 └───────────────────────────────┘   └─────────────────────────────┘
 ```
 
-There is no synchronous write path into this service — Kafka is the only ingestion mechanism. The read path (query API) is entirely separate from the write path (Kafka consumer → rule engine → persistence) and can be scaled, deployed, or queried independently, which is the practical benefit of the CQRS-style split even without a formal CQRS implementation.
+There is no synchronous write path for transaction *ingestion* — Kafka is the only mechanism by which a transaction enters this service. The query API is almost entirely read-only, with one narrow exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record an assessment's real-world ground truth after the fact (§7) — it never accepts a transaction for evaluation, so the ingestion story above is unchanged. The read path (query API) is otherwise entirely separate from the write path (Kafka consumer → rule engine → persistence) and can be scaled, deployed, or queried independently, which is the practical benefit of the CQRS-style split even without a formal CQRS implementation.
 
 ---
 
@@ -64,7 +64,7 @@ There is no synchronous write path into this service — Kafka is the only inges
 
 ### There is no HTTP submission endpoint
 
-Transactions enter the system exclusively via the `transactions.raw` Kafka topic. The REST API is **read-only** — `/api/v1/**` exposes query endpoints only (§7); nothing in it accepts a transaction for evaluation.
+Transactions enter the system exclusively via the `transactions.raw` Kafka topic. `/api/v1/**` exposes query endpoints only (§7) — nothing in it accepts a *transaction* for evaluation. The one exception to "read-only" is `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record an existing assessment's real-world ground truth; it operates on an assessment that already exists, not a new transaction, so it doesn't reopen an HTTP ingestion path.
 
 ### Decision: Kafka as the only ingress
 
@@ -94,6 +94,7 @@ Because ingestion is asynchronous and decoupled, this service cannot return a fr
 | `transactions.raw-0`, `transactions.raw-1` | 6 | Internal retry | auto-created by `@RetryableTopic` |
 | `transactions.raw.DLT` | 1 | Dead-letter | exhausted-retry events |
 | `transactions.flagged` | 3 | Outbound (produced) | `FraudulentTransactionEvent` (Protobuf) |
+| `transactions.pending-review` | 3 | Outbound (produced) | `PendingReviewTransactionEvent` (Protobuf) |
 | `transactions.passed` | 3 | Outbound (produced) | `ClearedTransactionEvent` (Protobuf) |
 
 All topics run with replication factor 2 across a 3-broker KRaft cluster (no Zookeeper dependency). Schemas are registered with and enforced by Confluent Schema Registry.
@@ -115,7 +116,7 @@ The DB write and the Kafka publish commit or roll back together via `ChainedKafk
 1. Kafka TX opens
 2. DB TX opens
 3. `FraudAssessment` + updated `TransactionStatus` written to Postgres
-4. Outcome event published to `transactions.flagged` or `transactions.passed`
+4. Outcome event published to `transactions.flagged`, `transactions.pending-review`, or `transactions.passed`
 5. DB TX commits; Kafka TX commits
 
 If the DB commit fails, the Kafka TX aborts and no message is published — the consumer retries cleanly. If the Kafka commit fails after the DB commit, the consumer retries; the idempotency guard (`findByIdOnly` — skip re-save if the transaction row already exists) prevents a duplicate insert and simply re-publishes the outcome event. The consumer runs with `isolation.level=read_committed` so downstream readers never see an uncommitted write.
@@ -147,14 +148,15 @@ public interface FraudRule {
 
 ### The `EvaluationContext`
 
-Built once per transaction by `EvaluationContextBuilder`, so all 12 rules read from a shared, pre-fetched snapshot instead of each rule independently hitting the database:
+Built once per transaction by `EvaluationContextBuilder`, so all 13 rules read from a shared, pre-fetched snapshot instead of each rule independently hitting the database:
 
 ```java
 public class EvaluationContext {
-    List<Transaction> recentCustomerTransactions; // within fraud.rules.context-lookback-minutes
-    Set<String> blacklistedMerchantIds;            // Caffeine-cached, 5 min TTL
-    Double merchantLatitude, merchantLongitude;     // registered-address fallback, physical channels only
-    BigDecimal dailySpendTotal;                     // 24h rolling aggregate, DB query
+    List<Transaction> recentCustomerTransactions;   // within fraud.rules.context-lookback-minutes
+    Set<String> blacklistedMerchantIds;              // Caffeine-cached, 5 min TTL
+    Double merchantLatitude, merchantLongitude;       // registered-address fallback, physical channels only
+    BigDecimal dailySpendTotal;                       // 24h rolling aggregate, DB query
+    List<Transaction> customerBaselineTransactions;   // independent, longer window (days) for CustomerAmountAnomalyRule
 }
 ```
 
@@ -164,7 +166,7 @@ Reference data (the blacklist and merchant locations) is read through `Reference
 
 ### The rule catalogue
 
-12 rules, each independently unit-tested with no Spring context, no database, no Kafka:
+13 rules, each independently unit-tested with no Spring context, no database, no Kafka:
 
 | Priority | Rule | Signal | Severity |
 |---|---|---|---|
@@ -180,6 +182,7 @@ Reference data (the blacklist and merchant locations) is read through `Reference
 | 10 | `MULTI_CHANNEL_ANOMALY` | physical↔online channel switch within 5 minutes | MEDIUM |
 | 11 | `CROSS_MERCHANT_VELOCITY` | ≥10 transactions across merchants within 10 minutes | MEDIUM |
 | 12 | `CUMULATIVE_SPENDING` | rolling hourly or daily spend exceeds a limit | HIGH |
+| 13 | `CUSTOMER_AMOUNT_ANOMALY` | amount >3 stddev above the customer's own historical mean | MEDIUM |
 
 Full trigger conditions and configuration keys are in `README.md`, which is kept in sync with `application.yml` and should be treated as the source of truth for rule behaviour — this document covers architecture, not tunables.
 
@@ -187,14 +190,14 @@ Full trigger conditions and configuration keys are in `README.md`, which is kept
 
 Violations are combined with a log-odds (naive-Bayes) model rather than summed points: each fired rule carries a likelihood ratio (how much more likely fraud is, given that rule fired, keyed by `RULE_NAME:SEVERITY` so a rule that escalates severity at runtime, like `VelocityRule`'s high-risk-category boost, is calibrated per variant, not per rule). Posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability scaled to 0–100, and `fraudulent` is set when the probability crosses a configurable threshold (default 0.5).
 
-This directly replaces an earlier flat additive model (LOW=10/MEDIUM=25/HIGH=50/CRITICAL=100, capped at 100, fraudulent at >=50) that conflated "one strong signal fired" with "several weak, possibly-correlated signals coincided" — both produced an identical verdict once the point total crossed 50. Rules are now individually calibrated as either standalone-sufficient (`BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-tier `HIGH_RISK_MERCHANT_CATEGORY`) or weak-alone, requiring corroboration (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) — see `ScoringProperties.java`.
+This directly replaces an earlier flat additive model (LOW=10/MEDIUM=25/HIGH=50/CRITICAL=100, capped at 100, fraudulent at >=50) that conflated "one strong signal fired" with "several weak, possibly-correlated signals coincided" — both produced an identical verdict once the point total crossed 50. Rules are now individually calibrated as either standalone-sufficient (`BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-tier `HIGH_RISK_MERCHANT_CATEGORY`) or weak-alone, requiring corroboration (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) — see `ScoringProperties.java`.
 
-The likelihood ratios are domain-judgment starting points, not values fit to labelled outcome data — there is currently no confirmed-fraud/false-positive feedback loop to calibrate against (see [§11](#11-known-drawbacks--production-considerations)). Building that feedback loop, not further hand-tuning these constants, is the highest-leverage next step for this model's accuracy.
+The likelihood ratios are domain-judgment starting points, not values fit to labelled outcome data. `PATCH /api/v1/transactions/{id}/outcome` (§7) now lets an analyst record whether a flagged transaction was confirmed fraud or a false positive, but nothing yet consumes those recorded outcomes to actually recalibrate these ratios — that analysis/tooling is the next step, not the recording mechanism itself (see [§11](#11-known-drawbacks--production-considerations)).
 
 ### Trade-offs
 
-- The Strategy pattern scales comfortably to the current 12 rules. Rules needing conditional branching or dependency graphs (rule A only if rule B passes) would be better served by a dedicated rules engine (e.g. Drools).
-- All 12 rules run synchronously on the Kafka consumer thread, and `EvaluationContextBuilder` issues its DB queries sequentially and inline on that same thread — acceptable for the async pipeline's latency budget, but this is precisely the part of the system that would need to be replaced (not the rules themselves, which are pure in-memory logic) to support a real-time, pre-authorisation decision path. See [§11](#11-known-drawbacks--production-considerations).
+- The Strategy pattern scales comfortably to the current 13 rules. Rules needing conditional branching or dependency graphs (rule A only if rule B passes) would be better served by a dedicated rules engine (e.g. Drools).
+- All 13 rules run synchronously on the Kafka consumer thread, and `EvaluationContextBuilder` issues its DB queries sequentially and inline on that same thread — acceptable for the async pipeline's latency budget, but this is precisely the part of the system that would need to be replaced (not the rules themselves, which are pure in-memory logic) to support a real-time, pre-authorisation decision path. See [§11](#11-known-drawbacks--production-considerations). `CustomerAmountAnomalyRule` adds a second such query (a longer-window customer history fetch), gated behind its own `enabled` flag specifically so it doesn't cost anything when unused.
 
 ---
 
@@ -202,7 +205,7 @@ The likelihood ratios are domain-judgment starting points, not values fit to lab
 
 ### Schema
 
-`transactions` is **range-partitioned by `timestamp` (daily)** with a composite primary key `(id, timestamp)` — Postgres requires the partition key in every unique constraint on a partitioned table. `fraud_assessments` references it via a composite FK `(transaction_id, transaction_timestamp)` rather than a single-column FK. `rule_violations`, `blacklisted_merchants`, and `merchant_locations` round out the schema. Flyway (`V1`–`V6`) manages all schema evolution; `spring.jpa.hibernate.ddl-auto=validate` means the app refuses to start if the entity model and schema have drifted apart.
+`transactions` is **range-partitioned by `timestamp` (daily)** with a composite primary key `(id, timestamp)` — Postgres requires the partition key in every unique constraint on a partitioned table. `fraud_assessments` references it via a composite FK `(transaction_id, transaction_timestamp)` rather than a single-column FK. `rule_violations`, `blacklisted_merchants`, and `merchant_locations` round out the schema. Flyway (`V1`–`V8`) manages all schema evolution; `spring.jpa.hibernate.ddl-auto=validate` means the app refuses to start if the entity model and schema have drifted apart.
 
 ### Indexing strategy
 
@@ -213,9 +216,9 @@ CREATE INDEX idx_transactions_customer_timestamp ON transactions(customer_id, ti
 -- DuplicateRule candidate lookup
 CREATE INDEX idx_transactions_duplicate_detection ON transactions(merchant_id, amount, customer_id, timestamp DESC);
 
--- Partial index — only indexes the (small) fraudulent minority, keeping the index
--- proportional to fraud volume rather than total transaction volume
-CREATE INDEX idx_assessments_fraudulent ON fraud_assessments(is_fraudulent) WHERE is_fraudulent = true;
+-- Composite index (disposition, assessed_at DESC) — one index serves all three
+-- disposition-filtered, assessed_at-ordered query paths (flagged/pending-review/passed)
+CREATE INDEX idx_assessments_disposition_assessed_at ON fraud_assessments(disposition, assessed_at DESC);
 
 CREATE INDEX idx_assessments_transaction_id ON fraud_assessments(transaction_id);
 ```
@@ -233,17 +236,54 @@ CREATE INDEX idx_assessments_transaction_id ON fraud_assessments(transaction_id)
 
 ## 7. Query Layer — REST API
 
-Read-only, OAuth2/JWT-secured in every profile except `local`/`standalone`/`test`. Full endpoint reference, request/response shapes, and curl examples live in `README.md`; the summary:
+OAuth2/JWT-secured in every profile except `local`/`standalone`/`test`, and read-only
+except for one write endpoint. Full endpoint reference, request/response shapes, and
+curl examples live in `README.md`; the summary:
 
 ```
-Transactions   GET /transactions, /transactions/{id}, /transactions/{id}/assessment,
-               /transactions/flagged, /transactions/passed
+Transactions   GET   /transactions, /transactions/{id}, /transactions/{id}/assessment,
+                     /transactions/flagged, /transactions/pending-review, /transactions/passed
+               PATCH /transactions/{id}/outcome   (the one write endpoint — see below)
 Rules          GET /rules   (live config, read-only — there is no PATCH; a threshold
                              change requires a redeploy)
 Customers      GET /customers/{id}/risk-summary
 Merchants      GET /merchants/{id}/flagged, /merchants/{id}/risk-summary
 Stats          GET /stats/fraud-summary
 ```
+
+### Three-way disposition (`CLEARED` / `PENDING_REVIEW` / `FLAGGED`)
+
+`FraudAssessment.disposition` (replacing an earlier binary `fraudulent` boolean)
+is the rule engine's real-time verdict, computed by `RuleEngine` from two
+probability thresholds instead of one: `fraud.scoring.fraud-probability-threshold`
+(default 0.5, unchanged) still decides `FLAGGED`; a new, lower
+`fraud.scoring.review-probability-threshold` (default 0.10) decides `PENDING_REVIEW`
+for everything above it but below the fraud threshold. Everything below both stays
+`CLEARED`. This doesn't change what qualifies as `FLAGGED` — it only stops the old
+model's silent behaviour of treating "two corroborating weak signals" identically to
+"zero signals" just because neither alone crossed 0.5 (see §5's combined-signal
+scenarios in `FraudEngineEffectivenessTest`, e.g. card-cloning + off-hours, which now
+land in `PENDING_REVIEW` instead of being indistinguishable from a clean transaction).
+
+`PENDING_REVIEW` is published to its own Kafka topic (`transactions.pending-review`,
+§4) and exposed via `GET /transactions/pending-review`, mirroring `/flagged`'s filter
+set — three genuinely disjoint buckets, not overlapping subsets of each other.
+
+### Recording ground-truth outcomes
+
+`PATCH /transactions/{id}/outcome` lets an analyst record whether a transaction
+turned out to be actual fraud or a false positive, keyed by `transactionId` rather
+than the assessment's own internal ID — that's the identifier already threaded
+through Kafka, the `txn=` MDC/log correlation key (`MdcLoggingFilter`,
+`TransactionConsumer`), and every DTO, so this endpoint slots into the existing
+trace story instead of introducing a second identifier. `AssessmentOutcome`
+(`UNRESOLVED` → `CONFIRMED_FRAUD` / `FALSE_POSITIVE`) is deliberately distinct from
+`disposition` above — `disposition` is the system's verdict at assessment time;
+`outcome` is the analyst's ground truth recorded afterward, and is a one-time,
+non-reversible write once set. This is the ground-truth feed tier 1 of the scoring
+calibration plan (§5) depends on — `ScoringProperties`' likelihood ratios are
+currently domain judgment, not calibrated against confirmed outcomes, and this
+endpoint is what will eventually make that possible.
 
 ### Cursor-based pagination
 
@@ -308,7 +348,7 @@ Four scenarios against the `load` environment (`01-baseline`, `02-ramp`, `03-spi
 | Drawback | Status / Mitigation |
 |---|---|
 | **Post-authorisation only** — no synchronous, blocking decision path exists before a transaction is authorised. The rules themselves are pure in-memory logic and could run in a sub-100ms budget; `EvaluationContextBuilder`'s live, sequential Postgres queries are what can't. A real-time path needs a materialised/streaming view of recent-transaction and spend state kept current off the same event stream, not a live query per decision. | Open — the largest architectural gap, by design scope, not oversight. |
-| **No confirmed-fraud/false-positive feedback loop** — the log-odds model's likelihood ratios are domain judgment, not calibrated against real outcomes, because nothing in the system records whether a flagged (or cleared) transaction was actually fraud. | Open — the highest-leverage remaining gap. An `outcome` field on `FraudAssessment` plus a disposition write-path would make every future scoring change measurable instead of asserted. |
+| **No confirmed-fraud/false-positive feedback loop** — the log-odds model's likelihood ratios are domain judgment, not calibrated against real outcomes. | Partially addressed: `AssessmentOutcome` + `PATCH /api/v1/transactions/{id}/outcome` (§7), per-customer behavioural baselining (`CustomerAmountAnomalyRule`, §5), and the three-way `disposition` (`CLEARED`/`PENDING_REVIEW`/`FLAGGED`, §7) are all implemented. Still open: nothing yet *consumes* recorded outcomes to actually recalibrate `ScoringProperties`' likelihood ratios — that analysis/tooling doesn't exist yet. The new `transactions.pending-review` Kafka topic/proto message also hasn't been integration-tested against a real broker/Schema Registry (no Docker in the dev sandbox this was built in). |
 | **Retry-topic partition reassignment** — a redelivered message isn't guaranteed to land back on its original customer-ordered partition. | Latent; no observed incident. |
 | **No read replica** — a Postgres outage takes down both read and write paths. | On AWS, RDS Multi-AZ would provide automatic failover; not provisioned locally. |
 | **Single-writer consumer per partition** — Postgres write throughput is the eventual ceiling at very high volume. | Batch inserts / wider pool if it becomes the bottleneck; not yet needed. |

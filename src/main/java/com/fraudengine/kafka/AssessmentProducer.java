@@ -4,6 +4,7 @@ import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.proto.ClearedTransactionEventProto;
 import com.fraudengine.proto.FraudulentTransactionEventProto;
+import com.fraudengine.proto.PendingReviewTransactionEventProto;
 import com.fraudengine.proto.ProtoMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,9 @@ public class AssessmentProducer {
     @Value("${fraud.kafka.topics.transactions-flagged}")
     private String flaggedTopic;
 
+    @Value("${fraud.kafka.topics.transactions-pending-review}")
+    private String pendingReviewTopic;
+
     @Value("${fraud.kafka.topics.transactions-passed}")
     private String passedTopic;
 
@@ -36,18 +40,28 @@ public class AssessmentProducer {
     }
 
     public void publish(Transaction transaction, FraudAssessment assessment) {
-        if (assessment.isFraudulent()) {
-            FraudulentTransactionEventProto.FraudulentTransactionEvent event =
-                    ProtoMapper.toFraudulentProto(transaction, assessment);
-            kafkaTemplate.send(flaggedTopic, transaction.getCustomerId(), event);
-            log.debug("Published FraudulentTransactionEvent: topic={}, transactionId={}",
-                    flaggedTopic, transaction.getId());
-        } else {
-            ClearedTransactionEventProto.ClearedTransactionEvent event =
-                    ProtoMapper.toClearedProto(transaction);
-            kafkaTemplate.send(passedTopic, transaction.getCustomerId(), event);
-            log.debug("Published ClearedTransactionEvent: topic={}, transactionId={}",
-                    passedTopic, transaction.getId());
+        switch (assessment.getDisposition()) {
+            case FLAGGED -> {
+                FraudulentTransactionEventProto.FraudulentTransactionEvent event =
+                        ProtoMapper.toFraudulentProto(transaction, assessment);
+                kafkaTemplate.send(flaggedTopic, transaction.getCustomerId(), event);
+                log.debug("Published FraudulentTransactionEvent: topic={}, transactionId={}",
+                        flaggedTopic, transaction.getId());
+            }
+            case PENDING_REVIEW -> {
+                PendingReviewTransactionEventProto.PendingReviewTransactionEvent event =
+                        ProtoMapper.toPendingReviewProto(transaction, assessment);
+                kafkaTemplate.send(pendingReviewTopic, transaction.getCustomerId(), event);
+                log.debug("Published PendingReviewTransactionEvent: topic={}, transactionId={}",
+                        pendingReviewTopic, transaction.getId());
+            }
+            case CLEARED -> {
+                ClearedTransactionEventProto.ClearedTransactionEvent event =
+                        ProtoMapper.toClearedProto(transaction);
+                kafkaTemplate.send(passedTopic, transaction.getCustomerId(), event);
+                log.debug("Published ClearedTransactionEvent: topic={}, transactionId={}",
+                        passedTopic, transaction.getId());
+            }
         }
     }
 }

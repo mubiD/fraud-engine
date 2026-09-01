@@ -5,6 +5,7 @@ import com.fraudengine.engine.RuleEngine;
 import com.fraudengine.kafka.AssessmentProducer;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.proto.TransactionEventProto;
@@ -63,7 +64,7 @@ class TransactionConsumerTest {
     void consume_newTransaction_persistsThenEvaluatesAndPublishes() {
         TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
         Transaction saved = buildTransaction(TX_ID);
-        FraudAssessment assessment = buildAssessment(saved, false, 0);
+        FraudAssessment assessment = buildAssessment(saved, Disposition.CLEARED, 0);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.empty());
         when(transactionRepository.save(any(Transaction.class))).thenReturn(saved);
@@ -81,7 +82,7 @@ class TransactionConsumerTest {
     void consume_existingTransaction_skipsInitialPersist() {
         TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
         Transaction existing = buildTransaction(TX_ID);
-        FraudAssessment assessment = buildAssessment(existing, false, 0);
+        FraudAssessment assessment = buildAssessment(existing, Disposition.CLEARED, 0);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(existing));
         when(ruleEngine.evaluate(existing)).thenReturn(assessment);
@@ -96,7 +97,7 @@ class TransactionConsumerTest {
     void consume_setsTransactionStatusToAssessedBeforePublish() {
         TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
         Transaction tx = buildTransaction(TX_ID);
-        FraudAssessment assessment = buildAssessment(tx, false, 0);
+        FraudAssessment assessment = buildAssessment(tx, Disposition.CLEARED, 0);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
         when(ruleEngine.evaluate(tx)).thenReturn(assessment);
@@ -111,7 +112,7 @@ class TransactionConsumerTest {
     void consume_assessmentSavedBeforeTransactionStatusUpdate() {
         TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
         Transaction tx = buildTransaction(TX_ID);
-        FraudAssessment assessment = buildAssessment(tx, false, 0);
+        FraudAssessment assessment = buildAssessment(tx, Disposition.CLEARED, 0);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
         when(ruleEngine.evaluate(tx)).thenReturn(assessment);
@@ -127,31 +128,48 @@ class TransactionConsumerTest {
     // ── consume() — metrics ─────────────────────────────────────────────────
 
     @Test
-    void consume_fraudulentAssessment_incrementsFraudulentCounter() {
+    void consume_flaggedAssessment_incrementsFlaggedCounter() {
         TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
         Transaction tx = buildTransaction(TX_ID);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, true, 75));
+        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.FLAGGED, 75));
 
         consumer.consume(event, TOPIC, PARTITION, OFFSET);
 
-        verify(metrics).recordFraudulent();
-        verify(metrics, never()).recordPassed();
+        verify(metrics).recordFlagged();
+        verify(metrics, never()).recordCleared();
+        verify(metrics, never()).recordPendingReview();
     }
 
     @Test
-    void consume_clearedAssessment_incrementsPassedCounter() {
+    void consume_pendingReviewAssessment_incrementsPendingReviewCounter() {
         TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
         Transaction tx = buildTransaction(TX_ID);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, false, 0));
+        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.PENDING_REVIEW, 20));
 
         consumer.consume(event, TOPIC, PARTITION, OFFSET);
 
-        verify(metrics).recordPassed();
-        verify(metrics, never()).recordFraudulent();
+        verify(metrics).recordPendingReview();
+        verify(metrics, never()).recordFlagged();
+        verify(metrics, never()).recordCleared();
+    }
+
+    @Test
+    void consume_clearedAssessment_incrementsClearedCounter() {
+        TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
+        Transaction tx = buildTransaction(TX_ID);
+
+        when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
+        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.CLEARED, 0));
+
+        consumer.consume(event, TOPIC, PARTITION, OFFSET);
+
+        verify(metrics).recordCleared();
+        verify(metrics, never()).recordFlagged();
+        verify(metrics, never()).recordPendingReview();
     }
 
     @Test
@@ -160,7 +178,7 @@ class TransactionConsumerTest {
         Transaction tx = buildTransaction(TX_ID);
 
         when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, false, 0));
+        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.CLEARED, 0));
 
         consumer.consume(event, TOPIC, PARTITION, OFFSET);
 
@@ -247,10 +265,10 @@ class TransactionConsumerTest {
                 .build();
     }
 
-    private FraudAssessment buildAssessment(Transaction tx, boolean fraudulent, int score) {
+    private FraudAssessment buildAssessment(Transaction tx, Disposition disposition, int score) {
         FraudAssessment a = FraudAssessment.builder()
                 .transaction(tx)
-                .fraudulent(fraudulent)
+                .disposition(disposition)
                 .riskScore(score)
                 .build();
         a.setRuleViolations(List.of());

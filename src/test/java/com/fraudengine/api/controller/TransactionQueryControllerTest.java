@@ -6,6 +6,7 @@ import com.fraudengine.api.dto.TransactionSummaryDto;
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.service.TransactionQueryService;
@@ -85,7 +86,7 @@ class TransactionQueryControllerTest {
 
         assessment = FraudAssessment.builder()
                 .transaction(tx)
-                .fraudulent(true)
+                .disposition(Disposition.FLAGGED)
                 .riskScore(72)
                 .build();
         assessment.setId(ASSESS_ID);
@@ -95,7 +96,7 @@ class TransactionQueryControllerTest {
         assessmentDto = new FraudAssessmentDto();
         assessmentDto.setAssessmentId(ASSESS_ID);
         assessmentDto.setTransactionId(TX_ID);
-        assessmentDto.setFraudulent(true);
+        assessmentDto.setDisposition("FLAGGED");
         assessmentDto.setRiskScore(72);
         assessmentDto.setAssessedAt(TS.plusSeconds(1));
         assessmentDto.setViolations(List.of());
@@ -264,7 +265,7 @@ class TransactionQueryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.assessmentId").value(ASSESS_ID.toString()))
                 .andExpect(jsonPath("$.data.transactionId").value(TX_ID.toString()))
-                .andExpect(jsonPath("$.data.fraudulent").value(true))
+                .andExpect(jsonPath("$.data.disposition").value("FLAGGED"))
                 .andExpect(jsonPath("$.data.riskScore").value(72));
     }
 
@@ -298,7 +299,7 @@ class TransactionQueryControllerTest {
         mockMvc.perform(get("/api/v1/transactions/flagged"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
-                .andExpect(jsonPath("$.data[0].fraudulent").value(true));
+                .andExpect(jsonPath("$.data[0].disposition").value("FLAGGED"));
     }
 
     @Test
@@ -412,14 +413,14 @@ class TransactionQueryControllerTest {
         FraudAssessmentDto passedDto = new FraudAssessmentDto();
         passedDto.setAssessmentId(ASSESS_ID);
         passedDto.setTransactionId(TX_ID);
-        passedDto.setFraudulent(false);
+        passedDto.setDisposition("CLEARED");
         passedDto.setRiskScore(0);
         passedDto.setAssessedAt(TS.plusSeconds(1));
         passedDto.setViolations(List.of());
 
         FraudAssessment passedAssessment = FraudAssessment.builder()
                 .transaction(tx)
-                .fraudulent(false)
+                .disposition(Disposition.CLEARED)
                 .riskScore(0)
                 .build();
         passedAssessment.setId(ASSESS_ID);
@@ -433,7 +434,7 @@ class TransactionQueryControllerTest {
         mockMvc.perform(get("/api/v1/transactions/passed"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
-                .andExpect(jsonPath("$.data[0].fraudulent").value(false))
+                .andExpect(jsonPath("$.data[0].disposition").value("CLEARED"))
                 .andExpect(jsonPath("$.hasMore").value(false));
     }
 
@@ -464,32 +465,115 @@ class TransactionQueryControllerTest {
     }
 
     @Test
-    void getPassed_withMinRiskScore_nearMissQuery_passesScoreToService() throws Exception {
-        // Near-miss: passed but scored >= 30 — transactions the engine almost flagged
-        FraudAssessmentDto nearMissDto = new FraudAssessmentDto();
-        nearMissDto.setAssessmentId(ASSESS_ID);
-        nearMissDto.setTransactionId(TX_ID);
-        nearMissDto.setFraudulent(false);
-        nearMissDto.setRiskScore(35);
-        nearMissDto.setAssessedAt(TS.plusSeconds(1));
-        nearMissDto.setViolations(List.of());
+    void getPassed_withMinRiskScore_passesScoreToService() throws Exception {
+        // /passed is strictly CLEARED-only now — a "near miss" (elevated but not
+        // flagged) transaction is PENDING_REVIEW, not passed; see the pending-review
+        // section below for that scenario. This just exercises the minRiskScore filter
+        // on genuinely cleared transactions.
+        FraudAssessmentDto lowScoreDto = new FraudAssessmentDto();
+        lowScoreDto.setAssessmentId(ASSESS_ID);
+        lowScoreDto.setTransactionId(TX_ID);
+        lowScoreDto.setDisposition("CLEARED");
+        lowScoreDto.setRiskScore(8);
+        lowScoreDto.setAssessedAt(TS.plusSeconds(1));
+        lowScoreDto.setViolations(List.of());
 
-        FraudAssessment nearMiss = FraudAssessment.builder()
-                .transaction(tx).fraudulent(false).riskScore(35).build();
-        nearMiss.setId(ASSESS_ID);
-        nearMiss.setAssessedAt(TS.plusSeconds(1));
-        nearMiss.setRuleViolations(List.of());
+        FraudAssessment lowScore = FraudAssessment.builder()
+                .transaction(tx).disposition(Disposition.CLEARED).riskScore(8).build();
+        lowScore.setId(ASSESS_ID);
+        lowScore.setAssessedAt(TS.plusSeconds(1));
+        lowScore.setRuleViolations(List.of());
 
-        when(queryService.getPassed(isNull(), eq(30), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
-                .thenReturn(new SliceImpl<>(List.of(nearMiss), PageRequest.of(0, 20), false));
-        when(mapper.toDto(nearMiss)).thenReturn(nearMissDto);
+        when(queryService.getPassed(isNull(), eq(5), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
+                .thenReturn(new SliceImpl<>(List.of(lowScore), PageRequest.of(0, 20), false));
+        when(mapper.toDto(lowScore)).thenReturn(lowScoreDto);
 
-        mockMvc.perform(get("/api/v1/transactions/passed").param("minRiskScore", "30"))
+        mockMvc.perform(get("/api/v1/transactions/passed").param("minRiskScore", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
-                .andExpect(jsonPath("$.data[0].fraudulent").value(false))
-                .andExpect(jsonPath("$.data[0].riskScore").value(35));
+                .andExpect(jsonPath("$.data[0].disposition").value("CLEARED"))
+                .andExpect(jsonPath("$.data[0].riskScore").value(8));
 
-        verify(queryService).getPassed(null, 30, null, null, null, null, 20, "desc");
+        verify(queryService).getPassed(null, 5, null, null, null, null, 20, "desc");
+    }
+
+    // -----------------------------------------------------------------------
+    // GET /api/v1/transactions/pending-review
+    // -----------------------------------------------------------------------
+
+    @Test
+    void getPendingReview_noFilters_returns200() throws Exception {
+        FraudAssessmentDto pendingDto = new FraudAssessmentDto();
+        pendingDto.setAssessmentId(ASSESS_ID);
+        pendingDto.setTransactionId(TX_ID);
+        pendingDto.setDisposition("PENDING_REVIEW");
+        pendingDto.setRiskScore(15);
+        pendingDto.setAssessedAt(TS.plusSeconds(1));
+        pendingDto.setViolations(List.of());
+
+        FraudAssessment pending = FraudAssessment.builder()
+                .transaction(tx).disposition(Disposition.PENDING_REVIEW).riskScore(15).build();
+        pending.setId(ASSESS_ID);
+        pending.setAssessedAt(TS.plusSeconds(1));
+        pending.setRuleViolations(List.of());
+
+        when(queryService.getPendingReview(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
+                .thenReturn(new SliceImpl<>(List.of(pending), PageRequest.of(0, 20), false));
+        when(mapper.toDto(pending)).thenReturn(pendingDto);
+
+        mockMvc.perform(get("/api/v1/transactions/pending-review"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].disposition").value("PENDING_REVIEW"))
+                .andExpect(jsonPath("$.data[0].riskScore").value(15));
+    }
+
+    @Test
+    void getPendingReview_withCustomerId_passesCustomerIdToService() throws Exception {
+        when(queryService.getPendingReview(eq(CUSTOMER), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
+                .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
+
+        mockMvc.perform(get("/api/v1/transactions/pending-review").param("customerId", CUSTOMER))
+                .andExpect(status().isOk());
+
+        verify(queryService).getPendingReview(CUSTOMER, null, null, null, null, null, null, null, 20, "desc");
+    }
+
+    @Test
+    void getPendingReview_withRiskScoreBand_passesBothScoresToService() throws Exception {
+        when(queryService.getPendingReview(isNull(), isNull(), eq(10), eq(49), isNull(), isNull(), isNull(), isNull(), eq(20), anyString()))
+                .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
+
+        mockMvc.perform(get("/api/v1/transactions/pending-review")
+                        .param("minRiskScore", "10")
+                        .param("maxRiskScore", "49"))
+                .andExpect(status().isOk());
+
+        verify(queryService).getPendingReview(null, null, 10, 49, null, null, null, null, 20, "desc");
+    }
+
+    @Test
+    void getPendingReview_withDateRange_passesInstantsToService() throws Exception {
+        when(queryService.getPendingReview(isNull(), isNull(), isNull(), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20), anyString()))
+                .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
+
+        mockMvc.perform(get("/api/v1/transactions/pending-review")
+                        .param("from", "2026-07-01T00:00:00Z")
+                        .param("to", "2026-07-31T23:59:59Z"))
+                .andExpect(status().isOk());
+
+        verify(queryService).getPendingReview(null, null, null, null, FROM, TO, null, null, 20, "desc");
+    }
+
+    @Test
+    void getPendingReview_minRiskScoreAbove100_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/transactions/pending-review").param("minRiskScore", "101"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getPendingReview_invalidSort_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/transactions/pending-review").param("sort", "random"))
+                .andExpect(status().isBadRequest());
     }
 }

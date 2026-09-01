@@ -36,6 +36,9 @@ public class KafkaConfig {
     @Value("${fraud.kafka.topics.transactions-flagged}")
     private String transactionsFlaggedTopic;
 
+    @Value("${fraud.kafka.topics.transactions-pending-review}")
+    private String transactionsPendingReviewTopic;
+
     @Value("${fraud.kafka.topics.transactions-passed}")
     private String transactionsPassedTopic;
 
@@ -66,6 +69,11 @@ public class KafkaConfig {
     @Bean
     public NewTopic transactionsFlaggedTopic() {
         return TopicBuilder.name(transactionsFlaggedTopic).partitions(3).replicas(replicationFactor).build();
+    }
+
+    @Bean
+    public NewTopic transactionsPendingReviewTopic() {
+        return TopicBuilder.name(transactionsPendingReviewTopic).partitions(3).replicas(replicationFactor).build();
     }
 
     @Bean

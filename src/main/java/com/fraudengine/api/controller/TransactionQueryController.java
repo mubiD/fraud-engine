@@ -167,6 +167,47 @@ public class TransactionQueryController {
         return toAssessmentPage(slice);
     }
 
+    @GetMapping("/pending-review")
+    @Operation(
+        summary = "List transactions pending manual review",
+        description = "Returns cursor-paginated fraud assessments in the elevated-but-not-confident band — corroborating weak signals, not enough on their own to auto-flag. Distinct from both /flagged and /passed; use PATCH /transactions/{id}/outcome once reviewed. All filter parameters are optional and combinable."
+    )
+    @ApiResponse(responseCode = "200", description = "Pending-review assessments returned")
+    @ApiResponse(responseCode = "400", description = "Invalid request parameters",
+        content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
+    public PagedResponse<FraudAssessmentDto> getPendingReview(
+            @Parameter(description = "Filter by customer identifier")
+            @RequestParam(required = false) String customerId,
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AmountThresholdRule)")
+            @RequestParam(required = false) String ruleViolated,
+            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
+            @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
+            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100)")
+            @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
+            @Parameter(description = "ISO-8601 start of date range (inclusive)")
+            @RequestParam(required = false) String from,
+            @Parameter(description = "ISO-8601 end of date range (inclusive)")
+            @RequestParam(required = false) String to,
+            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
+            @RequestParam(required = false) String cursor,
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
+            @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
+
+        Instant fromInstant = from != null ? Instant.parse(from) : null;
+        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
+        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
+
+        Slice<FraudAssessment> slice = queryService.getPendingReview(
+                customerId, ruleViolated, minRiskScore, maxRiskScore, fromInstant, toInstant,
+                decoded != null ? decoded.timestamp() : null,
+                decoded != null ? decoded.id() : null,
+                pageSize, sort);
+
+        return toAssessmentPage(slice);
+    }
+
     @GetMapping("/passed")
     @Operation(
         summary = "List passed (cleared) transactions",

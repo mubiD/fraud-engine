@@ -51,6 +51,20 @@ public final class ProtoMapper {
                 .build();
     }
 
+    public static PendingReviewTransactionEventProto.PendingReviewTransactionEvent toPendingReviewProto(
+            Transaction tx, FraudAssessment assessment) {
+        return PendingReviewTransactionEventProto.PendingReviewTransactionEvent.newBuilder()
+                .setTransactionId(tx.getId().toString())
+                .setCustomerId(tx.getCustomerId())
+                .setMerchantId(tx.getMerchantId())
+                .setAmount(tx.getAmount().toPlainString())
+                .setCurrency(tx.getCurrency())
+                .setTransactionType(toProtoType(tx.getTransactionType()))
+                .setRiskScore(assessment.getRiskScore())
+                .setAssessedAt(toTimestamp(assessment.getAssessedAt()))
+                .build();
+    }
+
     private static TransactionType toDomainType(TransactionEventProto.TransactionType proto) {
         return switch (proto) {
             case CARD_PRESENT  -> TransactionType.CARD_PRESENT;

@@ -92,6 +92,12 @@ public class GlobalExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
+    @ExceptionHandler(AssessmentAlreadyResolvedException.class)
+    public ProblemDetail handleAlreadyResolved(AssessmentAlreadyResolvedException ex) {
+        log.warn("Conflicting outcome update: {}", ex.getMessage());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneral(Exception ex) {
         log.error("Unhandled exception: {}", ex.getMessage(), ex);

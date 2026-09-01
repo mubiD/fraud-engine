@@ -159,6 +159,7 @@ public class StandaloneTransactionController {
             @RequestParam @Min(1) @Max(10_000) int count) {
 
         int passed = 0;
+        int pendingReview = 0;
         int flagged = 0;
 
         for (int i = 0; i < count; i++) {
@@ -171,10 +172,14 @@ public class StandaloneTransactionController {
             tx.setStatus(TransactionStatus.ASSESSED);
             transactionRepository.save(tx);
 
-            if (assessment.isFraudulent()) flagged++; else passed++;
+            switch (assessment.getDisposition()) {
+                case FLAGGED -> flagged++;
+                case PENDING_REVIEW -> pendingReview++;
+                case CLEARED -> passed++;
+            }
         }
 
-        return ResponseEntity.ok(new StreamResult(count, passed, flagged));
+        return ResponseEntity.ok(new StreamResult(count, passed, pendingReview, flagged));
     }
 
     private Transaction buildFakeTransaction() {
@@ -270,7 +275,8 @@ public class StandaloneTransactionController {
     @Schema(description = "Summary of a stream run")
     record StreamResult(
         @Schema(description = "Total transactions processed") int total,
-        @Schema(description = "Transactions that passed fraud checks") int passed,
+        @Schema(description = "Transactions cleared") int passed,
+        @Schema(description = "Transactions marked pending review") int pendingReview,
         @Schema(description = "Transactions flagged as fraudulent") int flagged
     ) {}
 }

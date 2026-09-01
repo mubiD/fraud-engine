@@ -39,26 +39,33 @@ transactions.raw  ────────────────────�
   ├── DeviceFingerprintRule         priority 9   HIGH      (unknown device for customer)
   ├── MultiChannelAnomalyRule       priority 10  MEDIUM    (rapid physical↔online switch)
   ├── CrossMerchantVelocityRule     priority 11  MEDIUM    (≥10 txns across merchants in 10 min)
-  └── CumulativeSpendingRule        priority 12  HIGH      (hourly + daily spend limits)
+  ├── CumulativeSpendingRule        priority 12  HIGH      (hourly + daily spend limits)
+  └── CustomerAmountAnomalyRule     priority 13  MEDIUM    (deviation from customer's own spending baseline)
       │
       ▼
   FraudAssessment → PostgreSQL (Flyway-managed, daily-partitioned)
       │
-      ├── isFraudulent=true  → FraudulentTransactionEvent (Protobuf)
-      │                              ▼
-      │                       transactions.flagged
+      ├── disposition=FLAGGED         → FraudulentTransactionEvent (Protobuf)
+      │                                        ▼
+      │                                 transactions.flagged
       │
-      └── isFraudulent=false → ClearedTransactionEvent (Protobuf)
-                                     ▼
-                              transactions.passed
+      ├── disposition=PENDING_REVIEW → PendingReviewTransactionEvent (Protobuf)
+      │                                        ▼
+      │                                 transactions.pending-review
+      │
+      └── disposition=CLEARED        → ClearedTransactionEvent (Protobuf)
+                                               ▼
+                                        transactions.passed
 
-Query API (read-only)
+Query API (read-only, with one write exception — see below)
   Transactions
-    GET /api/v1/transactions                            — customer transaction history
-    GET /api/v1/transactions/{id}                       — single transaction by ID
-    GET /api/v1/transactions/{id}/assessment            — fraud assessment for a transaction
-    GET /api/v1/transactions/flagged                    — fraud queue (filterable by customer, rule, score band, date)
-    GET /api/v1/transactions/passed                     — cleared transactions (filterable by customer, min score, date)
+    GET   /api/v1/transactions                          — customer transaction history
+    GET   /api/v1/transactions/{id}                      — single transaction by ID
+    GET   /api/v1/transactions/{id}/assessment            — fraud assessment for a transaction
+    PATCH /api/v1/transactions/{id}/outcome               — record an analyst's ground-truth outcome (the one write endpoint)
+    GET   /api/v1/transactions/flagged                    — fraud queue (filterable by customer, rule, score band, date)
+    GET   /api/v1/transactions/pending-review             — elevated-but-not-confident queue (same filters as flagged)
+    GET   /api/v1/transactions/passed                     — cleared transactions (filterable by customer, min score, date)
   Rules
     GET /api/v1/rules                                   — registered rules with live config
   Customers
@@ -135,7 +142,7 @@ make ps
 
 ## API Reference
 
-> There is no HTTP submission endpoint. Transactions enter the system exclusively via `transactions.raw` Kafka topic. The API is read-only.
+> There is no HTTP submission endpoint. Transactions enter the system exclusively via `transactions.raw` Kafka topic. The API is read-only, with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below).
 
 All paginated endpoints return a consistent envelope:
 
@@ -183,7 +190,7 @@ Response `200 OK`:
       "status": "ASSESSED",
       "timestamp": "2026-07-23T09:00:00Z",
       "assessment": {
-        "fraudulent": true,
+        "disposition": "FLAGGED",
         "riskScore": 89,
         "violations": [{ "ruleName": "BLACKLISTED_MERCHANT", "severity": "CRITICAL" }]
       }
@@ -218,6 +225,43 @@ Returns `200 OK` with the full assessment (risk score, all rule violations, seve
 curl http://localhost:8081/api/v1/transactions/550e8400-e29b-41d4-a716-446655440000/assessment
 ```
 
+#### Record a transaction's outcome (the one write endpoint)
+
+```
+PATCH /api/v1/transactions/{transactionId}/outcome
+```
+
+Lets a fraud analyst record whether a flagged (or cleared) transaction turned out to
+actually be fraud or a false positive, once reviewed. This is the ground-truth feedback
+the scoring model's likelihood ratios will eventually be calibrated against — see
+`ScoringProperties` and `DESIGN.md` §5.
+
+Outcomes are a **one-time disposition**: an assessment starts as `UNRESOLVED` and can be
+set to `CONFIRMED_FRAUD` or `FALSE_POSITIVE` exactly once. A second attempt to update an
+already-resolved assessment is rejected — outcomes aren't correctable through this
+endpoint once set.
+
+Request body:
+```json
+{ "outcome": "CONFIRMED_FRAUD" }
+```
+
+```bash
+curl -X PATCH http://localhost:8081/api/v1/transactions/550e8400-e29b-41d4-a716-446655440000/outcome \
+  -H "Content-Type: application/json" \
+  -d '{ "outcome": "CONFIRMED_FRAUD" }'
+```
+
+| Status | Meaning |
+|---|---|
+| `200 OK` | Outcome recorded; returns the updated assessment |
+| `400 Bad Request` | Missing/invalid `outcome` value (must be `CONFIRMED_FRAUD` or `FALSE_POSITIVE` — `UNRESOLVED` cannot be set manually) |
+| `404 Not Found` | No assessment exists for this transaction |
+| `409 Conflict` | The assessment already has a resolved outcome |
+
+Requires the same JWT bearer token and `FRAUD_ANALYST`/`FRAUD_ENGINEER` role as every
+other `/api/v1/**` endpoint — no separate write permission exists.
+
 #### List flagged (fraudulent) transactions
 
 ```
@@ -245,6 +289,33 @@ curl "http://localhost:8081/api/v1/transactions/flagged?minRiskScore=50&maxRiskS
 curl "http://localhost:8081/api/v1/transactions/flagged?customerId=CUST-001&ruleViolated=VelocityRule"
 ```
 
+#### List transactions pending review
+
+```
+GET /api/v1/transactions/pending-review
+```
+
+The elevated-but-not-confident band — corroborating weak signals (e.g. an off-hours
+transaction that also fired a second weak rule) that don't cross the `FLAGGED`
+threshold on their own, but are no longer silently treated the same as a clean
+transaction either. Same filter set as `/flagged`; work this queue via
+`PATCH /transactions/{id}/outcome` once reviewed.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `customerId` | string | no | Narrow to a specific customer |
+| `ruleViolated` | string | no | Narrow to assessments where this rule fired |
+| `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
+| `maxRiskScore` | int | no | Upper bound on risk score (inclusive) |
+| `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
+| `cursor` | ISO-8601 | no | Pagination cursor |
+| `pageSize` | int 1–1000 | no | Default 20 |
+
+```bash
+# Everything awaiting review this month
+curl "http://localhost:8081/api/v1/transactions/pending-review?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z"
+```
+
 #### List passed (cleared) transactions
 
 ```
@@ -254,15 +325,12 @@ GET /api/v1/transactions/passed
 | Param | Type | Required | Description |
 |---|---|---|---|
 | `customerId` | string | no | Narrow to a specific customer |
-| `minRiskScore` | int | no | Near-miss filter — returns cleared transactions that still scored above this threshold. Use `minRiskScore=30` to find transactions the engine almost flagged, useful for rule calibration |
+| `minRiskScore` | int | no | Lower bound on risk score (inclusive) — cleared transactions are always low-scoring by construction, but this still lets you sort within that band |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
 | `cursor` | ISO-8601 | no | Pagination cursor |
 | `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
-# Near-misses: cleared but scored >= 30
-curl "http://localhost:8081/api/v1/transactions/passed?minRiskScore=30"
-
 # Audit trail for a customer over the last month
 curl "http://localhost:8081/api/v1/transactions/passed?customerId=CUST-001&from=2026-07-01T00:00:00Z"
 ```
@@ -467,9 +535,15 @@ Response `200 OK`:
 | `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes — provides an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
 | `CUMULATIVE_SPENDING` | Rolling spend exceeds the hourly limit (default R10,000) or daily limit (default R25,000). Hourly is computed from in-context recent transactions; daily is a pre-aggregated DB query. | HIGH | 12 |
 
-**Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points — each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100), and a transaction is marked fraudulent when the probability crosses `fraud.scoring.fraud-probability-threshold` (default 0.5).
+**Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points — each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100). The verdict is a **three-way disposition**, not a binary flag, driven by two thresholds: `fraud.scoring.fraud-probability-threshold` (default 0.5) and below it, `fraud.scoring.review-probability-threshold` (default 0.10).
 
-This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would — some rules (`BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be fraudulent on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the threshold. Two transactions that fired only a weak rule each still score well above a clean transaction's baseline — that band is exactly what `/transactions/passed?minRiskScore=N` (the near-miss query above) is for.
+| `disposition` | When |
+|---|---|
+| `FLAGGED` | probability ≥ `fraud-probability-threshold` |
+| `PENDING_REVIEW` | probability ≥ `review-probability-threshold`, below `fraud-probability-threshold` |
+| `CLEARED` | probability below `review-probability-threshold` |
+
+This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would — some rules (`BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be `FLAGGED` on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the `FLAGGED` threshold. Two transactions that fired only a weak rule each land in `PENDING_REVIEW` instead of being silently treated the same as a clean transaction — that band is exactly what `GET /transactions/pending-review` (§ API Reference) surfaces for an analyst to work.
 
 The likelihood ratios in `ScoringProperties` are domain-judgment starting points, not values derived from labelled outcome data — this system doesn't yet have a confirmed-fraud / false-positive feedback loop to calibrate against, so treat them as a reasoned first pass rather than ground truth.
 
@@ -483,6 +557,7 @@ The likelihood ratios in `ScoringProperties` are domain-judgment starting points
 | `transactions.raw-0`, `transactions.raw-1` | 6 | Internal (retry) | auto-created by `@RetryableTopic` |
 | `transactions.raw.DLT` | 1 | Dead-letter | exhausted-retry events |
 | `transactions.flagged` | 3 | Outbound (produced) | `FraudulentTransactionEvent` Protobuf |
+| `transactions.pending-review` | 3 | Outbound (produced) | `PendingReviewTransactionEvent` Protobuf |
 | `transactions.passed` | 3 | Outbound (produced) | `ClearedTransactionEvent` Protobuf |
 
 All topics use replication factor 2 across the 3-broker cluster. Schemas are registered with and enforced by Confluent Schema Registry.
@@ -496,7 +571,7 @@ The DB write and Kafka publish are atomic via `ChainedKafkaTransactionManager`:
 1. Kafka TX opens
 2. DB TX opens
 3. `FraudAssessment` + updated `TransactionStatus` written to Postgres
-4. Outcome event published to `transactions.flagged` or `transactions.passed`
+4. Outcome event published to `transactions.flagged`, `transactions.pending-review`, or `transactions.passed`
 5. DB TX commits; Kafka TX commits
 
 If the DB commit fails, the Kafka TX aborts — no message is published, and the consumer retries cleanly.
@@ -522,7 +597,7 @@ Each rule is tested in isolation with zero Spring context — fast and determini
 
 | Test class | Controller | Tests |
 |---|---|---|
-| `TransactionQueryControllerTest` | `TransactionQueryController` | 22 |
+| `TransactionQueryControllerTest` | `TransactionQueryController` | 38 |
 | `MerchantControllerTest` | `MerchantController` | 11 |
 | `StatsControllerTest` | `StatsController` | 4 |
 | `CustomerControllerTest` | `CustomerController` | 4 |
@@ -539,7 +614,9 @@ Coverage per controller:
 
 **`GET /transactions/flagged`** — no filters, per-filter isolation (customerId, ruleViolated, minRiskScore, maxRiskScore, date range), combined risk score band, `pageSize` validation
 
-**`GET /transactions/passed`** — no filters, cursor passthrough, customerId + date range, `minRiskScore` near-miss query
+**`GET /transactions/pending-review`** — no filters, customerId passthrough, combined risk score band, date range, `pageSize`/sort validation
+
+**`GET /transactions/passed`** — no filters, cursor passthrough, customerId + date range, `minRiskScore` filter
 
 **`GET /merchants/{id}/flagged`** — no filters, date range, ruleViolated, minRiskScore, combined ruleViolated + minRiskScore, next-cursor set when `hasMore=true`, `pageSize` validation, malformed date → 400
 
@@ -693,7 +770,8 @@ fraud:
 fraud:
   scoring:
     prior-fraud-probability: 0.01       # assumed base fraud rate, before any rule evidence
-    fraud-probability-threshold: 0.5    # posterior probability at/above which a transaction is flagged
+    fraud-probability-threshold: 0.5    # posterior probability at/above which a transaction is FLAGGED
+    review-probability-threshold: 0.10  # at/above this (but below fraud-probability-threshold) -> PENDING_REVIEW
     likelihood-ratios:                  # "RULE_NAME:SEVERITY" -> ratio; see ScoringProperties.java
       "AMOUNT_THRESHOLD:HIGH": 2.0      # example override — Java defaults apply if omitted; note the
                                          # quoted key — YAML requires quoting a key containing a colon
@@ -729,7 +807,9 @@ Security is profile-gated so local development and tests require no credentials.
 |---|---|
 | `local`, `standalone` | All requests permitted. No IDP contact. |
 | `test` | All requests permitted. `@WebMvcTest` tests pass without auth headers. |
-| All other profiles (`dev`, `int`, `qa`, `load`, prod) | JWT bearer token required on `/api/v1/**`. |
+| `int`, `qa`, `load`, `prod` | JWT bearer token required on `/api/v1/**`. |
+
+> Note: the `dev` **environment** (`make dev`, `docker-compose.dev.yml`) activates the `local` Spring **profile** — not a profile named `dev` — so it falls in the open bucket above, with no auth required. The `int`/`qa`/`load`/`prod` environments each activate their own like-named profile.
 
 ### Authentication
 
@@ -889,7 +969,8 @@ src/
 │   │       ├── DeviceFingerprintRule.java     # priority 9
 │   │       ├── MultiChannelAnomalyRule.java   # priority 10
 │   │       ├── CrossMerchantVelocityRule.java # priority 11
-│   │       └── CumulativeSpendingRule.java    # priority 12
+│   │       ├── CumulativeSpendingRule.java    # priority 12
+│   │       └── CustomerAmountAnomalyRule.java # priority 13 — personal spending baseline
 │   ├── exception/          # GlobalExceptionHandler (400 for validation, type mismatch, date parse)
 │   ├── filter/             # MdcLoggingFilter
 │   ├── kafka/              # AssessmentProducer, TransactionEvent (POJO), event POJO classes
@@ -910,7 +991,8 @@ src/
 ├── main/proto/
 │   ├── transaction_event.proto           # TransactionEvent + TransactionType enum
 │   ├── cleared_transaction_event.proto   # ClearedTransactionEvent
-│   └── fraudulent_transaction_event.proto # FraudulentTransactionEvent
+│   ├── fraudulent_transaction_event.proto # FraudulentTransactionEvent
+│   └── pending_review_transaction_event.proto # PendingReviewTransactionEvent
 ├── main/resources/
 │   ├── application.yml
 │   └── db/migration/
@@ -919,7 +1001,8 @@ src/
 │       ├── V3__add_transaction_type.sql
 │       ├── V4__partition_transactions.sql
 │       ├── V5__add_device_fingerprint.sql      # device_fingerprint column + index
-│       └── V6__add_merchant_locations.sql      # merchant_locations table + seed data
+│       ├── V6__add_merchant_locations.sql      # merchant_locations table + seed data
+│       └── V7__add_assessment_outcome.sql      # outcome column + index on fraud_assessments
 └── test/java/com/fraudengine/
     ├── api/controller/
     │   ├── TransactionQueryControllerTest.java  # 22 tests
@@ -930,7 +1013,7 @@ src/
     │   └── StandaloneTransactionControllerTest.java
     ├── engine/
     │   ├── RuleEngineTest.java
-    │   └── rules/              # Unit tests — one per rule (12 rule test classes)
+    │   └── rules/              # Unit tests — one per rule (13 rule test classes)
     ├── kafka/                  # AssessmentProducerTest (Mockito)
     └── integration/            # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
 

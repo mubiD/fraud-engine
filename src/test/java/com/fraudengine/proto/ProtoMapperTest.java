@@ -176,6 +176,33 @@ class ProtoMapperTest {
         assertThat(proto.getAssessedAt().getSeconds()).isEqualTo(now.getEpochSecond());
     }
 
+    // ---- toPendingReviewProto ----
+
+    @Test
+    void toPendingReviewProto_mapsTransactionAndAssessmentFields() {
+        Instant now = Instant.now();
+        Transaction tx = Transaction.builder()
+                .id(UUID.randomUUID()).customerId("CUST_04").merchantId("MERCH_04")
+                .amount(new BigDecimal("620.00")).currency("ZAR")
+                .transactionType(TransactionType.CARD_PRESENT).timestamp(now).build();
+
+        FraudAssessment assessment = new FraudAssessment();
+        assessment.setRiskScore(22);
+        assessment.setAssessedAt(now);
+
+        PendingReviewTransactionEventProto.PendingReviewTransactionEvent proto =
+                ProtoMapper.toPendingReviewProto(tx, assessment);
+
+        assertThat(proto.getTransactionId()).isEqualTo(tx.getId().toString());
+        assertThat(proto.getCustomerId()).isEqualTo("CUST_04");
+        assertThat(proto.getMerchantId()).isEqualTo("MERCH_04");
+        assertThat(proto.getAmount()).isEqualTo("620.00");
+        assertThat(proto.getCurrency()).isEqualTo("ZAR");
+        assertThat(proto.getTransactionType()).isEqualTo(TransactionEventProto.TransactionType.CARD_PRESENT);
+        assertThat(proto.getRiskScore()).isEqualTo(22);
+        assertThat(proto.getAssessedAt().getSeconds()).isEqualTo(now.getEpochSecond());
+    }
+
     // ---- helpers ----
 
     private TransactionEventProto.TransactionEvent.Builder baseProto() {

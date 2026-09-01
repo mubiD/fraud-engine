@@ -2,6 +2,7 @@ package com.fraudengine.engine;
 
 import com.fraudengine.config.ScoringProperties;
 import com.fraudengine.model.FraudAssessment;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.RuleViolation;
 import com.fraudengine.model.Transaction;
 import org.slf4j.Logger;
@@ -52,11 +53,18 @@ public class RuleEngine {
 
         double fraudProbability = calculateFraudProbability(violations);
         int riskScore = probabilityToRiskScore(fraudProbability);
-        boolean isFraudulent = fraudProbability >= scoringProperties.getFraudProbabilityThreshold();
+        Disposition disposition;
+        if (fraudProbability >= scoringProperties.getFraudProbabilityThreshold()) {
+            disposition = Disposition.FLAGGED;
+        } else if (fraudProbability >= scoringProperties.getReviewProbabilityThreshold()) {
+            disposition = Disposition.PENDING_REVIEW;
+        } else {
+            disposition = Disposition.CLEARED;
+        }
 
         FraudAssessment assessment = FraudAssessment.builder()
                 .transaction(transaction)
-                .fraudulent(isFraudulent)
+                .disposition(disposition)
                 .riskScore(riskScore)
                 .build();
 
@@ -73,8 +81,8 @@ public class RuleEngine {
         assessment.setRuleViolations(ruleViolations);
 
         long elapsedMs = Duration.between(start, Instant.now()).toMillis();
-        log.debug("Rule evaluation complete: fraudulent={}, riskScore={}, violations={}, elapsedMs={}",
-                isFraudulent, riskScore, violations.size(), elapsedMs);
+        log.debug("Rule evaluation complete: disposition={}, riskScore={}, violations={}, elapsedMs={}",
+                disposition, riskScore, violations.size(), elapsedMs);
 
         return assessment;
     }

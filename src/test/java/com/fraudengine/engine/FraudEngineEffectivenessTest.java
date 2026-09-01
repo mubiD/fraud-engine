@@ -6,6 +6,7 @@ import com.fraudengine.engine.rules.*;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.RuleViolation;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionType;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -70,6 +71,9 @@ class FraudEngineEffectivenessTest {
         props.getCumulativeSpending().setHourlyLimit(new BigDecimal("10000.00"));
         props.getCumulativeSpending().setDailyLimit(new BigDecimal("25000.00"));
         props.getCumulativeSpending().setHourlyWindowMinutes(60);
+        props.getCustomerAmountAnomaly().setLookbackDays(90);
+        props.getCustomerAmountAnomaly().setMinHistoryCount(5);
+        props.getCustomerAmountAnomaly().setStddevMultiplier(3.0);
 
         rules = List.of(
                 new AmountThresholdRule(props),
@@ -83,7 +87,8 @@ class FraudEngineEffectivenessTest {
                 new DeviceFingerprintRule(props),
                 new MultiChannelAnomalyRule(props),
                 new CrossMerchantVelocityRule(props),
-                new CumulativeSpendingRule(props)
+                new CumulativeSpendingRule(props),
+                new CustomerAmountAnomalyRule(props)
         );
 
         mockContextBuilder = mock(EvaluationContextBuilder.class);
@@ -134,7 +139,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "VELOCITY"))
                 .as("VELOCITY rule must fire when customer has 5+ transactions in the window")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(20)
@@ -153,7 +158,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "DUPLICATE_TRANSACTION"))
                 .as("DUPLICATE_TRANSACTION rule must fire for same merchant/amount/currency within CNP window")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(30)
@@ -172,9 +177,9 @@ class FraudEngineEffectivenessTest {
         // This was previously a hard "must be fraudulent alone" assertion; changing
         // that was the point of the log-odds rescoring, not a regression.
         System.out.printf(
-                "  [GAP NOTE] AMOUNT_THRESHOLD fired alone — fraud verdict: %s, riskScore: %d. "
+                "  [GAP NOTE] AMOUNT_THRESHOLD fired alone — disposition: %s, riskScore: %d. "
                 + "Needs a corroborating signal to cross the fraud threshold.%n",
-                result.isFraudulent(), result.getRiskScore());
+                result.getDisposition(), result.getRiskScore());
     }
 
     @Test @Order(40)
@@ -187,7 +192,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "BLACKLISTED_MERCHANT"))
                 .as("BLACKLISTED_MERCHANT rule must fire for pre-seeded bad merchants")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(50)
@@ -207,7 +212,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "GEOGRAPHIC_ANOMALY"))
                 .as("GEOGRAPHIC_ANOMALY rule must fire when travel speed exceeds 900 km/h")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(60)
@@ -227,9 +232,9 @@ class FraudEngineEffectivenessTest {
         // CARD_CLONING is calibrated as weak evidence alone — below the fraud
         // threshold on its own. Combine with another signal to cross it.
         System.out.printf(
-                "  [GAP NOTE] CARD_CLONING fired alone — fraud verdict: %s, riskScore: %d. "
+                "  [GAP NOTE] CARD_CLONING fired alone — disposition: %s, riskScore: %d. "
                 + "Needs a second corroborating signal to cross the fraud threshold.%n",
-                result.isFraudulent(), result.getRiskScore());
+                result.getDisposition(), result.getRiskScore());
     }
 
     @Test @Order(70)
@@ -243,7 +248,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "HIGH_RISK_MERCHANT_CATEGORY"))
                 .as("HIGH_RISK_MERCHANT_CATEGORY rule must fire for crypto exchange transactions")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(80)
@@ -257,9 +262,9 @@ class FraudEngineEffectivenessTest {
                 .as("TIME_OF_DAY_ANOMALY rule must fire for transactions at 03:00 UTC")
                 .isTrue();
         System.out.printf(
-                "  [GAP NOTE] TIME_OF_DAY_ANOMALY fired alone — fraud verdict: %s, riskScore: %d. "
+                "  [GAP NOTE] TIME_OF_DAY_ANOMALY fired alone — disposition: %s, riskScore: %d. "
                 + "Needs a second corroborating signal to cross the fraud threshold.%n",
-                result.isFraudulent(), result.getRiskScore());
+                result.getDisposition(), result.getRiskScore());
     }
 
     @Test @Order(81)
@@ -277,7 +282,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "DEVICE_FINGERPRINT"))
                 .as("DEVICE_FINGERPRINT rule must fire for a device fingerprint never seen for this customer")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(82)
@@ -296,7 +301,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "CUMULATIVE_SPENDING"))
                 .as("CUMULATIVE_SPENDING rule must fire when rolling hourly spend exceeds the limit")
                 .isTrue();
-        assertThat(result.isFraudulent()).isTrue();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(83)
@@ -315,9 +320,9 @@ class FraudEngineEffectivenessTest {
                 .as("MULTI_CHANNEL_ANOMALY rule must fire for a physical->online channel switch within the window")
                 .isTrue();
         System.out.printf(
-                "  [GAP NOTE] MULTI_CHANNEL_ANOMALY fired alone — fraud verdict: %s, riskScore: %d. "
+                "  [GAP NOTE] MULTI_CHANNEL_ANOMALY fired alone — disposition: %s, riskScore: %d. "
                 + "Needs a second corroborating signal to cross the fraud threshold.%n",
-                result.isFraudulent(), result.getRiskScore());
+                result.getDisposition(), result.getRiskScore());
     }
 
     @Test @Order(84)
@@ -341,18 +346,49 @@ class FraudEngineEffectivenessTest {
         // that same underlying pattern.
     }
 
+    @Test @Order(85)
+    @DisplayName("Pattern: Customer Amount Anomaly — large deviation from personal baseline")
+    void pattern_customerAmountAnomaly() {
+        Instant now = BUSINESS_HOURS;
+        // 10 prior transactions around 80 ZAR — this customer's normal spend
+        List<Transaction> baseline = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            baseline.add(tx("CUST_BASELINE", "SHOP_" + i, new BigDecimal(75 + (i % 6) + ".00"), "ZAR",
+                    now.minus((long) i, ChronoUnit.DAYS)));
+        }
+
+        // 800 ZAR is nowhere near the global 5000 AMOUNT_THRESHOLD, but is a huge
+        // personal anomaly for a customer whose typical transaction is ~80 ZAR
+        FraudAssessment result = evaluate(
+                tx("CUST_BASELINE", "SHOP_NEW", new BigDecimal("800.00"), "ZAR", now),
+                List.of(), Set.of(), baseline);
+
+        assertThat(hasViolation(result, "CUSTOMER_AMOUNT_ANOMALY"))
+                .as("CUSTOMER_AMOUNT_ANOMALY rule must fire for a transaction far beyond the customer's own baseline")
+                .isTrue();
+        assertThat(hasViolation(result, "AMOUNT_THRESHOLD"))
+                .as("800 ZAR must not trip the unrelated global AMOUNT_THRESHOLD rule")
+                .isFalse();
+        System.out.printf(
+                "  [GAP NOTE] CUSTOMER_AMOUNT_ANOMALY fired alone — disposition: %s, riskScore: %d. "
+                + "Needs a second corroborating signal to cross the fraud threshold.%n",
+                result.getDisposition(), result.getRiskScore());
+    }
+
     // =========================================================================
     // 2. COMBINED-SIGNAL PATTERNS
     //    Two independently-weak signals raise the score, but a log-odds model
     //    doesn't treat "two weak coincidences" as equivalent to "one certain
     //    signal" — that conflation was the problem the old additive model had.
-    //    These scenarios land in an elevated-but-not-flagged band, which is
-    //    exactly what README's minRiskScore "near-miss" query exists to surface.
+    //    These scenarios land in the PENDING_REVIEW band (tier 4) rather than
+    //    being silently treated the same as a clean, zero-violation transaction —
+    //    this is the three-way disposition feature actually working, not just a
+    //    non-regression check.
     // =========================================================================
 
     @Test @Order(90)
-    @DisplayName("Combined: Card cloning + off-hours — elevated, but not enough alone to auto-flag")
-    void combined_cardCloningAndOffHours_elevatedNotAutoFlagged() {
+    @DisplayName("Combined: Card cloning + off-hours — elevated to PENDING_REVIEW, not auto-flagged")
+    void combined_cardCloningAndOffHours_pendingReview() {
         FraudAssessment result = evaluate(
                 tx("CUST_COMBO", "ALIEXPRESS.COM", new BigDecimal("99.99"), "ZAR", OFF_HOURS),
                 List.of(
@@ -367,12 +403,12 @@ class FraudEngineEffectivenessTest {
         assertThat(result.getRiskScore())
                 .as("Two corroborating weak signals should score well above a clean transaction's baseline")
                 .isGreaterThan(5);
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.PENDING_REVIEW);
     }
 
     @Test @Order(91)
-    @DisplayName("Combined: Multi-channel switch + off-hours — elevated, but not enough alone to auto-flag")
-    void combined_multiChannelAndOffHours_elevatedNotAutoFlagged() {
+    @DisplayName("Combined: Multi-channel switch + off-hours — elevated to PENDING_REVIEW, not auto-flagged")
+    void combined_multiChannelAndOffHours_pendingReview() {
         Transaction physical = txFull("CUST_CHANNEL_COMBO", "STORE_PHYS", new BigDecimal("50.00"),
                 "ZAR", null, null, TransactionType.CARD_PRESENT, OFF_HOURS.minus(3, ChronoUnit.MINUTES));
 
@@ -384,12 +420,12 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "MULTI_CHANNEL_ANOMALY")).isTrue();
         assertThat(hasViolation(result, "TIME_OF_DAY_ANOMALY")).isTrue();
         assertThat(result.getRiskScore()).isGreaterThan(5);
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.PENDING_REVIEW);
     }
 
     @Test @Order(100)
-    @DisplayName("Combined: Gambling + off-hours — elevated, but not enough alone to auto-flag")
-    void combined_gamblingAndOffHours_elevatedNotAutoFlagged() {
+    @DisplayName("Combined: Gambling + off-hours — elevated to PENDING_REVIEW, not auto-flagged")
+    void combined_gamblingAndOffHours_pendingReview() {
         FraudAssessment result = evaluate(
                 txWithCategory("CUST_GAMBLE", "BETWAY_APP", new BigDecimal("300.00"),
                         "ZAR", "GAMBLING", OFF_HOURS),
@@ -398,7 +434,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "HIGH_RISK_MERCHANT_CATEGORY")).isTrue();
         assertThat(hasViolation(result, "TIME_OF_DAY_ANOMALY")).isTrue();
         assertThat(result.getRiskScore()).isGreaterThan(5);
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.PENDING_REVIEW);
     }
 
     // =========================================================================
@@ -418,9 +454,9 @@ class FraudEngineEffectivenessTest {
                                 BUSINESS_HOURS.minus(90, ChronoUnit.MINUTES))),
                 Set.of());
 
-        assertThat(result.isFraudulent())
-                .as("Legitimate weekend shopping with varied merchants/amounts must NOT be flagged")
-                .isFalse();
+        assertThat(result.getDisposition())
+                .as("Legitimate weekend shopping with varied merchants/amounts must be CLEARED")
+                .isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(210)
@@ -430,10 +466,34 @@ class FraudEngineEffectivenessTest {
                 tx("CUST_LEGIT_2", "SAMSUNG_STORE", new BigDecimal("4999.99"), "ZAR", BUSINESS_HOURS),
                 List.of(), Set.of());
 
-        assertThat(result.isFraudulent())
+        assertThat(result.getDisposition())
                 .as("Purchase of exactly 4999.99 ZAR must NOT trigger AMOUNT_THRESHOLD")
-                .isFalse();
+                .isEqualTo(Disposition.CLEARED);
         assertThat(hasViolation(result, "AMOUNT_THRESHOLD")).isFalse();
+    }
+
+    @Test @Order(211)
+    @DisplayName("Legitimate: Purchase within normal personal variation despite exceeding it slightly")
+    void legitimate_withinPersonalVariation() {
+        Instant now = BUSINESS_HOURS;
+        // History: mean 2500, population stdDev exactly 400 — a customer with genuinely
+        // variable spending habits, not a flat/uniform pattern. New amount (3500) is
+        // 2.5 stdDev away, under the 3.0 multiplier.
+        List<Transaction> baseline = List.of(
+                tx("CUST_LEGIT_7", "SHOP_A", new BigDecimal("1900.00"), "ZAR", now.minus(5, ChronoUnit.DAYS)),
+                tx("CUST_LEGIT_7", "SHOP_B", new BigDecimal("2300.00"), "ZAR", now.minus(10, ChronoUnit.DAYS)),
+                tx("CUST_LEGIT_7", "SHOP_C", new BigDecimal("2500.00"), "ZAR", now.minus(15, ChronoUnit.DAYS)),
+                tx("CUST_LEGIT_7", "SHOP_D", new BigDecimal("2700.00"), "ZAR", now.minus(20, ChronoUnit.DAYS)),
+                tx("CUST_LEGIT_7", "SHOP_E", new BigDecimal("3100.00"), "ZAR", now.minus(25, ChronoUnit.DAYS)));
+
+        FraudAssessment result = evaluate(
+                tx("CUST_LEGIT_7", "SHOP_F", new BigDecimal("3500.00"), "ZAR", now),
+                List.of(), Set.of(), baseline);
+
+        assertThat(hasViolation(result, "CUSTOMER_AMOUNT_ANOMALY"))
+                .as("A purchase within this customer's normal variability must NOT trigger CUSTOMER_AMOUNT_ANOMALY")
+                .isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(220)
@@ -452,7 +512,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "DUPLICATE_TRANSACTION"))
                 .as("Monthly subscription charge (31 days apart) must NOT trigger DUPLICATE_TRANSACTION")
                 .isFalse();
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(230)
@@ -472,7 +532,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "GEOGRAPHIC_ANOMALY"))
                 .as("JHB→CPT in 3 hours is realistic (1400 km / 3h ≈ 467 km/h) — must NOT trigger GEOGRAPHIC_ANOMALY")
                 .isFalse();
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(240)
@@ -488,7 +548,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "VELOCITY"))
                 .as("4 prior transactions (below max of 5) must NOT trigger VELOCITY rule")
                 .isFalse();
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(250)
@@ -509,7 +569,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "DUPLICATE_TRANSACTION"))
                 .as("100 ZAR followed by 100 USD at the same merchant must NOT be a duplicate (Gap 7 fix)")
                 .isFalse();
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(260)
@@ -527,7 +587,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "DEVICE_FINGERPRINT"))
                 .as("Repeat use of the same device fingerprint must NOT trigger DEVICE_FINGERPRINT")
                 .isFalse();
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     @Test @Order(270)
@@ -545,7 +605,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "CUMULATIVE_SPENDING"))
                 .as("Modest hourly spend (1500 ZAR, well under the 10000 limit) must NOT trigger CUMULATIVE_SPENDING")
                 .isFalse();
-        assertThat(result.isFraudulent()).isFalse();
+        assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
     }
 
     // =========================================================================
@@ -668,12 +728,12 @@ class FraudEngineEffectivenessTest {
         Map<String, Boolean> legitResults   = new LinkedHashMap<>();
 
         for (FraudScenario s : fraudCases) {
-            boolean detected = evaluate(s.txn(), s.history(), s.blacklist()).isFraudulent();
+            boolean detected = evaluate(s.txn(), s.history(), s.blacklist()).getDisposition() == Disposition.FLAGGED;
             fraudResults.put(s.name(), detected);
             if (detected) tp++; else fn++;
         }
         for (LegitScenario s : legitCases) {
-            boolean flagged = evaluate(s.txn(), s.history(), s.blacklist()).isFraudulent();
+            boolean flagged = evaluate(s.txn(), s.history(), s.blacklist()).getDisposition() == Disposition.FLAGGED;
             legitResults.put(s.name(), flagged);
             if (!flagged) tn++; else fp++;
         }
@@ -724,6 +784,15 @@ class FraudEngineEffectivenessTest {
                 tx("XVEL", "SHOP_X", new BigDecimal("30.00"), "ZAR", now),
                 buildHistory("XVEL", 9, 1, now),
                 Set.of()), "CROSS_MERCHANT_VELOCITY"));
+        patternCoverage.put("CUSTOMER_AMOUNT_ANOMALY",     hasViolation(evaluate(
+                tx("CAA", "SHOP_NEW", new BigDecimal("800.00"), "ZAR", now),
+                List.of(), Set.of(),
+                List.of(tx("CAA", "SHOP_1", new BigDecimal("76.00"), "ZAR", now.minus(1, ChronoUnit.DAYS)),
+                        tx("CAA", "SHOP_2", new BigDecimal("77.00"), "ZAR", now.minus(2, ChronoUnit.DAYS)),
+                        tx("CAA", "SHOP_3", new BigDecimal("78.00"), "ZAR", now.minus(3, ChronoUnit.DAYS)),
+                        tx("CAA", "SHOP_4", new BigDecimal("79.00"), "ZAR", now.minus(4, ChronoUnit.DAYS)),
+                        tx("CAA", "SHOP_5", new BigDecimal("80.00"), "ZAR", now.minus(5, ChronoUnit.DAYS)))),
+                "CUSTOMER_AMOUNT_ANOMALY"));
 
         // ---- Print report ----
         System.out.println();
@@ -766,6 +835,7 @@ class FraudEngineEffectivenessTest {
         assertThat(patternCoverage.get("CUMULATIVE_SPENDING")).as("CUMULATIVE_SPENDING rule must fire").isTrue();
         assertThat(patternCoverage.get("MULTI_CHANNEL_ANOMALY")).as("MULTI_CHANNEL_ANOMALY rule must fire").isTrue();
         assertThat(patternCoverage.get("CROSS_MERCHANT_VELOCITY")).as("CROSS_MERCHANT_VELOCITY rule must fire").isTrue();
+        assertThat(patternCoverage.get("CUSTOMER_AMOUNT_ANOMALY")).as("CUSTOMER_AMOUNT_ANOMALY rule must fire").isTrue();
     }
 
     // =========================================================================
@@ -773,9 +843,15 @@ class FraudEngineEffectivenessTest {
     // =========================================================================
 
     private FraudAssessment evaluate(Transaction txn, List<Transaction> history, Set<String> blacklist) {
+        return evaluate(txn, history, blacklist, List.of());
+    }
+
+    private FraudAssessment evaluate(Transaction txn, List<Transaction> history, Set<String> blacklist,
+                                      List<Transaction> baselineHistory) {
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(history)
                 .blacklistedMerchantIds(blacklist)
+                .customerBaselineTransactions(baselineHistory)
                 .build();
         when(mockContextBuilder.build(any())).thenReturn(ctx);
 

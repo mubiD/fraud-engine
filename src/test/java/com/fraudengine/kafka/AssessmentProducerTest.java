@@ -2,9 +2,11 @@ package com.fraudengine.kafka;
 
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
+import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.proto.ClearedTransactionEventProto;
 import com.fraudengine.proto.FraudulentTransactionEventProto;
+import com.fraudengine.proto.PendingReviewTransactionEventProto;
 import com.fraudengine.proto.TransactionEventProto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,13 +43,14 @@ class AssessmentProducerTest {
     void setUp() {
         producer = new AssessmentProducer(kafkaTemplate);
         ReflectionTestUtils.setField(producer, "flaggedTopic", "transactions.flagged");
+        ReflectionTestUtils.setField(producer, "pendingReviewTopic", "transactions.pending-review");
         ReflectionTestUtils.setField(producer, "passedTopic",  "transactions.passed");
     }
 
     @Test
-    void fraudulentAssessment_routesToFlaggedTopicWithFraudulentEvent() {
+    void flaggedAssessment_routesToFlaggedTopicWithFraudulentEvent() {
         Transaction tx = buildTransaction();
-        producer.publish(tx, buildAssessment(tx, true, 75));
+        producer.publish(tx, buildAssessment(tx, Disposition.FLAGGED, 75));
 
         verify(kafkaTemplate).send(
                 eq("transactions.flagged"),
@@ -56,9 +59,20 @@ class AssessmentProducerTest {
     }
 
     @Test
+    void pendingReviewAssessment_routesToPendingReviewTopicWithPendingReviewEvent() {
+        Transaction tx = buildTransaction();
+        producer.publish(tx, buildAssessment(tx, Disposition.PENDING_REVIEW, 20));
+
+        verify(kafkaTemplate).send(
+                eq("transactions.pending-review"),
+                eq(tx.getCustomerId()),
+                any(PendingReviewTransactionEventProto.PendingReviewTransactionEvent.class));
+    }
+
+    @Test
     void clearedAssessment_routesToPassedTopicWithClearedEvent() {
         Transaction tx = buildTransaction();
-        producer.publish(tx, buildAssessment(tx, false, 0));
+        producer.publish(tx, buildAssessment(tx, Disposition.CLEARED, 0));
 
         verify(kafkaTemplate).send(
                 eq("transactions.passed"),
@@ -69,7 +83,7 @@ class AssessmentProducerTest {
     @Test
     void fraudulentEvent_containsTransactionIdAndRiskScore() {
         Transaction tx = buildTransaction();
-        producer.publish(tx, buildAssessment(tx, true, 80));
+        producer.publish(tx, buildAssessment(tx, Disposition.FLAGGED, 80));
 
         verify(kafkaTemplate).send(anyString(), anyString(), eventCaptor.capture());
         FraudulentTransactionEventProto.FraudulentTransactionEvent event =
@@ -82,9 +96,27 @@ class AssessmentProducerTest {
     }
 
     @Test
+    void pendingReviewEvent_containsFullPaymentDetailsAndRiskScore() {
+        Transaction tx = buildTransaction();
+        producer.publish(tx, buildAssessment(tx, Disposition.PENDING_REVIEW, 20));
+
+        verify(kafkaTemplate).send(anyString(), anyString(), eventCaptor.capture());
+        PendingReviewTransactionEventProto.PendingReviewTransactionEvent event =
+                (PendingReviewTransactionEventProto.PendingReviewTransactionEvent) eventCaptor.getValue();
+
+        assertThat(event.getTransactionId()).isEqualTo(tx.getId().toString());
+        assertThat(event.getMerchantId()).isEqualTo("MERCH_TEST");
+        assertThat(event.getAmount()).isEqualTo("150.00");
+        assertThat(event.getCurrency()).isEqualTo("GBP");
+        assertThat(event.getTransactionType())
+                .isEqualTo(TransactionEventProto.TransactionType.CARD_PRESENT);
+        assertThat(event.getRiskScore()).isEqualTo(20);
+    }
+
+    @Test
     void clearedEvent_containsFullPaymentDetails() {
         Transaction tx = buildTransaction();
-        producer.publish(tx, buildAssessment(tx, false, 0));
+        producer.publish(tx, buildAssessment(tx, Disposition.CLEARED, 0));
 
         verify(kafkaTemplate).send(anyString(), anyString(), eventCaptor.capture());
         ClearedTransactionEventProto.ClearedTransactionEvent event =
@@ -101,7 +133,7 @@ class AssessmentProducerTest {
     @Test
     void messageKey_isCustomerId_forPartitionOrdering() {
         Transaction tx = buildTransaction();
-        producer.publish(tx, buildAssessment(tx, false, 0));
+        producer.publish(tx, buildAssessment(tx, Disposition.CLEARED, 0));
 
         verify(kafkaTemplate).send(anyString(), eq("CUST_TEST"), any());
     }
@@ -118,10 +150,10 @@ class AssessmentProducerTest {
                 .build();
     }
 
-    private FraudAssessment buildAssessment(Transaction tx, boolean fraudulent, int riskScore) {
+    private FraudAssessment buildAssessment(Transaction tx, Disposition disposition, int riskScore) {
         return FraudAssessment.builder()
                 .transaction(tx)
-                .fraudulent(fraudulent)
+                .disposition(disposition)
                 .riskScore(riskScore)
                 .build();
     }

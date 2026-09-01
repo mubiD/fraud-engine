@@ -6,9 +6,9 @@
 
 ## 1. What This Service Is
 
-This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank — it evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
+This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank — it evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **13** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
 
-In production-like environments (`int`, `qa`, `load`, `prod`), transactions enter **exclusively** via Kafka — there is no HTTP endpoint to submit a transaction, and the query API is read-only. The one exception is described in §2 below.
+In production-like environments (`int`, `qa`, `load`, `prod`), transactions enter **exclusively** via Kafka — there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint — §4.14 — which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
 
 ---
 
@@ -148,14 +148,16 @@ Path variable: `transactionId` (UUID).
 {
   "assessmentId": "...",
   "transactionId": "...",
-  "fraudulent": true,
+  "disposition": "FLAGGED",
   "riskScore": 89,
   "assessedAt": "2026-07-23T09:15:01Z",
   "violations": [
     { "ruleName": "BLACKLISTED_MERCHANT", "ruleVersion": "1.0", "description": "...", "severity": "CRITICAL" }
-  ]
+  ],
+  "outcome": "UNRESOLVED"
 }
 ```
+`disposition` (`CLEARED`/`PENDING_REVIEW`/`FLAGGED`) is the system's real-time verdict at assessment time; `outcome` (`UNRESOLVED`/`CONFIRMED_FRAUD`/`FALSE_POSITIVE`) is the analyst's ground truth recorded afterward via §4.14 — the two are independent fields, not synonyms.
 `riskScore` is no longer a simple point sum — see §6 before writing assertions against specific values.
 
 | Status | Condition |
@@ -170,7 +172,7 @@ Path variable: `transactionId` (UUID).
 
 **`GET /api/v1/transactions/flagged`**
 
-Returns cursor-paginated assessments where `fraudulent = true`.
+Returns cursor-paginated assessments where `disposition = FLAGGED`.
 
 | Parameter | Required | Notes |
 |---|---|---|
@@ -191,16 +193,43 @@ Returns cursor-paginated assessments where `fraudulent = true`.
 
 ---
 
-### 4.6 List Passed (Cleared) Transactions
+### 4.6 List Transactions Pending Review
 
-**`GET /api/v1/transactions/passed`**
+**`GET /api/v1/transactions/pending-review`**
 
-Returns cursor-paginated assessments where `fraudulent = false`.
+Returns cursor-paginated assessments where `disposition = PENDING_REVIEW` — the
+elevated-but-not-confident band (tier 4 of the scoring plan, §6). Two or more
+corroborating weak signals (e.g. off-hours + card cloning) land here instead of
+being silently treated the same as a clean, zero-violation transaction. Same
+parameter set and AND-combining behaviour as §4.5.
 
 | Parameter | Required | Notes |
 |---|---|---|
 | `customerId` | No | Filter by customer |
-| `minRiskScore` | No | **Near-miss filter** — returns cleared transactions that still scored at/above this. Useful for finding transactions the engine almost flagged, or (post-rescoring, §6) transactions that hit two weak-alone signals without crossing the threshold. |
+| `ruleViolated` | No | Filter by rule name — must be a real, currently-registered rule name or `400` |
+| `minRiskScore` | No | Lower bound (inclusive) |
+| `maxRiskScore` | No | Upper bound (inclusive) |
+| `from` / `to` | No | Date range on `assessedAt` |
+| `cursor` | No | ISO-8601 cursor |
+| `pageSize` | No | 1–1000; default 20 |
+
+| Status | Condition |
+|---|---|
+| `200 OK` | Results returned |
+| `400 Bad Request` | Invalid parameters, or `ruleViolated` doesn't match a registered rule name |
+
+---
+
+### 4.7 List Passed (Cleared) Transactions
+
+**`GET /api/v1/transactions/passed`**
+
+Returns cursor-paginated assessments where `disposition = CLEARED`.
+
+| Parameter | Required | Notes |
+|---|---|---|
+| `customerId` | No | Filter by customer |
+| `minRiskScore` | No | Lower bound (inclusive). Cleared transactions score low by construction (below `review-probability-threshold`, default 0.10) — this filter sorts within that band rather than surfacing near-misses, which now belong to `disposition = PENDING_REVIEW` (§4.6) instead. |
 | `from` / `to` | No | Date range on `assessedAt` |
 | `cursor` | No | ISO-8601 cursor |
 | `pageSize` | No | 1–1000; default 20 |
@@ -212,11 +241,11 @@ Returns cursor-paginated assessments where `fraudulent = false`.
 
 ---
 
-### 4.7 List Fraud Rules
+### 4.8 List Fraud Rules
 
 **`GET /api/v1/rules`**
 
-Returns all 12 registered fraud rules, ordered by priority, with live config.
+Returns all 13 registered fraud rules, ordered by priority, with live config.
 
 **Response 200 OK (excerpt):**
 ```json
@@ -233,7 +262,7 @@ Rules cannot be enabled/disabled or have thresholds changed via this or any othe
 
 ---
 
-### 4.8 Health / Observability
+### 4.9 Health / Observability
 
 | Endpoint | Purpose |
 |---|---|
@@ -244,15 +273,15 @@ Rules cannot be enabled/disabled or have thresholds changed via this or any othe
 
 ---
 
-### 4.9 Customer Risk Summary
+### 4.10 Customer Risk Summary
 
 **`GET /api/v1/customers/{customerId}/risk-summary?since={iso8601}`**
 
-Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `passedCount`, `fraudRate`, `highestRiskScore`, `mostTriggeredRules`, `firstTransactionAt`, `lastTransactionAt`. `since` (optional) scopes the counts/rates to that point onward; `firstTransactionAt`/`lastTransactionAt` are always all-time regardless.
+Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `passedCount`, `fraudRate`, `highestRiskScore`, `mostTriggeredRules`, `firstTransactionAt`, `lastTransactionAt`. `since` (optional) scopes the counts/rates to that point onward; `firstTransactionAt`/`lastTransactionAt` are always all-time regardless. As with §4.13, `passedCount` means "not `FLAGGED`" and currently includes `PENDING_REVIEW` transactions.
 
 ---
 
-### 4.10 Merchant Flagged Feed
+### 4.11 Merchant Flagged Feed
 
 **`GET /api/v1/merchants/{merchantId}/flagged`**
 
@@ -260,25 +289,58 @@ Same filter set as §4.5 (`ruleViolated`, `minRiskScore`, `from`/`to`, `cursor`,
 
 ---
 
-### 4.11 Merchant Risk Summary
+### 4.12 Merchant Risk Summary
 
 **`GET /api/v1/merchants/{merchantId}/risk-summary?since={iso8601}`**
 
-Same shape as §4.9 plus `uniqueCustomers`. `uniqueCustomers`, `firstTransactionAt`, `lastTransactionAt` are always all-time.
+Same shape as §4.10 plus `uniqueCustomers`. `uniqueCustomers`, `firstTransactionAt`, `lastTransactionAt` are always all-time.
 
 ---
 
-### 4.12 Global Fraud Summary
+### 4.13 Global Fraud Summary
 
 **`GET /api/v1/stats/fraud-summary?from={iso8601}&to={iso8601}`**
 
-`totalAssessed`, `totalFlagged`, `totalPassed`, `fraudRate`, and a `ruleBreakdown` (per-rule count + percentage of flags it contributed to). Omit `from`/`to` for all-time totals.
+`totalAssessed`, `totalFlagged`, `totalPassed`, `fraudRate`, and a `ruleBreakdown` (per-rule count + percentage of flags it contributed to). Omit `from`/`to` for all-time totals. **`totalPassed` currently means "not `FLAGGED`"** (`totalAssessed - totalFlagged`) — it includes `PENDING_REVIEW` assessments, not just `CLEARED` ones. There's no separate `totalPendingReview` field yet; use §4.6 directly to get an exact pending-review count.
+
+---
+
+### 4.14 Record a Transaction's Outcome (the one write endpoint)
+
+**`PATCH /api/v1/transactions/{transactionId}/outcome`**
+
+This is the **second exception** to "the query API is read-only" (the first being §4.1/§4.2, which are profile-gated demo stubs not present in production). This endpoint is a real, permanent, non-profile-gated part of the production API — it just doesn't accept a *new transaction*, only a disposition on an assessment that already exists.
+
+Lets a fraud analyst record whether a flagged (or cleared) transaction turned out to actually be fraud or a false positive, once reviewed. Keyed by `transactionId` (not the assessment's own internal `id`) — the same UUID that appears in Kafka's `transaction_id`, the `txn=` MDC/log correlation key, and every DTO that already returns `transactionId`, so an analyst can trace a case end-to-end with one identifier.
+
+**Request body:**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `outcome` | string | Yes | `CONFIRMED_FRAUD` or `FALSE_POSITIVE`. `UNRESOLVED` cannot be set manually — it's only the default for a never-reviewed assessment. |
+
+```json
+{ "outcome": "CONFIRMED_FRAUD" }
+```
+
+**Responses:**
+
+| Status | Condition |
+|---|---|
+| `200 OK` | Outcome recorded; returns the updated assessment (including the new `outcome` field, added to `FraudAssessmentDto`) |
+| `400 Bad Request` | Missing/invalid `outcome`, or an attempt to set `UNRESOLVED` |
+| `404 Not Found` | No assessment exists for this transaction ID |
+| `409 Conflict` | **One-time disposition**: the assessment already has a resolved outcome (`CONFIRMED_FRAUD` or `FALSE_POSITIVE`). A second update attempt is always rejected — this endpoint has no "correction" path. |
+
+Authorization is identical to every other `/api/v1/**` endpoint (§11) — same JWT, same `FRAUD_ANALYST`/`FRAUD_ENGINEER` roles, no separate write-scoped role exists.
+
+This field exists to eventually calibrate the log-odds scoring model's likelihood ratios (§6) against real confirmed-fraud/false-positive data — recording outcomes is implemented; automatically feeding them back into `ScoringProperties` is not (still open, tracked in `DESIGN.md` §11).
 
 ---
 
 ## 5. Fraud Detection Rules — Full Specification
 
-All 12 rules are evaluated in priority order (1 → 12). All *enabled* rules are checked regardless of earlier violations — the engine does **not** short-circuit after the first violation. Whether a given violation, or combination of violations, actually produces a `fraudulent=true` verdict is governed separately by §6 — treat "does the rule fire" and "is the transaction flagged" as two different questions when writing test cases.
+All 13 rules are evaluated in priority order (1 → 13). All *enabled* rules are checked regardless of earlier violations — the engine does **not** short-circuit after the first violation. Whether a given violation, or combination of violations, actually produces a `FLAGGED` (or `PENDING_REVIEW`) disposition is governed separately by §6 — treat "does the rule fire" and "what disposition results" as two different questions when writing test cases.
 
 ### 5.1 AMOUNT_THRESHOLD (Priority 1)
 
@@ -423,28 +485,45 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 ---
 
+### 5.13 CUSTOMER_AMOUNT_ANOMALY (Priority 13)
+
+**Trigger:** Transaction amount is more than `stddev-multiplier` (default 3.0) standard deviations above *this specific customer's* own historical mean amount — a personal-baseline complement to the global `AMOUNT_THRESHOLD` (§5.1).
+
+- Uses a separate, longer-window transaction history (`fraud.rules.customer-amount-anomaly.lookback-days`, default 90 days) — independent of `context-lookback-minutes` and the primary `recentCustomerTransactions` window other rules share.
+- **Cold-start guard**: fewer than `min-history-count` (default 5) prior transactions in that window → the rule passes unconditionally. Not enough history to say what's "normal" for this customer yet.
+- **Degenerate-variance guard**: if every prior amount is identical (stdDev = 0 — e.g. a subscription-only customer), the rule passes rather than dividing by zero. Known limitation, not a bug.
+- Mean/stdDev are computed as population statistics (divide by `n`, not `n-1`) over that window, excluding the transaction currently being evaluated.
+- A R4,999 purchase from a customer whose typical transaction is ~R80 is exactly the kind of case this rule catches that `AMOUNT_THRESHOLD` (fixed at 5000, or up to 20000 for some categories) is blind to — and conversely, a customer with genuinely variable habits (e.g. spend ranging 2000–3000) making a 3500 purchase is *not* flagged, since that's within their own normal variation.
+- Config: `fraud.rules.customer-amount-anomaly.enabled`, `.lookback-days`, `.min-history-count`, `.stddev-multiplier`.
+
+---
+
 ## 6. Risk Scoring and Fraud Verdict
 
 > Scoring uses a log-odds (naive-Bayes) model, not a flat point sum — see README.md's "Risk scoring" section and `ScoringProperties.java` for the full mechanism and rationale. Summary for test-writing purposes:
 
 - Every fired rule contributes a calibrated **likelihood ratio** (keyed by `RULE_NAME:SEVERITY`, since some rules like `VELOCITY` escalate severity at runtime and are calibrated per variant). These are **not** interchangeable just because two rules share a `Severity` enum value.
-- **Standalone-sufficient** (fraudulent alone, given current defaults): `BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, `VELOCITY` (both severity variants), `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, crypto/wire-transfer-tier `HIGH_RISK_MERCHANT_CATEGORY`.
-- **Weak alone, needs a second corroborating signal**: `AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`.
+- **Standalone-sufficient** (`FLAGGED` alone, given current defaults): `BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, `VELOCITY` (both severity variants), `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, crypto/wire-transfer-tier `HIGH_RISK_MERCHANT_CATEGORY`.
+- **Weak alone, needs a second corroborating signal**: `AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`.
 - `riskScore` = posterior fraud probability × 100 (0–100). A transaction with **zero** violations scores near the assumed base rate (≈1), not 0.
-- `fraudulent = true` when the posterior probability crosses `fraud.scoring.fraud-probability-threshold` (default 0.5, so effectively `riskScore` around 50, but **don't assume you can hand-derive an exact expected riskScore from a rule combination** the way you could under the old additive model — it's a sigmoid of summed log-ratios, not integer addition).
-- Two weak-alone rules firing together land in an elevated-but-not-flagged band (roughly riskScore 10–20 for two MEDIUM-tier rules under current defaults) — worth pulling via the near-miss query (§4.6) rather than expecting `fraudulent=true`.
+- **`disposition` is a three-way verdict, not a boolean**, driven by two thresholds:
+  - `disposition = FLAGGED` when the posterior probability ≥ `fraud.scoring.fraud-probability-threshold` (default 0.5, so effectively `riskScore` around 50).
+  - `disposition = PENDING_REVIEW` when the probability is ≥ `fraud.scoring.review-probability-threshold` (default 0.10, ~`riskScore` 10) but below the fraud threshold.
+  - `disposition = CLEARED` below both.
+  - **Don't assume you can hand-derive an exact expected riskScore from a rule combination** the way you could under the old additive model — it's a sigmoid of summed log-ratios, not integer addition.
+- Two weak-alone rules firing together land in the `PENDING_REVIEW` band (roughly riskScore 10–20 for two MEDIUM-tier rules under current defaults) — pull them via §4.6 rather than expecting `disposition = FLAGGED`. A single weak-alone rule by itself stays `CLEARED` (roughly riskScore 2–6, below the review threshold).
 
 **Approximate examples** (current calibration — treat as a sanity check, not an exact-match assertion target):
 
-| Rules Triggered | Approx. riskScore | Fraudulent? |
+| Rules Triggered | Approx. riskScore | Disposition |
 |---|---|---|
-| None | ~1 | No |
-| 1 × AMOUNT_THRESHOLD alone | ~2 | No |
-| 1 × CARD_CLONING alone | ~6 | No |
-| 1 × CARD_CLONING + 1 × TIME_OF_DAY_ANOMALY | ~15 | No — elevated, not enough alone |
-| 1 × VELOCITY (unboosted, HIGH) | ~57 | **Yes** |
-| 1 × BLACKLISTED_MERCHANT | ~89 | **Yes** |
-| 1 × DEVICE_FINGERPRINT | ~62 | **Yes** |
+| None | ~1 | `CLEARED` |
+| 1 × AMOUNT_THRESHOLD alone | ~2 | `CLEARED` |
+| 1 × CARD_CLONING alone | ~6 | `CLEARED` |
+| 1 × CARD_CLONING + 1 × TIME_OF_DAY_ANOMALY | ~15 | `PENDING_REVIEW` |
+| 1 × VELOCITY (unboosted, HIGH) | ~57 | `FLAGGED` |
+| 1 × BLACKLISTED_MERCHANT | ~89 | `FLAGGED` |
+| 1 × DEVICE_FINGERPRINT | ~62 | `FLAGGED` |
 
 ---
 
@@ -456,14 +535,14 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 transactions.raw (Kafka) ──► TransactionConsumer ──► EvaluationContextBuilder
                                                               │
                                                               ▼
-                                          RuleEngine (12 rules, priority order)
+                                          RuleEngine (13 rules, priority order)
                                                               │
                                                               ▼
                               FraudAssessment persisted (same Kafka+DB transaction)
-                                        │                              │
-                              fraudulent=true              fraudulent=false
-                                        ▼                              ▼
-                             transactions.flagged            transactions.passed
+                                 │                    │                    │
+                        disposition=FLAGGED  disposition=PENDING_REVIEW  disposition=CLEARED
+                                 ▼                    ▼                    ▼
+                    transactions.flagged  transactions.pending-review  transactions.passed
 
   3 failed delivery attempts (exponential backoff) ──► transactions.raw.DLT ──► status: FAILED
 ```
@@ -471,7 +550,7 @@ transactions.raw (Kafka) ──► TransactionConsumer ──► EvaluationConte
 **Dev/standalone path** (`local`/`standalone` profiles — HTTP only, §2):
 
 ```
-POST /api/v1/standalone/submit ──► RuleEngine (same 12 rules) ──► assessment returned inline
+POST /api/v1/standalone/submit ──► RuleEngine (same 13 rules) ──► assessment returned inline
                                                                     (no Kafka publish in this path)
 ```
 
@@ -519,9 +598,10 @@ POST /api/v1/standalone/submit ──► RuleEngine (same 12 rules) ──► as
 |---|---|---|
 | `id` | UUID | Primary key |
 | `transaction_id`, `transaction_timestamp` | UUID, TIMESTAMPTZ | Composite FK → `transactions(id, timestamp)` — required because the referenced table is partitioned |
-| `is_fraudulent` | BOOLEAN | |
+| `disposition` | VARCHAR(32) | `CLEARED` / `PENDING_REVIEW` / `FLAGGED` — the system's real-time verdict at assessment time (§6). Replaces an earlier `is_fraudulent` boolean. |
 | `risk_score` | INTEGER | DB-enforced CHECK 0–100 |
 | `assessed_at` | TIMESTAMPTZ | |
+| `outcome` | VARCHAR(32) | `UNRESOLVED` (default) / `CONFIRMED_FRAUD` / `FALSE_POSITIVE`. Ground truth recorded by an analyst via §4.14 — one-time write, not reversible through the API. |
 
 ### rule_violations table
 
@@ -563,6 +643,7 @@ All error responses use `Content-Type: application/problem+json`.
 | `400` | Malformed ISO-8601 date/cursor | `{ "detail": "Invalid date-time value: '<value>'. Expected ISO-8601 format, e.g. 2026-07-23T10:00:00Z" }` |
 | `400` | Malformed/missing request body | `{ "detail": "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present." }` |
 | `404` | No assessment for transaction ID | `{ "detail": "<message>" }` |
+| `409` | Outcome already resolved (§4.14) | `{ "detail": "<message>" }` |
 | `429` | Rate limit exceeded (standalone `/submit` only) | `{ "detail": "Too many requests — please retry after a moment." }`, `Retry-After: 10` header |
 | `500` | Unhandled exception | `{ "detail": "An unexpected error occurred" }` |
 
@@ -608,17 +689,19 @@ If you're only ever testing against `make dev`, you won't hit any of this — wh
 
 11. **Risk score cap:** score cannot exceed 100 (explicitly clamped) or go below 0.
 
-12. **The `fraudulent` verdict threshold is a probability, not a point total (§6).** Don't try to hand-predict an exact `riskScore` from "which rules fired" the way you could under the old additive model — verify against a running instance or the approximate table in §6.
+12. **The `disposition` verdict is driven by two probability thresholds, not a point total (§6).** Don't try to hand-predict an exact `riskScore` from "which rules fired" the way you could under the old additive model — verify against a running instance or the approximate table in §6.
 
-13. **Context lookback (default 60 minutes) bounds every window-based rule**, not just velocity/geographic — also duplicate, card-cloning, device-fingerprint, multi-channel, cross-merchant-velocity, and cumulative-spending's hourly window. The app validates all of these against the lookback at startup and refuses to start if any window is configured wider than it.
+13. **`disposition` is three-way, not binary** — `CLEARED` / `PENDING_REVIEW` / `FLAGGED`. Existing test suites or scripts written against a boolean `fraudulent` field need updating; `/transactions/passed` and `/transactions/flagged` are strictly `CLEARED`-only and `FLAGGED`-only respectively (not "everything except the other"), and `/transactions/pending-review` (§4.6) is the third, previously-nonexistent bucket.
 
-14. **Partition maintenance job:** runs at 02:00 daily. Creates the partition 2 days ahead; drops the partition from 91 days ago (90-day retention plus a 1-day buffer). Test data older than ~91 days will be purged.
+14. **Context lookback (default 60 minutes) bounds every window-based rule**, not just velocity/geographic — also duplicate, card-cloning, device-fingerprint, multi-channel, cross-merchant-velocity, and cumulative-spending's hourly window. The app validates all of these against the lookback at startup and refuses to start if any window is configured wider than it.
 
-15. **No runtime rule config change:** rules cannot be enabled/disabled or have thresholds changed via API — requires a redeployment.
+15. **Partition maintenance job:** runs at 02:00 daily. Creates the partition 2 days ahead; drops the partition from 91 days ago (90-day retention plus a 1-day buffer). Test data older than ~91 days will be purged.
 
-16. **Device fingerprint rule needs prior history to mean anything.** A customer's very first fingerprinted transaction never triggers `DEVICE_FINGERPRINT` — there's nothing to compare it against yet (§5.9). Set up a prior transaction with a *different* fingerprint first if you want to test the trigger path.
+16. **No runtime rule config change:** rules cannot be enabled/disabled or have thresholds changed via API — requires a redeployment.
 
-17. **`CROSS_MERCHANT_VELOCITY` rarely fires in isolation from `VELOCITY`.** Their default windows overlap and `CROSS_MERCHANT_VELOCITY`'s threshold (≥10) is stricter than `VELOCITY`'s (≥5) in the same window — see §5.11.
+17. **Device fingerprint rule needs prior history to mean anything.** A customer's very first fingerprinted transaction never triggers `DEVICE_FINGERPRINT` — there's nothing to compare it against yet (§5.9). Set up a prior transaction with a *different* fingerprint first if you want to test the trigger path.
+
+18. **`CROSS_MERCHANT_VELOCITY` rarely fires in isolation from `VELOCITY`.** Their default windows overlap and `CROSS_MERCHANT_VELOCITY`'s threshold (≥10) is stricter than `VELOCITY`'s (≥5) in the same window — see §5.11.
 
 ---
 
@@ -640,7 +723,7 @@ Use these to reliably trigger `BLACKLISTED_MERCHANT` without any DB setup.
 
 - **Logs:** every log line carries `requestId` (per HTTP request) and `transactionId` (Kafka path also adds `kafkaTopic`/`kafkaPartition`/`kafkaOffset`). Customer and merchant IDs are **not** logged.
 - **Metrics** (Prometheus at `GET /actuator/prometheus`):
-  - `fraud.assessments.total{verdict="FRAUDULENT"|"PASSED"}` — counters
+  - `fraud.assessments.total{verdict="FLAGGED"|"PENDING_REVIEW"|"CLEARED"}` — counters, matching the `disposition` enum exactly (renamed from the old `FRAUDULENT`/`PASSED` tag values)
   - `fraud.dlt.total` — increments each time a transaction exhausts retries and hits the dead-letter topic
   - `fraud.rule.evaluation.duration.seconds` — timer, p50/p95/p99 published
   - Kafka consumer lag is exposed automatically via Micrometer/Spring Kafka auto-instrumentation

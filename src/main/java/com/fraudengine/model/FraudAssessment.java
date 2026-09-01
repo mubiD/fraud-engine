@@ -1,5 +1,7 @@
 package com.fraudengine.model;
 
+import com.fraudengine.model.enums.AssessmentOutcome;
+import com.fraudengine.model.enums.Disposition;
 import jakarta.persistence.*;
 
 import java.time.Instant;
@@ -24,8 +26,9 @@ public class FraudAssessment {
     @Column(name = "transaction_timestamp", nullable = false, insertable = false, updatable = false)
     private Instant transactionTimestamp;
 
-    @Column(name = "is_fraudulent", nullable = false)
-    private boolean fraudulent;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "disposition", nullable = false)
+    private Disposition disposition;
 
     @Column(name = "risk_score", nullable = false)
     private int riskScore;
@@ -36,29 +39,35 @@ public class FraudAssessment {
     @OneToMany(mappedBy = "assessment", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<RuleViolation> ruleViolations;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "outcome", nullable = false)
+    private AssessmentOutcome outcome = AssessmentOutcome.UNRESOLVED;
+
     public FraudAssessment() {}
 
     public UUID getId() { return id; }
     public Transaction getTransaction() { return transaction; }
     public Instant getTransactionTimestamp() { return transactionTimestamp; }
-    public boolean isFraudulent() { return fraudulent; }
+    public Disposition getDisposition() { return disposition; }
     public int getRiskScore() { return riskScore; }
     public Instant getAssessedAt() { return assessedAt; }
     public List<RuleViolation> getRuleViolations() { return ruleViolations; }
+    public AssessmentOutcome getOutcome() { return outcome; }
 
     public void setId(UUID id) { this.id = id; }
     public void setTransaction(Transaction transaction) { this.transaction = transaction; }
-    public void setFraudulent(boolean fraudulent) { this.fraudulent = fraudulent; }
+    public void setDisposition(Disposition disposition) { this.disposition = disposition; }
     public void setRiskScore(int riskScore) { this.riskScore = riskScore; }
     public void setAssessedAt(Instant assessedAt) { this.assessedAt = assessedAt; }
     public void setRuleViolations(List<RuleViolation> ruleViolations) { this.ruleViolations = ruleViolations; }
+    public void setOutcome(AssessmentOutcome outcome) { this.outcome = outcome; }
 
     public static Builder builder() { return new Builder(); }
 
     public static class Builder {
         private final FraudAssessment a = new FraudAssessment();
         public Builder transaction(Transaction v) { a.transaction = v; return this; }
-        public Builder fraudulent(boolean v) { a.fraudulent = v; return this; }
+        public Builder disposition(Disposition v) { a.disposition = v; return this; }
         public Builder riskScore(int v) { a.riskScore = v; return this; }
         public FraudAssessment build() { return a; }
     }

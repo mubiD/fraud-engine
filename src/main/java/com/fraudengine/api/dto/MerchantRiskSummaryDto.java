@@ -17,7 +17,9 @@ public class MerchantRiskSummaryDto {
     @Schema(description = "Number of transactions flagged as fraudulent", example = "12")
     private long flaggedCount;
 
-    @Schema(description = "Number of transactions that passed fraud checks", example = "1830")
+    @Schema(description = "Number of transactions not flagged as fraud (includes PENDING_REVIEW; "
+            + "see GET /transactions/pending-review to distinguish confirmed-clean from awaiting-review)",
+            example = "1830")
     private long passedCount;
 
     @Schema(description = "Fraud rate as a percentage (0–100)", example = "0.65")

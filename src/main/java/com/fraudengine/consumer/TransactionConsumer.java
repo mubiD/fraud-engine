@@ -99,13 +99,21 @@ public class TransactionConsumer {
 
             assessmentProducer.publish(transaction, assessment);
 
-            if (assessment.isFraudulent()) {
-                metrics.recordFraudulent();
-                log.warn("Transaction flagged as FRAUDULENT: riskScore={}, violations={}",
-                        assessment.getRiskScore(), assessment.getRuleViolations().size());
-            } else {
-                metrics.recordPassed();
-                log.info("Transaction cleared: riskScore={}", assessment.getRiskScore());
+            switch (assessment.getDisposition()) {
+                case FLAGGED -> {
+                    metrics.recordFlagged();
+                    log.warn("Transaction flagged as FRAUDULENT: riskScore={}, violations={}",
+                            assessment.getRiskScore(), assessment.getRuleViolations().size());
+                }
+                case PENDING_REVIEW -> {
+                    metrics.recordPendingReview();
+                    log.warn("Transaction marked PENDING_REVIEW: riskScore={}, violations={}",
+                            assessment.getRiskScore(), assessment.getRuleViolations().size());
+                }
+                case CLEARED -> {
+                    metrics.recordCleared();
+                    log.info("Transaction cleared: riskScore={}", assessment.getRiskScore());
+                }
             }
         } finally {
             MDC.clear();

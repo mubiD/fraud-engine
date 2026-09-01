@@ -41,12 +41,15 @@ class EvaluationContextBuilderTest {
         builder = new EvaluationContextBuilder(transactionRepository, referenceDataCache, properties);
 
         when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of());
-        when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
+        lenient().when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
         when(transactionRepository.sumAmountByCustomerSince(any(), any())).thenReturn(BigDecimal.ZERO);
     }
 
     @Test
     void recentTransactions_loadedForCorrectCustomerAndWindow() {
+        // Isolate the primary 60-min window from the separate customer-baseline query
+        // (also findRecentByCustomer), which would otherwise make this a 2-invocation call.
+        properties.getCustomerAmountAnomaly().setEnabled(false);
         Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
 
@@ -162,6 +165,48 @@ class EvaluationContextBuilderTest {
         // coords come from the transaction, not the context (context only holds fallback coords)
         assertThat(ctx.getMerchantLatitude()).isNull();
         assertThat(ctx.getMerchantLongitude()).isNull();
+    }
+
+    @Test
+    void customerBaselineTransactions_loadedFromLongerWindow() {
+        properties.getCustomerAmountAnomaly().setEnabled(true);
+        properties.getCustomerAmountAnomaly().setLookbackDays(90);
+        Transaction tx = tx("CUST_3", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
+
+        builder.build(tx);
+
+        ArgumentCaptor<Instant> sinceCaptor = ArgumentCaptor.forClass(Instant.class);
+        verify(transactionRepository, times(2)).findRecentByCustomer(eq("CUST_3"), sinceCaptor.capture());
+
+        Instant expectedBaselineStart = tx.getTimestamp().minus(90, ChronoUnit.DAYS);
+        assertThat(sinceCaptor.getAllValues())
+                .anySatisfy(since -> assertThat(since)
+                        .isCloseTo(expectedBaselineStart, org.assertj.core.api.Assertions.within(1, ChronoUnit.SECONDS)));
+    }
+
+    @Test
+    void currentTransaction_excludedFromBaselineList() {
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        Transaction other = tx("CUST_1", "M2", null, TransactionType.CARD_NOT_PRESENT);
+
+        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of(tx, other));
+
+        EvaluationContext ctx = builder.build(tx);
+
+        assertThat(ctx.getCustomerBaselineTransactions()).containsExactly(other);
+    }
+
+    @Test
+    void customerAmountAnomalyDisabled_baselineNotQueried() {
+        properties.getCustomerAmountAnomaly().setEnabled(false);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
+
+        EvaluationContext ctx = builder.build(tx);
+
+        verify(transactionRepository, times(1)).findRecentByCustomer(any(), any());
+        assertThat(ctx.getCustomerBaselineTransactions()).isEmpty();
     }
 
     @Test

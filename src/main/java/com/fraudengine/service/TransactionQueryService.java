@@ -97,6 +97,23 @@ public class TransactionQueryService {
     }
 
     @Transactional(readOnly = true)
+    public Slice<FraudAssessment> getPendingReview(String customerId, String ruleViolated,
+                                                   Integer minRiskScore, Integer maxRiskScore,
+                                                   Instant from, Instant to,
+                                                   Instant cursorTimestamp, UUID cursorId, int pageSize,
+                                                   String sort) {
+        validateDateRange(from, to);
+        validateRuleViolated(ruleViolated);
+        int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
+        if ("asc".equals(sort)) {
+            return assessmentRepository.findPendingReviewAsc(customerId, ruleViolated, minRiskScore, maxRiskScore,
+                    from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+        }
+        return assessmentRepository.findPendingReview(customerId, ruleViolated, minRiskScore, maxRiskScore,
+                from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+    }
+
+    @Transactional(readOnly = true)
     public Slice<FraudAssessment> getPassed(String customerId, Integer minRiskScore,
                                             Instant from, Instant to,
                                             Instant cursorTimestamp, UUID cursorId, int pageSize,

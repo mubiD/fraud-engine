@@ -94,6 +94,7 @@ fraud:
     topics:
       transactions-raw: transactions.raw
       transactions-flagged: transactions.flagged
+      transactions-pending-review: transactions.pending-review
       transactions-passed: transactions.passed
       transactions-dlt: transactions.raw.DLT
 
@@ -159,6 +160,11 @@ fraud:
       hourly-limit: 10000.00
       daily-limit: 25000.00
       hourly-window-minutes: 60
+    customer-amount-anomaly:
+      enabled: true
+      lookback-days: 90
+      min-history-count: 5
+      stddev-multiplier: 3.0
 
 management:
   endpoints:

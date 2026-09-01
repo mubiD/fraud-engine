@@ -8,20 +8,26 @@ import org.springframework.stereotype.Component;
 @Component
 public class FraudMetrics {
 
-    private final Counter fraudulentCounter;
-    private final Counter passedCounter;
+    private final Counter flaggedCounter;
+    private final Counter pendingReviewCounter;
+    private final Counter clearedCounter;
     private final Counter dltCounter;
     private final Timer evaluationTimer;
 
     public FraudMetrics(MeterRegistry registry) {
-        this.fraudulentCounter = Counter.builder("fraud.assessments.total")
+        this.flaggedCounter = Counter.builder("fraud.assessments.total")
                 .description("Total fraud assessments")
-                .tag("verdict", "FRAUDULENT")
+                .tag("verdict", "FLAGGED")
                 .register(registry);
 
-        this.passedCounter = Counter.builder("fraud.assessments.total")
+        this.pendingReviewCounter = Counter.builder("fraud.assessments.total")
                 .description("Total fraud assessments")
-                .tag("verdict", "PASSED")
+                .tag("verdict", "PENDING_REVIEW")
+                .register(registry);
+
+        this.clearedCounter = Counter.builder("fraud.assessments.total")
+                .description("Total fraud assessments")
+                .tag("verdict", "CLEARED")
                 .register(registry);
 
         this.dltCounter = Counter.builder("fraud.dlt.total")
@@ -34,8 +40,9 @@ public class FraudMetrics {
                 .register(registry);
     }
 
-    public void recordFraudulent() { fraudulentCounter.increment(); }
-    public void recordPassed()     { passedCounter.increment(); }
-    public void recordDlt()        { dltCounter.increment(); }
-    public Timer evaluationTimer() { return evaluationTimer; }
+    public void recordFlagged()       { flaggedCounter.increment(); }
+    public void recordPendingReview() { pendingReviewCounter.increment(); }
+    public void recordCleared()       { clearedCounter.increment(); }
+    public void recordDlt()           { dltCounter.increment(); }
+    public Timer evaluationTimer()    { return evaluationTimer; }
 }
