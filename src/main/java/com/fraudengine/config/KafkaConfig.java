@@ -83,7 +83,11 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic transactionsDltTopic() {
-        return TopicBuilder.name(transactionsDltTopic).partitions(1).replicas(replicationFactor).build();
+        // Must have at least as many partitions as transactions.raw (6): Spring Kafka's retry-topic
+        // publisher preserves the original record's partition index across every retry hop, including
+        // the final DLT publish, and throws if the target topic doesn't have that partition. See
+        // TransactionConsumer's @RetryableTopic and KafkaConfigTest.
+        return TopicBuilder.name(transactionsDltTopic).partitions(6).replicas(replicationFactor).build();
     }
 
     // -------------------------------------------------------------------------
@@ -124,8 +128,9 @@ public class KafkaConfig {
     // Chain Kafka TX + JPA TX so both commit or both roll back.
     // Order: open Kafka TX → open DB TX → work → commit DB TX → commit Kafka TX.
     // If DB commit fails → Kafka TX aborts → no message published → consumer retries.
-    // If Kafka commit fails after DB committed → consumer retries → idempotency
-    //   guard skips re-save → re-publishes. Resolved.
+    // If Kafka commit fails after DB committed (or the offset commit fails after a fully
+    //   committed TX) → consumer redelivers → TransactionConsumer's findByTransactionId
+    //   guard skips re-evaluation, re-save, and re-publish entirely. Resolved.
     // -------------------------------------------------------------------------
 
     @Bean

@@ -58,9 +58,16 @@ public class TransactionConsumer {
         this.metrics = metrics;
     }
 
+    // numPartitions must match transactions.raw's partition count (KafkaConfig.transactionsRawTopic(),
+    // currently 6): Spring Kafka's retry-topic publisher preserves the original record's partition
+    // index by default, and a retry/DLT topic with fewer partitions than that index throws on publish
+    // rather than falling back gracefully. Auto-created retry topics default to 1 partition if this
+    // isn't set, which would fail for any message not originally on partition 0. See KafkaConfigTest
+    // for the cross-check against transactionsRawTopic()/transactionsDltTopic()'s partition counts.
     @RetryableTopic(
             attempts = "3",
             backoff = @Backoff(delay = 1000, multiplier = 2.0),
+            numPartitions = "6",
             topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE,
             dltTopicSuffix = ".DLT"
     )
