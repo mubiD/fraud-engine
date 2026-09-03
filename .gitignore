@@ -6,7 +6,6 @@ target/
 *.war
 .DS_Store
 .env
-application-local.yml
 .claude*
 load-tests/results/*.html
 load-tests/results/*.json

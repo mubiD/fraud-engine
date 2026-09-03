@@ -47,7 +47,14 @@ docker compose $COMPOSE_FILES -p "$PROJECT" up -d
 
 echo "==> [$ENV] Waiting for app to become healthy..."
 RETRIES=30
-until docker inspect --format='{{.State.Health.Status}}' "fraud-engine-${ENV}" 2>/dev/null | grep -q "healthy"; do
+while true; do
+  STATUS=$(docker inspect --format='{{.State.Health.Status}}' "fraud-engine-${ENV}" 2>/dev/null || true)
+  [[ "$STATUS" == "healthy" ]] && break
+  if [[ "$STATUS" == "unhealthy" ]]; then
+    echo "ERROR: fraud-engine-${ENV} reported unhealthy."
+    docker compose $COMPOSE_FILES -p "$PROJECT" logs fraud-engine
+    exit 1
+  fi
   RETRIES=$((RETRIES - 1))
   if [[ $RETRIES -le 0 ]]; then
     echo "ERROR: fraud-engine-${ENV} did not become healthy in time."
