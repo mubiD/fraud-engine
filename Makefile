@@ -39,7 +39,7 @@ stop:
 	@if [ -z "$(_STOP_ENV)" ]; then \
 	  echo "Usage: make stop <dev|int|qa|load|prod>"; exit 1; fi
 	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(_STOP_ENV).yml \
-	  -p fraud-$(_STOP_ENV) down --remove-orphans --volumes
+	  -p fraud-$(_STOP_ENV) down --remove-orphans
 
 # ── Fake event streaming (local/standalone profiles only) ───────────────────
 # Usage:

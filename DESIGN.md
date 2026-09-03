@@ -91,8 +91,8 @@ Because ingestion is asynchronous and decoupled, this service cannot return a fr
 | Topic | Partitions | Direction | Message type |
 |---|---|---|---|
 | `transactions.raw` | 6 | Inbound (consumed) | `TransactionEvent` (Protobuf) |
-| `transactions.raw-0`, `transactions.raw-1` | 6 | Internal retry | auto-created by `@RetryableTopic` |
-| `transactions.raw.DLT` | 1 | Dead-letter | exhausted-retry events |
+| `transactions.raw-retry-0`, `transactions.raw-retry-1` | 6 | Internal retry | auto-created by `@RetryableTopic` |
+| `transactions.raw.DLT` | 6 | Dead-letter | exhausted-retry events |
 | `transactions.flagged` | 3 | Outbound (produced) | `FraudulentTransactionEvent` (Protobuf) |
 | `transactions.pending-review` | 3 | Outbound (produced) | `PendingReviewTransactionEvent` (Protobuf) |
 | `transactions.passed` | 3 | Outbound (produced) | `ClearedTransactionEvent` (Protobuf) |

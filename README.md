@@ -2,7 +2,7 @@
 
 A production-grade backend service that consumes transaction events from Kafka, evaluates them against a configurable set of fraud detection rules, persists assessments to PostgreSQL, and routes outcomes to dedicated downstream topics.
 
-**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · Zipkin · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers · k6
+**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · OpenTelemetry · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers · k6
 
 ---
 
@@ -17,10 +17,12 @@ External System
 transactions.raw  ──────────────────────────────────────────────────────┐
       │                                                                  │
       ▼                                                             retry topics
-  TransactionConsumer                                            (transactions.raw-0,
-      │   @RetryableTopic (3 attempts, exponential backoff)       transactions.raw-1)
+  TransactionConsumer                                       (transactions.raw-retry-0,
+      │   @RetryableTopic (3 attempts, exponential backoff)  transactions.raw-retry-1)
       │   @Transactional(chainedKafkaTransactionManager)               │
-      │   idempotency guard: findByIdOnly → skip-save if exists        │
+      │   idempotency guards: findByIdOnly (transaction row),          │
+      │   findByTransactionId (assessment) → skip re-evaluate/         │
+      │   re-save/re-publish entirely if already assessed              │
       │                                                                 ▼
       ▼                                                      transactions.raw.DLT
   EvaluationContextBuilder                             (@DltHandler → status=FAILED)
@@ -81,7 +83,7 @@ Query API (read-only, with one write exception — see below)
 
 ## Running Locally
 
-The only prerequisite is **Docker**. No Java, Maven, or Kafka installation required — everything runs inside containers.
+Prerequisites: **Docker**, plus a local **JDK 21** and **Maven** (`mvn` on `PATH`). No Kafka installation required — that runs inside containers. The JAR is built on the host, not inside the image (`scripts/deploy.sh`) — see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
 
 Each environment is fully self-contained: its own app instance, Postgres database, Kafka cluster, and observability stack, all on separate host ports so multiple environments can run simultaneously.
 
@@ -97,7 +99,7 @@ Each environment is fully self-contained: its own app instance, Postgres databas
 | Instana agent | — | — | — | — | — |
 | Prometheus | 9090 | — | — | — | — |
 
-> Schema Registry, Vault, Zipkin, and Prometheus host-port mappings are only exposed in the `dev` environment. In other environments they are accessible within the Docker network.
+> Schema Registry, Vault, and Prometheus host-port mappings are only exposed in the `dev` environment; in other environments they're accessible within the Docker network. The Instana agent row is intentionally all dashes — tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only; none of the `docker-compose*.yml` files run one, so locally (any environment, including `dev`) the app finds no tracing backend and drops spans gracefully.
 
 ### Start an environment
 
@@ -114,16 +116,30 @@ Each command:
 2. Starts Postgres and waits until healthy
 3. Starts the 3-broker Kafka cluster and waits until healthy
 4. Starts Schema Registry and waits until healthy
-5. Starts Vault (dev mode, pre-unsealed)
+5. Starts Vault — dev mode, pre-unsealed, for `dev`/`int`/`qa`/`load`; `prod`'s compose override replaces this with a server-mode Vault + one-shot `vault-init` AppRole flow (`VAULT_ROLE_ID`/`VAULT_SECRET_ID` printed on first run) instead
 6. Starts the fraud-engine (Flyway runs migrations on boot)
 7. Polls `/actuator/health` until the app is ready
 
 Postgres data volumes are named per environment and persist across restarts.
 
+### Try it out (`dev` only)
+
+`make dev` runs the app under the `local` Spring profile, which disables the Kafka consumer and activates a synchronous HTTP stub instead (`StandaloneTransactionController`) — it's the only way to feed transactions into a locally-run environment without producing raw Protobuf to Kafka yourself. Not present in `int`/`qa`/`load`/`prod`, where the real Kafka pipeline is the only ingress (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
+
+```bash
+# Submit one transaction and see the assessment inline
+curl -X POST http://localhost:8081/api/v1/standalone/submit \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"CUST-001","merchantId":"MERCH-001","amount":150.00,"currency":"ZAR","transactionType":"CARD_PRESENT"}'
+
+# Or generate a batch of random transactions through the rule engine
+make stream ENV=dev COUNT=500
+```
+
 ### Tear down
 
 ```bash
-make stop ENV=dev
+make stop dev
 ```
 
 ### Tail logs
@@ -142,7 +158,7 @@ make ps
 
 ## API Reference
 
-> There is no HTTP submission endpoint. Transactions enter the system exclusively via `transactions.raw` Kafka topic. The API is read-only, with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below).
+> In `int`/`qa`/`load`/`prod` there is no HTTP submission endpoint — transactions enter exclusively via the `transactions.raw` Kafka topic, and the API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `dev`/`standalone` are the exception to that: `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under those two profiles — see "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
 
 All paginated endpoints return a consistent envelope:
 

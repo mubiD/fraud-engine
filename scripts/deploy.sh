@@ -5,6 +5,12 @@
 # Tears down the running containers for the given environment, rebuilds the
 # image from the current working tree, and starts fresh containers.
 # Postgres data volume is preserved across deploys.
+#
+# Prerequisite: a local JDK 21 + Maven on PATH (in addition to Docker). The
+# JAR is built on the host, not inside the image — see docker/Dockerfile's
+# header comment for why (Confluent's Maven repo needs auth not available in
+# a plain build container). This resolves JAVA_HOME/mvn from your existing
+# shell environment; it does not attempt to auto-detect a JDK 21 install.
 
 set -euo pipefail
 
@@ -28,10 +34,10 @@ COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.${ENV}.yml"
 PROJECT="fraud-${ENV}"
 
 echo "==> [$ENV] Building JAR..."
-JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn package -DskipTests -q
+mvn package -DskipTests -q
 
 echo "==> [$ENV] Stopping existing containers..."
-docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans --volumes
+docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans
 
 echo "==> [$ENV] Building image..."
 docker compose $COMPOSE_FILES -p "$PROJECT" build --no-cache fraud-engine
