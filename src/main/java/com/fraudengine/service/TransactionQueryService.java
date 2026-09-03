@@ -150,7 +150,7 @@ public class TransactionQueryService {
         validateDateRange(from, to);
         long totalAssessed = assessmentRepository.countInRange(from, to);
         long totalFlagged = assessmentRepository.countFlaggedInRange(from, to);
-        long totalPassed = totalAssessed - totalFlagged;
+        long totalNotFlagged = totalAssessed - totalFlagged;
         double fraudRate = totalAssessed > 0
                 ? Math.round((totalFlagged * 100.0 / totalAssessed) * 100.0) / 100.0
                 : 0.0;
@@ -170,7 +170,7 @@ public class TransactionQueryService {
         dto.setTo(to);
         dto.setTotalAssessed(totalAssessed);
         dto.setTotalFlagged(totalFlagged);
-        dto.setTotalPassed(totalPassed);
+        dto.setTotalNotFlagged(totalNotFlagged);
         dto.setFraudRate(fraudRate);
         dto.setRuleBreakdown(ruleBreakdown);
         return dto;
@@ -198,7 +198,7 @@ public class TransactionQueryService {
         dto.setCustomerId(customerId);
         dto.setTotalTransactions(total);
         dto.setFlaggedCount(flagged);
-        dto.setPassedCount(passed);
+        dto.setNotFlaggedCount(passed);
         dto.setFraudRate(fraudRate);
         dto.setHighestRiskScore(maxScore != null ? maxScore : 0);
         dto.setMostTriggeredRules(topRules);
@@ -230,7 +230,7 @@ public class TransactionQueryService {
         dto.setMerchantId(merchantId);
         dto.setTotalTransactions(total);
         dto.setFlaggedCount(flagged);
-        dto.setPassedCount(passed);
+        dto.setNotFlaggedCount(passed);
         dto.setFraudRate(fraudRate);
         dto.setHighestRiskScore(maxScore != null ? maxScore : 0);
         dto.setUniqueCustomers(uniqueCustomers);

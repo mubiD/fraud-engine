@@ -42,7 +42,7 @@ class StatsControllerTest {
         dto.setTo(to);
         dto.setTotalAssessed(1000L);
         dto.setTotalFlagged(50L);
-        dto.setTotalPassed(950L);
+        dto.setTotalNotFlagged(950L);
         dto.setFraudRate(5.0);
         dto.setRuleBreakdown(List.of(
                 new RuleBreakdownDto("AmountThresholdRule", 30L, 60.0),
@@ -60,7 +60,7 @@ class StatsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalAssessed").value(1000))
                 .andExpect(jsonPath("$.data.totalFlagged").value(50))
-                .andExpect(jsonPath("$.data.totalPassed").value(950))
+                .andExpect(jsonPath("$.data.totalNotFlagged").value(950))
                 .andExpect(jsonPath("$.data.fraudRate").value(5.0))
                 .andExpect(jsonPath("$.data.ruleBreakdown", hasSize(2)))
                 .andExpect(jsonPath("$.data.ruleBreakdown[0].ruleName").value("AmountThresholdRule"))
@@ -94,7 +94,7 @@ class StatsControllerTest {
         FraudSummaryDto empty = new FraudSummaryDto();
         empty.setTotalAssessed(0L);
         empty.setTotalFlagged(0L);
-        empty.setTotalPassed(0L);
+        empty.setTotalNotFlagged(0L);
         empty.setFraudRate(0.0);
         empty.setRuleBreakdown(List.of());
 

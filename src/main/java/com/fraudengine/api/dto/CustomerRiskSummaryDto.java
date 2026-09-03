@@ -20,7 +20,7 @@ public class CustomerRiskSummaryDto {
     @Schema(description = "Number of transactions not flagged as fraud (includes PENDING_REVIEW; "
             + "see GET /transactions/pending-review to distinguish confirmed-clean from awaiting-review)",
             example = "338")
-    private long passedCount;
+    private long notFlaggedCount;
 
     @Schema(description = "Fraud rate as a percentage (0–100)", example = "1.17")
     private double fraudRate;
@@ -42,7 +42,7 @@ public class CustomerRiskSummaryDto {
     public String getCustomerId() { return customerId; }
     public long getTotalTransactions() { return totalTransactions; }
     public long getFlaggedCount() { return flaggedCount; }
-    public long getPassedCount() { return passedCount; }
+    public long getNotFlaggedCount() { return notFlaggedCount; }
     public double getFraudRate() { return fraudRate; }
     public int getHighestRiskScore() { return highestRiskScore; }
     public List<String> getMostTriggeredRules() { return mostTriggeredRules; }
@@ -52,7 +52,7 @@ public class CustomerRiskSummaryDto {
     public void setCustomerId(String v) { this.customerId = v; }
     public void setTotalTransactions(long v) { this.totalTransactions = v; }
     public void setFlaggedCount(long v) { this.flaggedCount = v; }
-    public void setPassedCount(long v) { this.passedCount = v; }
+    public void setNotFlaggedCount(long v) { this.notFlaggedCount = v; }
     public void setFraudRate(double v) { this.fraudRate = v; }
     public void setHighestRiskScore(int v) { this.highestRiskScore = v; }
     public void setMostTriggeredRules(List<String> v) { this.mostTriggeredRules = v; }

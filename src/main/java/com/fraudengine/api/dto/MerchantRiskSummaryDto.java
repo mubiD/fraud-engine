@@ -20,7 +20,7 @@ public class MerchantRiskSummaryDto {
     @Schema(description = "Number of transactions not flagged as fraud (includes PENDING_REVIEW; "
             + "see GET /transactions/pending-review to distinguish confirmed-clean from awaiting-review)",
             example = "1830")
-    private long passedCount;
+    private long notFlaggedCount;
 
     @Schema(description = "Fraud rate as a percentage (0–100)", example = "0.65")
     private double fraudRate;
@@ -45,7 +45,7 @@ public class MerchantRiskSummaryDto {
     public String getMerchantId() { return merchantId; }
     public long getTotalTransactions() { return totalTransactions; }
     public long getFlaggedCount() { return flaggedCount; }
-    public long getPassedCount() { return passedCount; }
+    public long getNotFlaggedCount() { return notFlaggedCount; }
     public double getFraudRate() { return fraudRate; }
     public int getHighestRiskScore() { return highestRiskScore; }
     public long getUniqueCustomers() { return uniqueCustomers; }
@@ -56,7 +56,7 @@ public class MerchantRiskSummaryDto {
     public void setMerchantId(String v) { this.merchantId = v; }
     public void setTotalTransactions(long v) { this.totalTransactions = v; }
     public void setFlaggedCount(long v) { this.flaggedCount = v; }
-    public void setPassedCount(long v) { this.passedCount = v; }
+    public void setNotFlaggedCount(long v) { this.notFlaggedCount = v; }
     public void setFraudRate(double v) { this.fraudRate = v; }
     public void setHighestRiskScore(int v) { this.highestRiskScore = v; }
     public void setUniqueCustomers(long v) { this.uniqueCustomers = v; }

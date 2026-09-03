@@ -39,7 +39,7 @@ class CustomerControllerTest {
         dto.setCustomerId(CUSTOMER);
         dto.setTotalTransactions(342L);
         dto.setFlaggedCount(4L);
-        dto.setPassedCount(338L);
+        dto.setNotFlaggedCount(338L);
         dto.setFraudRate(1.17);
         dto.setHighestRiskScore(75);
         dto.setMostTriggeredRules(List.of("AmountThresholdRule", "VelocityRule", "TimeOfDayAnomalyRule"));
@@ -57,7 +57,7 @@ class CustomerControllerTest {
                 .andExpect(jsonPath("$.data.customerId").value(CUSTOMER))
                 .andExpect(jsonPath("$.data.totalTransactions").value(342))
                 .andExpect(jsonPath("$.data.flaggedCount").value(4))
-                .andExpect(jsonPath("$.data.passedCount").value(338))
+                .andExpect(jsonPath("$.data.notFlaggedCount").value(338))
                 .andExpect(jsonPath("$.data.fraudRate").value(1.17))
                 .andExpect(jsonPath("$.data.highestRiskScore").value(75))
                 .andExpect(jsonPath("$.data.mostTriggeredRules", hasSize(3)))
@@ -73,7 +73,7 @@ class CustomerControllerTest {
         CustomerRiskSummaryDto scoped = buildSummary();
         scoped.setTotalTransactions(12L);
         scoped.setFlaggedCount(1L);
-        scoped.setPassedCount(11L);
+        scoped.setNotFlaggedCount(11L);
 
         when(queryService.getCustomerRiskSummary(eq(CUSTOMER), eq(SINCE))).thenReturn(scoped);
 
@@ -98,7 +98,7 @@ class CustomerControllerTest {
         empty.setCustomerId(CUSTOMER);
         empty.setTotalTransactions(0L);
         empty.setFlaggedCount(0L);
-        empty.setPassedCount(0L);
+        empty.setNotFlaggedCount(0L);
         empty.setFraudRate(0.0);
         empty.setHighestRiskScore(0);
         empty.setMostTriggeredRules(List.of());

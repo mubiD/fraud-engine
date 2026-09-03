@@ -336,14 +336,14 @@ class TransactionQueryServiceTest {
     }
 
     @Test
-    void getFraudSummary_totalPassedIsAssessedMinusFlagged() {
+    void getFraudSummary_totalNotFlaggedIsAssessedMinusFlagged() {
         when(assessmentRepository.countInRange(FROM, TO)).thenReturn(500L);
         when(assessmentRepository.countFlaggedInRange(FROM, TO)).thenReturn(20L);
         when(assessmentRepository.countByRuleInRange(FROM, TO)).thenReturn(List.of());
 
         FraudSummaryDto dto = service.getFraudSummary(FROM, TO);
 
-        assertThat(dto.getTotalPassed()).isEqualTo(480L);
+        assertThat(dto.getTotalNotFlagged()).isEqualTo(480L);
         assertThat(dto.getTotalAssessed()).isEqualTo(500L);
         assertThat(dto.getTotalFlagged()).isEqualTo(20L);
     }
@@ -435,7 +435,7 @@ class TransactionQueryServiceTest {
         assertThat(dto.getFraudRate()).isZero();
         assertThat(dto.getTotalTransactions()).isZero();
         assertThat(dto.getFlaggedCount()).isZero();
-        assertThat(dto.getPassedCount()).isZero();
+        assertThat(dto.getNotFlaggedCount()).isZero();
     }
 
     @Test
@@ -469,7 +469,7 @@ class TransactionQueryServiceTest {
         assertThat(dto.getCustomerId()).isEqualTo(CUSTOMER);
         assertThat(dto.getTotalTransactions()).isEqualTo(50L);
         assertThat(dto.getFlaggedCount()).isEqualTo(2L);
-        assertThat(dto.getPassedCount()).isEqualTo(48L);
+        assertThat(dto.getNotFlaggedCount()).isEqualTo(48L);
         assertThat(dto.getHighestRiskScore()).isEqualTo(90);
         assertThat(dto.getFirstTransactionAt()).isEqualTo(first);
         assertThat(dto.getLastTransactionAt()).isEqualTo(last);
@@ -561,7 +561,7 @@ class TransactionQueryServiceTest {
         assertThat(dto.getMerchantId()).isEqualTo(MERCHANT);
         assertThat(dto.getTotalTransactions()).isEqualTo(300L);
         assertThat(dto.getFlaggedCount()).isEqualTo(15L);
-        assertThat(dto.getPassedCount()).isEqualTo(285L);
+        assertThat(dto.getNotFlaggedCount()).isEqualTo(285L);
         assertThat(dto.getHighestRiskScore()).isEqualTo(95);
         assertThat(dto.getUniqueCustomers()).isEqualTo(88L);
         assertThat(dto.getFirstTransactionAt()).isEqualTo(first);

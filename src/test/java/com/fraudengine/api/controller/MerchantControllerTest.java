@@ -206,7 +206,7 @@ class MerchantControllerTest {
         dto.setMerchantId(MERCHANT);
         dto.setTotalTransactions(1842L);
         dto.setFlaggedCount(12L);
-        dto.setPassedCount(1830L);
+        dto.setNotFlaggedCount(1830L);
         dto.setFraudRate(0.65);
         dto.setHighestRiskScore(85);
         dto.setUniqueCustomers(534L);
@@ -226,7 +226,7 @@ class MerchantControllerTest {
                 .andExpect(jsonPath("$.data.merchantId").value(MERCHANT))
                 .andExpect(jsonPath("$.data.totalTransactions").value(1842))
                 .andExpect(jsonPath("$.data.flaggedCount").value(12))
-                .andExpect(jsonPath("$.data.passedCount").value(1830))
+                .andExpect(jsonPath("$.data.notFlaggedCount").value(1830))
                 .andExpect(jsonPath("$.data.fraudRate").value(0.65))
                 .andExpect(jsonPath("$.data.highestRiskScore").value(85))
                 .andExpect(jsonPath("$.data.uniqueCustomers").value(534))
@@ -240,7 +240,7 @@ class MerchantControllerTest {
         MerchantRiskSummaryDto scoped = buildMerchantSummary();
         scoped.setTotalTransactions(42L);
         scoped.setFlaggedCount(2L);
-        scoped.setPassedCount(40L);
+        scoped.setNotFlaggedCount(40L);
 
         when(queryService.getMerchantRiskSummary(eq(MERCHANT), eq(FROM))).thenReturn(scoped);
 

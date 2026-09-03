@@ -23,7 +23,7 @@ public class FraudSummaryDto {
     @Schema(description = "Number of transactions not flagged as fraud (includes PENDING_REVIEW; "
             + "see GET /transactions/pending-review to distinguish confirmed-clean from awaiting-review)",
             example = "9688")
-    private long totalPassed;
+    private long totalNotFlagged;
 
     @Schema(description = "Fraud rate as a percentage (0–100), rounded to two decimal places", example = "3.12")
     private double fraudRate;
@@ -37,7 +37,7 @@ public class FraudSummaryDto {
     public Instant getTo() { return to; }
     public long getTotalAssessed() { return totalAssessed; }
     public long getTotalFlagged() { return totalFlagged; }
-    public long getTotalPassed() { return totalPassed; }
+    public long getTotalNotFlagged() { return totalNotFlagged; }
     public double getFraudRate() { return fraudRate; }
     public List<RuleBreakdownDto> getRuleBreakdown() { return ruleBreakdown; }
 
@@ -45,7 +45,7 @@ public class FraudSummaryDto {
     public void setTo(Instant v) { this.to = v; }
     public void setTotalAssessed(long v) { this.totalAssessed = v; }
     public void setTotalFlagged(long v) { this.totalFlagged = v; }
-    public void setTotalPassed(long v) { this.totalPassed = v; }
+    public void setTotalNotFlagged(long v) { this.totalNotFlagged = v; }
     public void setFraudRate(double v) { this.fraudRate = v; }
     public void setRuleBreakdown(List<RuleBreakdownDto> v) { this.ruleBreakdown = v; }
 }

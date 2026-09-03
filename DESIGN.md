@@ -251,6 +251,26 @@ Merchants      GET /merchants/{id}/flagged, /merchants/{id}/risk-summary
 Stats          GET /stats/fraud-summary
 ```
 
+### API versioning
+
+Every endpoint lives under `/api/v1/**` — URI versioning, chosen over a header/media-type
+scheme (`Accept: application/vnd.fraudengine.v1+json`) for the same reason most public
+REST APIs default to it: the version is visible in a curl command, a browser tab, a log
+line, and a load balancer routing rule without needing to inspect headers, which matters
+more for a forensics/ops tool whose consumers include dashboards and ad-hoc debugging as
+much as other services.
+
+There is deliberately no `v2` and no dual-serving of old and new response shapes. This
+project has no external consumers with a deployed dependency on a prior contract to
+protect — `disposition` replacing the boolean `fraudulent` field (below) is the concrete
+example: it was a breaking DTO change shipped straight into `/api/v1/**` with no
+migration path, which is the right call *only* because nothing real depends on the old
+shape. Were this API to gain actual external consumers, the policy would be: breaking
+changes bump the URI prefix (`/api/v2/**`) and the old prefix keeps serving until
+consumers migrate off it — not header negotiation, and not silent field renames on a
+version that's supposed to be stable. Until then, `v1` is understood to be the single
+version under active development, not a frozen contract.
+
 ### Three-way disposition (`CLEARED` / `PENDING_REVIEW` / `FLAGGED`)
 
 `FraudAssessment.disposition` (replacing an earlier binary `fraudulent` boolean)

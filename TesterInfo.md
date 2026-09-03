@@ -277,7 +277,7 @@ Rules cannot be enabled/disabled or have thresholds changed via this or any othe
 
 **`GET /api/v1/customers/{customerId}/risk-summary?since={iso8601}`**
 
-Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `passedCount`, `fraudRate`, `highestRiskScore`, `mostTriggeredRules`, `firstTransactionAt`, `lastTransactionAt`. `since` (optional) scopes the counts/rates to that point onward; `firstTransactionAt`/`lastTransactionAt` are always all-time regardless. As with §4.13, `passedCount` means "not `FLAGGED`" and currently includes `PENDING_REVIEW` transactions.
+Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `notFlaggedCount`, `fraudRate`, `highestRiskScore`, `mostTriggeredRules`, `firstTransactionAt`, `lastTransactionAt`. `since` (optional) scopes the counts/rates to that point onward; `firstTransactionAt`/`lastTransactionAt` are always all-time regardless. As with §4.13, `notFlaggedCount` is `totalTransactions - flaggedCount` and includes `PENDING_REVIEW` transactions, not just `CLEARED` ones — use §4.6 directly for an exact pending-review count.
 
 ---
 
@@ -301,7 +301,7 @@ Same shape as §4.10 plus `uniqueCustomers`. `uniqueCustomers`, `firstTransactio
 
 **`GET /api/v1/stats/fraud-summary?from={iso8601}&to={iso8601}`**
 
-`totalAssessed`, `totalFlagged`, `totalPassed`, `fraudRate`, and a `ruleBreakdown` (per-rule count + percentage of flags it contributed to). Omit `from`/`to` for all-time totals. **`totalPassed` currently means "not `FLAGGED`"** (`totalAssessed - totalFlagged`) — it includes `PENDING_REVIEW` assessments, not just `CLEARED` ones. There's no separate `totalPendingReview` field yet; use §4.6 directly to get an exact pending-review count.
+`totalAssessed`, `totalFlagged`, `totalNotFlagged`, `fraudRate`, and a `ruleBreakdown` (per-rule count + percentage of flags it contributed to). Omit `from`/`to` for all-time totals. `totalNotFlagged` is `totalAssessed - totalFlagged` and includes `PENDING_REVIEW` assessments, not just `CLEARED` ones. There's no separate `totalPendingReview` field yet; use §4.6 directly to get an exact pending-review count.
 
 ---
 
