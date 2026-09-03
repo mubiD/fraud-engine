@@ -64,7 +64,8 @@ public class EvaluationContextBuilder {
 
         java.math.BigDecimal dailySpend = transactionRepository.sumAmountByCustomerSince(
                 transaction.getCustomerId(),
-                transaction.getTimestamp().minus(24, ChronoUnit.HOURS));
+                transaction.getTimestamp().minus(24, ChronoUnit.HOURS),
+                transaction.getId());
 
         // Longer, independent window for personal-baseline statistics — skipped entirely
         // when the rule is disabled to avoid an unnecessary query on the hot path.

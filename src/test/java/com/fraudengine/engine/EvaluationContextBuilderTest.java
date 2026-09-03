@@ -42,7 +42,7 @@ class EvaluationContextBuilderTest {
 
         when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of());
         lenient().when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
-        when(transactionRepository.sumAmountByCustomerSince(any(), any())).thenReturn(BigDecimal.ZERO);
+        when(transactionRepository.sumAmountByCustomerSince(any(), any(), any())).thenReturn(BigDecimal.ZERO);
     }
 
     @Test
@@ -90,17 +90,34 @@ class EvaluationContextBuilderTest {
     void dailySpend_queriedWithCorrectCustomerAnd24hWindow() {
         Transaction tx = tx("CUST_2", "M1", null, TransactionType.CARD_NOT_PRESENT);
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
-        when(transactionRepository.sumAmountByCustomerSince(eq("CUST_2"), any()))
+        when(transactionRepository.sumAmountByCustomerSince(eq("CUST_2"), any(), any()))
                 .thenReturn(new BigDecimal("1500.00"));
 
         EvaluationContext ctx = builder.build(tx);
 
         ArgumentCaptor<Instant> cutoffCaptor = ArgumentCaptor.forClass(Instant.class);
-        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_2"), cutoffCaptor.capture());
+        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_2"), cutoffCaptor.capture(), any());
 
         Instant expected24hCutoff = tx.getTimestamp().minus(24, ChronoUnit.HOURS);
         assertThat(cutoffCaptor.getValue()).isCloseTo(expected24hCutoff, org.assertj.core.api.Assertions.within(1, ChronoUnit.SECONDS));
         assertThat(ctx.getDailySpendTotal()).isEqualByComparingTo("1500.00");
+    }
+
+    @Test
+    void dailySpend_excludesCurrentTransactionFromSum() {
+        // Regression test: the current transaction is persisted before rule evaluation runs
+        // (TransactionConsumer saves it, then calls RuleEngine.evaluate()), so it's already
+        // inside the 24h window by the time this query runs. Without excluding its own id,
+        // CumulativeSpendingRule would double-count it (context.getDailySpendTotal() already
+        // includes it, then the rule adds currentAmount again on top).
+        Transaction tx = tx("CUST_3", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
+        when(transactionRepository.sumAmountByCustomerSince(any(), any(), any()))
+                .thenReturn(BigDecimal.ZERO);
+
+        builder.build(tx);
+
+        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_3"), any(), eq(tx.getId()));
     }
 
     @Test

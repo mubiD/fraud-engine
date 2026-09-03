@@ -479,7 +479,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 **Trigger:** Rolling spend exceeds an hourly or daily limit.
 
 - **Hourly**: sum of the customer's transactions within the hourly window (default 60 minutes, from in-context recent-transaction data) plus the current amount, compared against `hourly-limit` (default 10000.00).
-- **Daily**: a separate, pre-aggregated 24-hour DB query (independent of the context lookback window), plus the current amount, compared against `daily-limit` (default 25000.00).
+- **Daily**: a separate, pre-aggregated 24-hour DB query (independent of the context lookback window, and excluding the transaction currently being evaluated — fixed 2026-09-03, see below), plus the current amount, compared against `daily-limit` (default 25000.00).
 - Either limit being exceeded triggers the rule (checked as two independent conditions, not summed together).
 - Config: `fraud.rules.cumulative-spending.hourly-limit`, `.daily-limit`, `.hourly-window-minutes`.
 

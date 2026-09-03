@@ -82,9 +82,11 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
             FROM Transaction t
             WHERE t.customerId = :customerId
               AND t.timestamp >= :since
+              AND t.id != :transactionId
             """)
     java.math.BigDecimal sumAmountByCustomerSince(@Param("customerId") String customerId,
-                                                  @Param("since") Instant since);
+                                                  @Param("since") Instant since,
+                                                  @Param("transactionId") UUID transactionId);
 
     @Query("""
             SELECT COUNT(t) FROM Transaction t
