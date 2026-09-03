@@ -38,7 +38,7 @@ class AssessmentOutcomeServiceTest {
     @Test
     void unresolvedAssessment_setToConfirmedFraud_isSavedAndReturned() {
         FraudAssessment assessment = new FraudAssessment();
-        when(fraudAssessmentRepository.findByTransactionId(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
         when(fraudAssessmentRepository.save(assessment)).thenReturn(assessment);
 
         FraudAssessment result = service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.CONFIRMED_FRAUD);
@@ -50,7 +50,7 @@ class AssessmentOutcomeServiceTest {
     @Test
     void unresolvedAssessment_setToFalsePositive_isSavedAndReturned() {
         FraudAssessment assessment = new FraudAssessment();
-        when(fraudAssessmentRepository.findByTransactionId(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
         when(fraudAssessmentRepository.save(assessment)).thenReturn(assessment);
 
         FraudAssessment result = service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.FALSE_POSITIVE);
@@ -60,7 +60,7 @@ class AssessmentOutcomeServiceTest {
 
     @Test
     void unknownTransactionId_throwsResourceNotFound() {
-        when(fraudAssessmentRepository.findByTransactionId(TRANSACTION_ID)).thenReturn(Optional.empty());
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.CONFIRMED_FRAUD))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -72,7 +72,7 @@ class AssessmentOutcomeServiceTest {
     void alreadyResolvedAssessment_throwsAlreadyResolved_andDoesNotOverwrite() {
         FraudAssessment assessment = new FraudAssessment();
         assessment.setOutcome(AssessmentOutcome.CONFIRMED_FRAUD);
-        when(fraudAssessmentRepository.findByTransactionId(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
 
         assertThatThrownBy(() -> service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.FALSE_POSITIVE))
                 .isInstanceOf(AssessmentAlreadyResolvedException.class);
@@ -86,6 +86,6 @@ class AssessmentOutcomeServiceTest {
         assertThatThrownBy(() -> service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.UNRESOLVED))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        verify(fraudAssessmentRepository, never()).findByTransactionId(any());
+        verify(fraudAssessmentRepository, never()).findByTransactionIdWithDetails(any());
     }
 }

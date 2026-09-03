@@ -25,7 +25,7 @@ public class AssessmentOutcomeService {
             throw new IllegalArgumentException("outcome must be CONFIRMED_FRAUD or FALSE_POSITIVE");
         }
 
-        FraudAssessment assessment = fraudAssessmentRepository.findByTransactionId(transactionId)
+        FraudAssessment assessment = fraudAssessmentRepository.findByTransactionIdWithDetails(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("FraudAssessment for transaction", transactionId));
 
         if (assessment.getOutcome() != AssessmentOutcome.UNRESOLVED) {

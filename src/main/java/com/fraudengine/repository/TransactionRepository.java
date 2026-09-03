@@ -20,6 +20,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     @Query("SELECT t FROM Transaction t WHERE t.id = :id")
     Optional<Transaction> findByIdOnly(@Param("id") UUID id);
 
+    // Query-API variant of findByIdOnly: eagerly fetches the assessment + its rule violations
+    // so TransactionMapper can map to a DTO after this method's @Transactional scope closes
+    // (open-in-view is disabled) without hitting LazyInitializationException. Not used on the
+    // Kafka consumer's hot path, which only needs existence/id and doesn't map to a DTO.
+    @Query("""
+            SELECT t FROM Transaction t
+            LEFT JOIN FETCH t.assessment a
+            LEFT JOIN FETCH a.ruleViolations
+            WHERE t.id = :id
+            """)
+    Optional<Transaction> findByIdWithAssessment(@Param("id") UUID id);
+
     @Query("""
             SELECT t FROM Transaction t
             WHERE t.customerId = :customerId
@@ -44,12 +56,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     @Query("""
             SELECT t FROM Transaction t
             LEFT JOIN FETCH t.assessment a
+            LEFT JOIN FETCH a.ruleViolations
             WHERE t.customerId = :customerId
-              AND (:cursorTimestamp IS NULL
+              AND (CAST(:cursorTimestamp AS timestamp) IS NULL
                    OR t.timestamp < :cursorTimestamp
                    OR (t.timestamp = :cursorTimestamp AND t.id < :cursorId))
-              AND (:from IS NULL OR t.timestamp >= :from)
-              AND (:to IS NULL OR t.timestamp <= :to)
+              AND (CAST(:from AS timestamp) IS NULL OR t.timestamp >= :from)
+              AND (CAST(:to AS timestamp) IS NULL OR t.timestamp <= :to)
             ORDER BY t.timestamp DESC, t.id DESC
             """)
     Slice<Transaction> findByCustomerInRange(@Param("customerId") String customerId,
@@ -62,12 +75,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     @Query("""
             SELECT t FROM Transaction t
             LEFT JOIN FETCH t.assessment a
+            LEFT JOIN FETCH a.ruleViolations
             WHERE t.customerId = :customerId
-              AND (:cursorTimestamp IS NULL
+              AND (CAST(:cursorTimestamp AS timestamp) IS NULL
                    OR t.timestamp > :cursorTimestamp
                    OR (t.timestamp = :cursorTimestamp AND t.id > :cursorId))
-              AND (:from IS NULL OR t.timestamp >= :from)
-              AND (:to IS NULL OR t.timestamp <= :to)
+              AND (CAST(:from AS timestamp) IS NULL OR t.timestamp >= :from)
+              AND (CAST(:to AS timestamp) IS NULL OR t.timestamp <= :to)
             ORDER BY t.timestamp ASC, t.id ASC
             """)
     Slice<Transaction> findByCustomerInRangeAsc(@Param("customerId") String customerId,
@@ -91,7 +105,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     @Query("""
             SELECT COUNT(t) FROM Transaction t
             WHERE t.customerId = :customerId
-              AND (:since IS NULL OR t.timestamp >= :since)
+              AND (CAST(:since AS timestamp) IS NULL OR t.timestamp >= :since)
             """)
     long countByCustomerId(@Param("customerId") String customerId, @Param("since") Instant since);
 
@@ -104,7 +118,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     @Query("""
             SELECT COUNT(t) FROM Transaction t
             WHERE t.merchantId = :merchantId
-              AND (:since IS NULL OR t.timestamp >= :since)
+              AND (CAST(:since AS timestamp) IS NULL OR t.timestamp >= :since)
             """)
     long countByMerchantId(@Param("merchantId") String merchantId, @Param("since") Instant since);
 

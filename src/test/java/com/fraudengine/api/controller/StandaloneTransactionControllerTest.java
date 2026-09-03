@@ -155,7 +155,7 @@ class StandaloneTransactionControllerTest {
         UUID existingId = UUID.randomUUID();
 
         when(transactionRepository.findByIdOnly(existingId)).thenReturn(Optional.of(savedTx));
-        when(fraudAssessmentRepository.findByTransactionId(existingId)).thenReturn(Optional.of(passedAssessment));
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(existingId)).thenReturn(Optional.of(passedAssessment));
         when(mapper.toDto(passedAssessment)).thenReturn(new com.fraudengine.api.dto.FraudAssessmentDto());
 
         mockMvc.perform(post("/api/v1/standalone/submit")

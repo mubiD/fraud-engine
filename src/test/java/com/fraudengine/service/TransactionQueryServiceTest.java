@@ -141,7 +141,7 @@ class TransactionQueryServiceTest {
     void getById_delegatesToRepository() {
         UUID id = UUID.randomUUID();
         Transaction tx = buildTransaction(id);
-        when(transactionRepository.findByIdOnly(id)).thenReturn(Optional.of(tx));
+        when(transactionRepository.findByIdWithAssessment(id)).thenReturn(Optional.of(tx));
 
         Optional<Transaction> result = service.getById(id);
 
@@ -151,7 +151,7 @@ class TransactionQueryServiceTest {
     @Test
     void getById_notFound_returnsEmpty() {
         UUID id = UUID.randomUUID();
-        when(transactionRepository.findByIdOnly(id)).thenReturn(Optional.empty());
+        when(transactionRepository.findByIdWithAssessment(id)).thenReturn(Optional.empty());
 
         assertThat(service.getById(id)).isEmpty();
     }
@@ -162,7 +162,7 @@ class TransactionQueryServiceTest {
     void getAssessment_delegatesToRepository() {
         UUID id = UUID.randomUUID();
         FraudAssessment assessment = buildAssessment(buildTransaction(id), Disposition.CLEARED, 0);
-        when(assessmentRepository.findByTransactionId(id)).thenReturn(Optional.of(assessment));
+        when(assessmentRepository.findByTransactionIdWithDetails(id)).thenReturn(Optional.of(assessment));
 
         Optional<FraudAssessment> result = service.getAssessment(id);
 

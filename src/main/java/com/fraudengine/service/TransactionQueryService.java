@@ -71,12 +71,12 @@ public class TransactionQueryService {
 
     @Transactional(readOnly = true)
     public Optional<Transaction> getById(UUID transactionId) {
-        return transactionRepository.findByIdOnly(transactionId);
+        return transactionRepository.findByIdWithAssessment(transactionId);
     }
 
     @Transactional(readOnly = true)
     public Optional<FraudAssessment> getAssessment(UUID transactionId) {
-        return assessmentRepository.findByTransactionId(transactionId);
+        return assessmentRepository.findByTransactionIdWithDetails(transactionId);
     }
 
     @Transactional(readOnly = true)

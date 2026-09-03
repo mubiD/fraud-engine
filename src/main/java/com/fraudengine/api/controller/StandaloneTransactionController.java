@@ -108,7 +108,7 @@ public class StandaloneTransactionController {
             Optional<Transaction> existing = transactionRepository.findByIdOnly(request.transactionId());
             if (existing.isPresent()) {
                 FraudAssessment existingAssessment = fraudAssessmentRepository
-                        .findByTransactionId(request.transactionId())
+                        .findByTransactionIdWithDetails(request.transactionId())
                         .orElseThrow(() -> new IllegalStateException(
                                 "Transaction " + request.transactionId() + " exists but has no assessment"));
                 return ResponseEntity.ok(mapper.toDto(existingAssessment));
@@ -155,6 +155,7 @@ public class StandaloneTransactionController {
     )
     @ApiResponse(responseCode = "200", description = "Streaming complete")
     @ApiResponse(responseCode = "400", description = "count out of range")
+    @Transactional
     public ResponseEntity<StreamResult> stream(
             @RequestParam @Min(1) @Max(10_000) int count) {
 
