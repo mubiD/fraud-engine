@@ -1,93 +1,69 @@
 # Container Diagram — Fraud Rule Engine
 
-C4 Model, Level 2 (Container). This service ships as a single Spring Boot JAR / Docker image — there
-is no microservice split. The "containers" below are the major internal building blocks (packages
-and Spring-managed component groups), shown as separate boxes because C4 Container diagrams model
-"how the system is decomposed" regardless of whether each piece is independently deployable. See the
-assumptions note at the bottom.
+C4 Model, Level 2 (Container). Ships as a single Spring Boot JAR / Docker image — there's no
+microservice split. The boxes below are the major internal building blocks, not independently
+deployable units. See "Assumptions".
 
 ```mermaid
-C4Container
-  title Container Diagram — Fraud Rule Engine (production topology)
+flowchart TB
+  analyst("👤 Fraud Analyst / Engineer")
 
-  Person(analyst, "Fraud Analyst / Engineer")
+  subgraph boundary["Fraud Rule Engine"]
+    direction TB
+    queryApi["Query API<br/>Spring MVC, 7 controllers"]
+    queryServices["Query Services<br/>Spring @Service"]
+    consumer["Kafka Consumer<br/>@KafkaListener + @RetryableTopic"]
+    ruleEngineCore["Rule Engine Core<br/>Strategy pattern"]
+    cache["Reference Data Cache<br/>Caffeine"]
+    producer["Kafka Producer<br/>KafkaTemplate"]
+    partitionJob["Partition Maintenance Job<br/>@Scheduled, nightly"]
+    db[("PostgreSQL<br/>Flyway-managed")]
+  end
 
-  System_Boundary(fraudEngine, "Fraud Rule Engine") {
-    Container(queryApi, "Query API", "Spring MVC (7 controllers)", "Read-only REST API over transactions, rules, customers, merchants, stats; one write endpoint (outcome)")
-    Container(queryServices, "Query Services", "Spring @Service", "TransactionQueryService, AssessmentOutcomeService, RuleManagementService — sit between controllers and repositories")
-    Container(consumer, "Kafka Consumer", "Spring Kafka @KafkaListener + @RetryableTopic", "Consumes transactions.raw; drives evaluation; chained Kafka+DB transaction")
-    Container(ruleEngineCore, "Rule Engine Core", "Java, Strategy pattern", "RuleEngine + 13 FraudRule implementations + EvaluationContextBuilder — see 03-component.md")
-    Container(cache, "Reference Data Cache", "Caffeine, @Cacheable", "Blacklisted merchants (5 min TTL) and merchant locations (60 min TTL)")
-    Container(producer, "Kafka Producer", "Spring Kafka KafkaTemplate", "Publishes FLAGGED / PENDING_REVIEW / CLEARED verdict events")
-    Container(partitionJob, "Partition Maintenance Job", "Spring @Scheduled (nightly 02:00)", "Pre-creates the next daily partition; drops partitions older than 90 days")
-    ContainerDb(db, "PostgreSQL", "Spring Data JPA / Flyway", "transactions (range-partitioned), fraud_assessments, rule_violations, blacklisted_merchants, merchant_locations")
-  }
+  kafkaExt{{"Apache Kafka Cluster"}}
+  idpExt(["Identity Provider"])
+  schemaRegistryExt(["Confluent Schema Registry"])
 
-  SystemQueue_Ext(kafkaExt, "Apache Kafka Cluster")
-  System_Ext(idpExt, "Identity Provider")
-  System_Ext(schemaRegistryExt, "Confluent Schema Registry")
+  kafkaExt -->|"transactions.raw, 6 partitions<br/>concurrency=6"| consumer
+  consumer -->|evaluate| ruleEngineCore
+  ruleEngineCore -->|"blacklist / merchant location"| cache
+  ruleEngineCore -->|"history, spend, baseline"| db
+  consumer -->|"persist transaction + assessment"| db
+  consumer --> producer
+  producer -->|"flagged / pending-review / passed"| kafkaExt
+  producer -->|"register / resolve schema"| schemaRegistryExt
+  queryApi --> queryServices
+  queryServices -->|read| db
+  analyst -->|"HTTPS + JWT"| queryApi
+  queryApi -->|validate JWT| idpExt
+  partitionJob -->|nightly DDL| db
 
-  Rel(kafkaExt, consumer, "TransactionEvent (Protobuf)", "transactions.raw, 6 partitions, concurrency=6")
-  Rel(consumer, ruleEngineCore, "evaluate(transaction)", "in-process call")
-  Rel(ruleEngineCore, cache, "reads blacklist / merchant location")
-  Rel(ruleEngineCore, db, "reads recent-transaction history, daily spend, customer baseline", "JPA")
-  Rel(consumer, db, "persists Transaction + FraudAssessment", "JPA, single DB transaction")
-  Rel(consumer, producer, "hands off assessment for publish")
-  Rel(producer, kafkaExt, "verdict event", "transactions.flagged / .pending-review / .passed")
-  Rel(producer, schemaRegistryExt, "registers / resolves schema", "HTTPS")
-  Rel(queryApi, queryServices, "delegates")
-  Rel(queryServices, db, "reads", "JPA / Spring Data")
-  Rel(analyst, queryApi, "HTTPS + JWT")
-  Rel(queryApi, idpExt, "validates bearer token", "HTTPS (JWKS)")
-  Rel(partitionJob, db, "nightly DDL: create / drop daily partitions", "native SQL")
+  classDef person fill:#08427b,color:#fff,stroke:#052e56
+  classDef container fill:#1168bd,color:#fff,stroke:#0b4884
+  classDef external fill:#999999,color:#fff,stroke:#6b6b6b
+  classDef db fill:#438dd5,color:#fff,stroke:#2d76bd
+
+  class analyst person
+  class queryApi,queryServices,consumer,ruleEngineCore,cache,producer,partitionJob container
+  class kafkaExt,idpExt,schemaRegistryExt external
+  class db db
 ```
 
-Vault access happens once, at process startup (Spring Cloud Vault Config resolving
-`spring.config.import: optional:vault://`), before any container above is doing request work — it
-isn't owned by one specific container, so it's omitted from this diagram's `Rel` arrows and shown
-only at the process level in `01-context.md`.
+Vault isn't shown here — it's a one-time startup config fetch, not owned by any single container
+(see `01-context.md`).
 
-- **Exactly-once semantics via a chained transaction.** The Kafka Consumer's DB write and the Kafka
-  Producer's publish are wrapped in one `ChainedKafkaTransactionManager` transaction (Kafka TX opens
-  → DB TX opens → work happens → DB commits → Kafka commits) — both succeed or both roll back
-  together, not modeled as two separate containers with independent commit points.
-- **Two independent idempotency guards protect against Kafka redelivery**, not one: `findByIdOnly`
-  skips re-inserting the `Transaction` row if it exists, and a separate `findByTransactionId` check
-  skips re-evaluation, re-save, *and* re-publish entirely if a `FraudAssessment` already exists for
-  that transaction — both must be checked; the second was a real bug (fixed) when only the first
-  existed.
-- **Caching is asymmetric by design, and routed through a dedicated bean on purpose.**
-  `ReferenceDataCache` exists as its own `@Component` (rather than methods on
-  `EvaluationContextBuilder`) specifically because Spring's `@Cacheable` proxy doesn't intercept
-  self-invoked calls — routing through a separate collaborator bean guarantees the proxy is always in
-  the call path.
-- **The Rule Engine Core is shared by two different ingress paths**, not duplicated: the production
-  Kafka Consumer and the dev/demo HTTP stub (`StandaloneTransactionController`, out of scope for this
-  production-topology diagram — see `01-context.md`'s assumptions) both call the exact same
-  `RuleEngine.evaluate()`.
-- **Kafka Consumer and Kafka Producer are entirely absent outside production.** Both are
-  `@Profile("!standalone & !local")` — under `local`/`standalone`, only Query API, Query Services,
-  Rule Engine Core, Reference Data Cache, and the database remain active, wired to a different
-  (unshown here) HTTP ingress instead.
-- **Listener concurrency (6) is deliberately matched to `transactions.raw`'s partition count (6)**,
-  itself keyed by `customerId` — this preserves per-customer ordering (required by every window-based
-  rule, e.g. `VelocityRule`) while parallelising across customers, one thread per disjoint partition
-  subset.
+- Exactly-once: DB write + Kafka publish share one `ChainedKafkaTransactionManager` transaction — both commit or both roll back.
+- Two idempotency guards, not one: `findByIdOnly` (transaction row) and `findByTransactionId` (assessment) — both must pass to skip a Kafka redelivery.
+- `ReferenceDataCache` is its own bean, not methods on `EvaluationContextBuilder` — Spring's `@Cacheable` proxy skips self-invoked calls.
+- Rule Engine Core is shared by two ingress paths (Kafka consumer in prod, HTTP stub in local/standalone) — same `RuleEngine.evaluate()` call, not duplicated.
+- Kafka Consumer/Producer are `@Profile("!standalone & !local")` — absent entirely outside production.
+- Listener concurrency (6) matches `transactions.raw`'s 6 partitions (customer-keyed) — preserves per-customer ordering while parallelising.
 
 ## Assumptions / things to verify
 
-- **These are logical containers inside one deployable JAR, not independently scalable services.**
-  Strict C4 Container diagrams often depict independently deployable/runnable units; here every box
-  inside the `System_Boundary` runs in the same JVM process and scales as one unit. This diagram
-  favors "how the system is decomposed" over "how it's deployed" — flag if a deployment-unit view
-  (single box: "Fraud Rule Engine JAR") is what's actually wanted instead.
-  Doubling as evidence: `docker-compose.yml` runs a single `fraud-engine` container per environment.
-- **"Query Services" is drawn as one container for three separate `@Service` classes**
-  (`TransactionQueryService`, `AssessmentOutcomeService`, `RuleManagementService`) — they share no
-  code and aren't a cohesive module by any code-level grouping (no shared package-private state,
-  no common interface); grouped here only because they play the identical structural role
-  (controller-to-repository delegation) and drawing three near-identical boxes added no diagrammatic
-  value. Verify this simplification is acceptable for your purposes.
-- **The Partition Maintenance Job's relationship to `db` is native SQL DDL** (`CREATE TABLE ... PARTITION OF`,
-  `DROP TABLE`), not JPA entity access like every other container's — kept as one `db` box for
-  simplicity rather than splitting "DDL access" from "DML access" into separate arrows.
+- **Logical containers inside one JAR**, not independently deployable services —
+  `docker-compose.yml` runs a single `fraud-engine` container per environment.
+- **"Query Services" groups three unrelated classes** (`TransactionQueryService`,
+  `AssessmentOutcomeService`, `RuleManagementService`) — same structural role, no shared code.
+- **Partition Maintenance Job talks to `db` via native DDL**, not JPA — kept in the same box as
+  everything else for simplicity.
