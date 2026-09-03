@@ -909,7 +909,7 @@ The `transactions` table is range-partitioned by `timestamp` (daily). `Partition
 
 The `fraud_assessments` table has a composite foreign key `(transaction_id, transaction_timestamp)` referencing the partitioned table's composite primary key `(id, timestamp)`.
 
-Flyway manages all schema changes (`V1`–`V6`). `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
+Flyway manages all schema changes (`V1`–`V9`). `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
 
 ---
 
@@ -1002,7 +1002,9 @@ src/
 │       ├── V4__partition_transactions.sql
 │       ├── V5__add_device_fingerprint.sql      # device_fingerprint column + index
 │       ├── V6__add_merchant_locations.sql      # merchant_locations table + seed data
-│       └── V7__add_assessment_outcome.sql      # outcome column + index on fraud_assessments
+│       ├── V7__add_assessment_outcome.sql      # outcome column + index on fraud_assessments
+│       ├── V8__replace_fraudulent_with_disposition.sql # disposition enum replaces fraudulent boolean
+│       └── V9__unique_assessment_per_transaction.sql   # UNIQUE(transaction_id) — Kafka redelivery idempotency backstop
 └── test/java/com/fraudengine/
     ├── api/controller/
     │   ├── TransactionQueryControllerTest.java  # 22 tests

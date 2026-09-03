@@ -567,7 +567,8 @@ POST /api/v1/standalone/submit ──► RuleEngine (same 13 rules) ──► as
 |---|---|
 | Retry on failure | 3 total attempts, exponential backoff: attempt 1 immediately, attempt 2 after ~1s, attempt 3 after ~2s |
 | Dead-letter | `transactions.raw.DLT` — transaction marked `FAILED` |
-| Idempotency (transaction row) | If a transaction with that ID already exists in the DB (duplicate delivery), the row isn't re-saved. **Worth verifying separately:** the consumer re-runs `ruleEngine.evaluate()` and persists a new `FraudAssessment` row on every delivery of a given transaction, including redeliveries — the idempotency guard covers the `transactions` row, not assessment creation. If you're testing redelivery scenarios specifically, check whether a second assessment row actually appears rather than assuming full end-to-end idempotency. |
+| Idempotency (transaction row) | If a transaction with that ID already exists in the DB (duplicate delivery), the row isn't re-saved. |
+| Idempotency (assessment) | Fixed 2026-09-03. The consumer checks `fraudAssessmentRepository.findByTransactionId` before evaluation; if an assessment already exists for the transaction, evaluation, the assessment save, and the outcome-event publish are all skipped (a `fraud.kafka.duplicate_delivery.total` metric is incremented instead). `fraud_assessments.transaction_id` also carries a `UNIQUE` constraint (`V9` migration) as a database-level backstop. Previously (through 2026-09-03) this was a real gap — every redelivery, including ones after a fully-committed transaction, inserted a second `FraudAssessment` row and re-published a duplicate outcome event. |
 | Transactional | DB commit and Kafka commit are wrapped in `ChainedKafkaTransactionManager`; a DB failure aborts the Kafka commit |
 
 ---

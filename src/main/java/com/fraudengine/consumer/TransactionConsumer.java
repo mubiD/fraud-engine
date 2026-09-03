@@ -88,6 +88,12 @@ public class TransactionConsumer {
                     .findByIdOnly(UUID.fromString(event.getTransactionId()))
                     .orElseGet(() -> transactionRepository.save(ProtoMapper.toTransactionEntity(event)));
 
+            if (fraudAssessmentRepository.findByTransactionId(transaction.getId()).isPresent()) {
+                metrics.recordDuplicateDelivery();
+                log.warn("Transaction already assessed — skipping duplicate delivery");
+                return;
+            }
+
             Timer.Sample sample = Timer.start();
             FraudAssessment assessment = ruleEngine.evaluate(transaction);
             sample.stop(metrics.evaluationTimer());

@@ -125,6 +125,25 @@ class TransactionConsumerTest {
         order.verify(assessmentProducer).publish(tx, assessment);
     }
 
+    // ── consume() — duplicate delivery ──────────────────────────────────────
+
+    @Test
+    void consume_alreadyAssessedTransaction_skipsReEvaluationAndRepublish() {
+        TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
+        Transaction tx = buildTransaction(TX_ID);
+        FraudAssessment existingAssessment = buildAssessment(tx, Disposition.CLEARED, 0);
+
+        when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
+        when(fraudAssessmentRepository.findByTransactionId(TX_ID)).thenReturn(Optional.of(existingAssessment));
+
+        consumer.consume(event, TOPIC, PARTITION, OFFSET);
+
+        verify(metrics).recordDuplicateDelivery();
+        verifyNoInteractions(ruleEngine, assessmentProducer);
+        verify(fraudAssessmentRepository, never()).save(any());
+        verify(transactionRepository, never()).save(any());
+    }
+
     // ── consume() — metrics ─────────────────────────────────────────────────
 
     @Test

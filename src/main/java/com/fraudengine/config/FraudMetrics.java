@@ -12,6 +12,7 @@ public class FraudMetrics {
     private final Counter pendingReviewCounter;
     private final Counter clearedCounter;
     private final Counter dltCounter;
+    private final Counter duplicateDeliveryCounter;
     private final Timer evaluationTimer;
 
     public FraudMetrics(MeterRegistry registry) {
@@ -34,6 +35,10 @@ public class FraudMetrics {
                 .description("Transactions exhausted all retries and reached the dead-letter topic")
                 .register(registry);
 
+        this.duplicateDeliveryCounter = Counter.builder("fraud.kafka.duplicate_delivery.total")
+                .description("Kafka redeliveries of a transaction that was already assessed, skipped for idempotency")
+                .register(registry);
+
         this.evaluationTimer = Timer.builder("fraud.rule.evaluation.duration.seconds")
                 .description("Rule engine evaluation latency")
                 .publishPercentiles(0.5, 0.95, 0.99)
@@ -44,5 +49,6 @@ public class FraudMetrics {
     public void recordPendingReview() { pendingReviewCounter.increment(); }
     public void recordCleared()       { clearedCounter.increment(); }
     public void recordDlt()           { dltCounter.increment(); }
+    public void recordDuplicateDelivery() { duplicateDeliveryCounter.increment(); }
     public Timer evaluationTimer()    { return evaluationTimer; }
 }

@@ -119,7 +119,7 @@ The DB write and the Kafka publish commit or roll back together via `ChainedKafk
 4. Outcome event published to `transactions.flagged`, `transactions.pending-review`, or `transactions.passed`
 5. DB TX commits; Kafka TX commits
 
-If the DB commit fails, the Kafka TX aborts and no message is published — the consumer retries cleanly. If the Kafka commit fails after the DB commit, the consumer retries; the idempotency guard (`findByIdOnly` — skip re-save if the transaction row already exists) prevents a duplicate insert and simply re-publishes the outcome event. The consumer runs with `isolation.level=read_committed` so downstream readers never see an uncommitted write.
+If the DB commit fails, the Kafka TX aborts and no message is published — the consumer retries cleanly. If the Kafka commit fails after the DB commit (or the offset commit fails after a successful, fully-committed transaction), the consumer redelivers the message. Two idempotency guards handle that: `findByIdOnly` skips re-inserting the `Transaction` row if it already exists, and — as of 2026-09-03 — a `fraudAssessmentRepository.findByTransactionId` check runs before rule evaluation and skips the entire evaluate → save → publish sequence if an assessment already exists for that transaction. Before that second guard was added, a redelivery of an already-fully-committed transaction would silently insert a second `fraud_assessments` row and re-publish a duplicate outcome event on every retry; `fraud_assessments.transaction_id` now also carries a `UNIQUE` constraint (`V9`) as a database-level backstop for the same guarantee. The consumer runs with `isolation.level=read_committed` so downstream readers never see an uncommitted write.
 
 ### Trade-offs
 
@@ -205,7 +205,7 @@ The likelihood ratios are domain-judgment starting points, not values fit to lab
 
 ### Schema
 
-`transactions` is **range-partitioned by `timestamp` (daily)** with a composite primary key `(id, timestamp)` — Postgres requires the partition key in every unique constraint on a partitioned table. `fraud_assessments` references it via a composite FK `(transaction_id, transaction_timestamp)` rather than a single-column FK. `rule_violations`, `blacklisted_merchants`, and `merchant_locations` round out the schema. Flyway (`V1`–`V8`) manages all schema evolution; `spring.jpa.hibernate.ddl-auto=validate` means the app refuses to start if the entity model and schema have drifted apart.
+`transactions` is **range-partitioned by `timestamp` (daily)** with a composite primary key `(id, timestamp)` — Postgres requires the partition key in every unique constraint on a partitioned table. `fraud_assessments` references it via a composite FK `(transaction_id, transaction_timestamp)` rather than a single-column FK. `rule_violations`, `blacklisted_merchants`, and `merchant_locations` round out the schema. Flyway (`V1`–`V9`) manages all schema evolution; `spring.jpa.hibernate.ddl-auto=validate` means the app refuses to start if the entity model and schema have drifted apart.
 
 ### Indexing strategy
 
@@ -220,7 +220,8 @@ CREATE INDEX idx_transactions_duplicate_detection ON transactions(merchant_id, a
 -- disposition-filtered, assessed_at-ordered query paths (flagged/pending-review/passed)
 CREATE INDEX idx_assessments_disposition_assessed_at ON fraud_assessments(disposition, assessed_at DESC);
 
-CREATE INDEX idx_assessments_transaction_id ON fraud_assessments(transaction_id);
+-- Also doubles as the Kafka redelivery idempotency backstop (V9) — see §4
+ALTER TABLE fraud_assessments ADD CONSTRAINT uq_assessments_transaction_id UNIQUE (transaction_id);
 ```
 
 ### Data lifecycle
