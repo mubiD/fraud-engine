@@ -2,8 +2,8 @@
  * Scenario 4 — Fraud Rule Trigger Mix
  *
  * Simulates realistic traffic: a mix of clean transactions, high-value
- * transactions (triggers AmountThresholdRule), and blacklisted merchant
- * transactions (triggers BlacklistedMerchantRule).
+ * transactions (triggers AmountThresholdRule), and unrecognised-device
+ * transactions (triggers DeviceFingerprintRule).
  *
  * Also exercises the read path: listing fraud flags and querying by rule.
  * Validates that the read API scales independently of the write path.
@@ -12,7 +12,7 @@ import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 import { htmlReport } from '../lib/reporter.js';
-import { BASE_URL, THRESHOLDS, transactionPayload, pick, CUSTOMERS, MERCHANTS } from '../config.js';
+import { BASE_URL, THRESHOLDS, transactionPayload, pick, CUSTOMERS } from '../config.js';
 
 const flaggedCount = new Counter('flagged_transactions_returned');
 
@@ -50,10 +50,10 @@ export default function () {
         amount: (Math.random() * 10000 + 5001).toFixed(2),
       });
     } else {
-      // 20%: blacklisted merchant — triggers BlacklistedMerchantRule
+      // 20%: unrecognised device — triggers DeviceFingerprintRule
       payload = transactionPayload({
         customerId: pick(CUSTOMERS),
-        merchantId: pick(MERCHANTS.blacklisted),
+        deviceFingerprint: `DEV_UNKNOWN_${Math.floor(Math.random() * 1e6)}`,
         amount: (Math.random() * 200 + 10).toFixed(2),
       });
     }

@@ -1,6 +1,7 @@
 package com.fraudengine.engine.rules;
 
 import com.fraudengine.config.RuleProperties;
+import com.fraudengine.engine.AmountBaselineStats;
 import com.fraudengine.engine.EvaluationContext;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
@@ -13,7 +14,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,8 +90,7 @@ class CustomerAmountAnomalyRuleTest {
     private EvaluationContext context(List<Transaction> baselineHistory) {
         return EvaluationContext.builder()
                 .recentCustomerTransactions(List.of())
-                .blacklistedMerchantIds(Set.of())
-                .customerBaselineTransactions(baselineHistory)
+                .customerAmountBaseline(AmountBaselineStats.from(baselineHistory))
                 .build();
     }
 

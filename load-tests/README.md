@@ -80,4 +80,4 @@ k6 run --out json=results.json scenarios/01-baseline.js
 
 **03-spike** — the hardest test for Kafka absorption. A sudden 10x traffic spike hits the inbound API. A well-configured Kafka producer should handle this without connection errors or dropped messages. Recovery time is observable in the tail of the run.
 
-**04-fraud-rules** — the most realistic simulation. 60% clean traffic, 20% high-value (triggers `AMOUNT_THRESHOLD`), 20% blacklisted merchant (triggers `BLACKLISTED_MERCHANT`). The read path runs concurrently to verify the query API doesn't contend with writes on the DB connection pool.
+**04-fraud-rules** — the most realistic simulation. 60% clean traffic, 20% high-value (triggers `AMOUNT_THRESHOLD`), 20% unrecognised device (triggers `DEVICE_FINGERPRINT`). The read path runs concurrently to verify the query API doesn't contend with writes on the DB connection pool.

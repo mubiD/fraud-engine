@@ -36,6 +36,9 @@ spring:
       ssl.truststore.location: ${KAFKA_SSL_TRUSTSTORE_LOCATION:/etc/ssl/kafka/truststore.p12}
       ssl.truststore.type: PKCS12
       ssl.truststore.password: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
-      # Disable hostname verification for self-signed certs (showcase only).
-      # Remove this property when using CA-signed certs with proper SANs.
-      ssl.endpoint.identification.algorithm: ""
+      # Hostname verification against the broker cert's SAN — scripts/gen-kafka-certs.sh
+      # already issues each broker a cert with a SAN matching its advertised listener
+      # hostname (kafka1/kafka2/kafka3), so verification passes without special-casing.
+      # Kafka's client default is "https"; set explicitly so this isn't silently reverted
+      # to disabled by a future edit.
+      ssl.endpoint.identification.algorithm: "https"

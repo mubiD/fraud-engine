@@ -22,7 +22,7 @@ flowchart TB
   transactionRepo["TransactionRepository<br/>Spring Data JPA"]
 
   ruleEngine -->|"build(transaction)"| contextBuilder
-  contextBuilder -->|"blacklist / merchant location"| referenceCache
+  contextBuilder -->|"merchant location"| referenceCache
   contextBuilder -->|"recent history, daily spend, baseline"| transactionRepo
   contextBuilder --> context
   ruleEngine -->|"List&lt;FraudRule&gt;, injected"| fraudRuleIface

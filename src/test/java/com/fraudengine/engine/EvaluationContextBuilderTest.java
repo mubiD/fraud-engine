@@ -7,6 +7,7 @@ import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.TransactionRepository;
 import com.fraudengine.streams.CustomerActivityState;
+import com.fraudengine.streams.DailyAmountStats;
 import com.fraudengine.streams.RecentActivityStore;
 import com.fraudengine.streams.RecentTransactionRecord;
 import com.fraudengine.streams.StoreUnavailableException;
@@ -23,7 +24,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,7 +53,6 @@ class EvaluationContextBuilderTest {
         builder = new EvaluationContextBuilder(
                 transactionRepository, referenceDataCache, properties, Optional.empty(), metrics);
 
-        when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of());
         lenient().when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
         // lenient: unused by the streaming-path tests below, which never reach Postgres.
         lenient().when(transactionRepository.sumAmountByCustomerSince(any(), any(), any())).thenReturn(BigDecimal.ZERO);
@@ -87,17 +86,6 @@ class EvaluationContextBuilderTest {
         EvaluationContext ctx = builder.build(tx);
 
         assertThat(ctx.getRecentCustomerTransactions()).containsExactly(other);
-    }
-
-    @Test
-    void blacklistedMerchantIds_populatedFromCache() {
-        when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of("BAD_M1", "BAD_M2"));
-        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
-
-        Transaction tx = tx("C", "M", null, TransactionType.CARD_NOT_PRESENT);
-        EvaluationContext ctx = builder.build(tx);
-
-        assertThat(ctx.getBlacklistedMerchantIds()).containsExactlyInAnyOrder("BAD_M1", "BAD_M2");
     }
 
     @Test
@@ -199,7 +187,7 @@ class EvaluationContextBuilderTest {
     }
 
     @Test
-    void customerBaselineTransactions_loadedFromLongerWindow() {
+    void customerAmountBaseline_loadedFromLongerWindow() {
         properties.getCustomerAmountAnomaly().setEnabled(true);
         properties.getCustomerAmountAnomaly().setLookbackDays(90);
         Transaction tx = tx("CUST_3", "M1", null, TransactionType.CARD_NOT_PRESENT);
@@ -225,7 +213,9 @@ class EvaluationContextBuilderTest {
 
         EvaluationContext ctx = builder.build(tx);
 
-        assertThat(ctx.getCustomerBaselineTransactions()).containsExactly(other);
+        // Both tx and other carry the same amount (see the tx() helper), so a baseline built
+        // from [other] alone (tx excluded) has exactly one entry — proof tx was filtered out.
+        assertThat(ctx.getCustomerAmountBaseline().count()).isEqualTo(1);
     }
 
     @Test
@@ -237,7 +227,7 @@ class EvaluationContextBuilderTest {
         EvaluationContext ctx = builder.build(tx);
 
         verify(transactionRepository, times(1)).findRecentByCustomer(any(), any());
-        assertThat(ctx.getCustomerBaselineTransactions()).isEmpty();
+        assertThat(ctx.getCustomerAmountBaseline()).isEqualTo(AmountBaselineStats.empty());
     }
 
     @Test
@@ -269,7 +259,7 @@ class EvaluationContextBuilderTest {
                 UUID.randomUUID(), "M2", new BigDecimal("42.00"), "ZAR", "RETAIL",
                 TransactionType.CARD_NOT_PRESENT, current.getTimestamp().minus(5, ChronoUnit.MINUTES), null, null);
         CustomerActivityState state = new CustomerActivityState(
-                List.of(other), Map.of());
+                List.of(other), Map.of(), Map.of());
         when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
 
         EvaluationContext ctx = streamingBuilder().build(current);
@@ -309,13 +299,56 @@ class EvaluationContextBuilderTest {
                 tx.getTransactionType(), tx.getTimestamp(), null, null);
         long bucket = tx.getTimestamp().getEpochSecond() / 3600;
         CustomerActivityState state = new CustomerActivityState(
-                List.of(self), Map.of(bucket, tx.getAmount()));
+                List.of(self), Map.of(bucket, tx.getAmount()), Map.of());
         when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
 
         EvaluationContext ctx = streamingBuilder().build(tx);
 
         assertThat(ctx.getRecentCustomerTransactions()).isEmpty();
         assertThat(ctx.getDailySpendTotal()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void streamingStorePresent_usedForBaseline_whenEnabled() {
+        properties.getCustomerAmountAnomaly().setEnabled(true);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        long dayBucket = tx.getTimestamp().getEpochSecond() / 86400;
+        // Five prior 100.00 amounts on the same day-bucket -> mean 100, stdDev 0.
+        DailyAmountStats bucketStats = DailyAmountStats.empty()
+                .plus(100.0).plus(100.0).plus(100.0).plus(100.0).plus(100.0);
+        CustomerActivityState state = new CustomerActivityState(
+                List.of(), Map.of(), Map.of(dayBucket, bucketStats));
+        when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
+
+        EvaluationContext ctx = streamingBuilder().build(tx);
+
+        assertThat(ctx.getCustomerAmountBaseline().count()).isEqualTo(5);
+        assertThat(ctx.getCustomerAmountBaseline().mean()).isEqualTo(100.0);
+        assertThat(ctx.getCustomerAmountBaseline().stdDev()).isEqualTo(0.0);
+        verifyNoInteractions(transactionRepository);
+    }
+
+    @Test
+    void streamingStore_selfAlreadyIngested_excludedFromBaseline() {
+        properties.getCustomerAmountAnomaly().setEnabled(true);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        RecentTransactionRecord self = new RecentTransactionRecord(
+                tx.getId(), tx.getMerchantId(), tx.getAmount(), tx.getCurrency(), tx.getCategory(),
+                tx.getTransactionType(), tx.getTimestamp(), null, null);
+        long dayBucket = tx.getTimestamp().getEpochSecond() / 86400;
+        // Four prior 100.00 amounts plus tx itself (already ingested) folded into the same
+        // day bucket — the correction must back tx's own amount back out before deriving stats.
+        DailyAmountStats bucketStats = DailyAmountStats.empty()
+                .plus(100.0).plus(100.0).plus(100.0).plus(100.0)
+                .plus(tx.getAmount().doubleValue());
+        CustomerActivityState state = new CustomerActivityState(
+                List.of(self), Map.of(), Map.of(dayBucket, bucketStats));
+        when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
+
+        EvaluationContext ctx = streamingBuilder().build(tx);
+
+        assertThat(ctx.getCustomerAmountBaseline().count()).isEqualTo(4);
+        assertThat(ctx.getCustomerAmountBaseline().mean()).isEqualTo(100.0);
     }
 
     private Transaction tx(String customerId, String merchantId, Double latitude, TransactionType type) {

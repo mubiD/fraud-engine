@@ -106,6 +106,24 @@ fraud:
     protected-paths:
       - /api/v1/**
 
+  cache:
+    # ReferenceDataCache.warmMerchantLocationCache() — eager full-table warm-up so a
+    # merchant-location lookup only falls through to a DB read for a merchant added since
+    # the last warm-up, not on every TTL-expired or cold entry. Runs immediately at startup
+    # regardless of this value (initialDelay=0), then on this interval thereafter.
+    merchant-location:
+      warmup-interval-minutes: 30
+
+  datasource:
+    # DataSourceConfig (!standalone only) routes every read-only transaction to a reader
+    # DataSource built from this host, reusing the writer's port/db-name/credentials — see
+    # DataSourceConfig and spring.datasource above. Defaults to DB_HOST, i.e. the same
+    # instance as the writer, so every environment without a real replica configured is a
+    # safe no-op. docker-compose.yml's postgres-replica service is the only place
+    # DB_REPLICA_HOST is actually set to something different today.
+    reader:
+      host: ${DB_REPLICA_HOST:${DB_HOST:localhost}}
+
   schema-registry:
     url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
   kafka:

@@ -570,8 +570,8 @@ class TransactionQueryServiceTest {
 
     @Test
     void getMerchantRiskSummary_extractsTopRulesFromObjectArrayRows() {
-        Object[] row1 = { "BlacklistedMerchantRule", 10L };
-        Object[] row2 = { "AmountThresholdRule",     4L };
+        Object[] row1 = { "DeviceFingerprintRule", 10L };
+        Object[] row2 = { "AmountThresholdRule",   4L };
 
         when(transactionRepository.countByMerchantId(MERCHANT, null)).thenReturn(50L);
         when(assessmentRepository.countFlaggedByMerchantId(MERCHANT, null)).thenReturn(14L);
@@ -585,7 +585,7 @@ class TransactionQueryServiceTest {
         MerchantRiskSummaryDto dto = service.getMerchantRiskSummary(MERCHANT, null);
 
         assertThat(dto.getMostTriggeredRules())
-                .containsExactly("BlacklistedMerchantRule", "AmountThresholdRule");
+                .containsExactly("DeviceFingerprintRule", "AmountThresholdRule");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

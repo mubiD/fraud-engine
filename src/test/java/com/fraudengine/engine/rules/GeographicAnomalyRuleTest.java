@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +78,6 @@ class GeographicAnomalyRuleTest {
         // Context carries the merchant's resolved location (London)
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of(prior))
-                .blacklistedMerchantIds(Set.of())
                 .merchantLatitude(51.5074)
                 .merchantLongitude(-0.1278)
                 .build();
@@ -97,7 +95,6 @@ class GeographicAnomalyRuleTest {
         // No merchant location resolved — context carries nulls (CARD_NOT_PRESENT case)
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of(prior))
-                .blacklistedMerchantIds(Set.of())
                 .build();
 
         assertThat(rule.evaluate(current, ctx).isViolation()).isFalse();
@@ -113,7 +110,6 @@ class GeographicAnomalyRuleTest {
         // Context also has merchant location (London) — transaction coords must win
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of(prior))
-                .blacklistedMerchantIds(Set.of())
                 .merchantLatitude(51.5074)
                 .merchantLongitude(-0.1278)
                 .build();
@@ -128,6 +124,6 @@ class GeographicAnomalyRuleTest {
     }
 
     private EvaluationContext ctx(List<Transaction> recent) {
-        return EvaluationContext.builder().recentCustomerTransactions(recent).blacklistedMerchantIds(Set.of()).build();
+        return EvaluationContext.builder().recentCustomerTransactions(recent).build();
     }
 }

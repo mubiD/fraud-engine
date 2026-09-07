@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -108,6 +107,6 @@ class VelocityRuleTest {
     }
 
     private EvaluationContext context(List<Transaction> recent) {
-        return EvaluationContext.builder().recentCustomerTransactions(recent).blacklistedMerchantIds(Set.of()).build();
+        return EvaluationContext.builder().recentCustomerTransactions(recent).build();
     }
 }

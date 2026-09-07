@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,7 +137,6 @@ class CumulativeSpendingRuleTest {
     private EvaluationContext ctx(List<Transaction> recent, String dailySpend) {
         return EvaluationContext.builder()
                 .recentCustomerTransactions(recent)
-                .blacklistedMerchantIds(Set.of())
                 .dailySpendTotal(new BigDecimal(dailySpend))
                 .build();
     }

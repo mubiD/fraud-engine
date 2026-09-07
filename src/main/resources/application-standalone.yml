@@ -61,7 +61,7 @@ spring:
   jpa:
     hibernate:
       # STUB: Hibernate creates and drops the schema automatically.
-      # In production Flyway manages versioned migrations (V1–V4) applied to PostgreSQL.
+      # In production Flyway manages a versioned migration applied to PostgreSQL.
       ddl-auto: create-drop
     properties:
       hibernate:
@@ -73,8 +73,8 @@ spring:
 
   flyway:
     # STUB: Flyway disabled. Hibernate DDL replaces it in standalone mode.
-    # In production Flyway applies V1 (schema), V2 (seed), V3 (transaction_type column),
-    # and V4 (range partitioning migration) against the PostgreSQL database.
+    # In production Flyway applies the consolidated V1 migration (schema, partitioning,
+    # everything) against the PostgreSQL database.
     enabled: false
 
   h2:

@@ -7,6 +7,7 @@ import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.TransactionRepository;
 import com.fraudengine.streams.CustomerActivityState;
+import com.fraudengine.streams.DailyAmountStats;
 import com.fraudengine.streams.RecentActivityStore;
 import com.fraudengine.streams.RecentTransactionRecord;
 import com.fraudengine.streams.StoreUnavailableException;
@@ -19,7 +20,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Component
@@ -48,8 +48,6 @@ public class EvaluationContextBuilder {
     public EvaluationContext build(Transaction transaction) {
         RecentActivity recentActivity = loadRecentActivity(transaction);
 
-        Set<String> blacklisted = referenceDataCache.getBlacklistedMerchantIds();
-
         // For physical-channel transactions with no coordinates, fall back to the
         // merchant's registered location so the geographic rule can still fire.
         // CARD_NOT_PRESENT is excluded — the merchant's address is not a proxy
@@ -68,39 +66,26 @@ public class EvaluationContextBuilder {
             }
         }
 
-        // Longer, independent window for personal-baseline statistics — skipped entirely
-        // when the rule is disabled to avoid an unnecessary query on the hot path.
-        List<Transaction> baselineTransactions = List.of();
-        if (properties.getCustomerAmountAnomaly().isEnabled()) {
-            Instant baselineStart = transaction.getTimestamp()
-                    .minus(properties.getCustomerAmountAnomaly().getLookbackDays(), ChronoUnit.DAYS);
-            baselineTransactions = transactionRepository
-                    .findRecentByCustomer(transaction.getCustomerId(), baselineStart)
-                    .stream()
-                    .filter(t -> !t.getId().equals(transaction.getId()))
-                    .collect(Collectors.toList());
-        }
-
-        log.debug("Evaluation context built: recentTransactions={}, blacklistedMerchants={}, lookbackMinutes={}, dailySpend={}, baselineTransactions={}",
-                recentActivity.recent().size(), blacklisted.size(), properties.getContextLookbackMinutes(),
-                recentActivity.dailySpend(), baselineTransactions.size());
+        log.debug("Evaluation context built: recentTransactions={}, lookbackMinutes={}, dailySpend={}, baselineCount={}",
+                recentActivity.recent().size(), properties.getContextLookbackMinutes(),
+                recentActivity.dailySpend(), recentActivity.amountBaseline().count());
 
         return EvaluationContext.builder()
                 .recentCustomerTransactions(recentActivity.recent())
-                .blacklistedMerchantIds(blacklisted)
                 .merchantLatitude(merchantLat)
                 .merchantLongitude(merchantLon)
                 .dailySpendTotal(recentActivity.dailySpend())
-                .customerBaselineTransactions(baselineTransactions)
+                .customerAmountBaseline(recentActivity.amountBaseline())
                 .build();
     }
 
-    // recentCustomerTransactions + dailySpendTotal: the two pieces of context that can be
-    // served by the Kafka Streams state store. blacklistedMerchantIds/merchant location
-    // (Caffeine-cached reference data) and customerBaselineTransactions (a 90-day
-    // statistical baseline, a different aggregate shape entirely) are unaffected by this
-    // and stay exactly as they were — see the implementation plan's Scope section.
-    private record RecentActivity(List<Transaction> recent, BigDecimal dailySpend) {}
+    // recentCustomerTransactions + dailySpendTotal + the CustomerAmountAnomalyRule baseline:
+    // the three pieces of context served by the Kafka Streams state store, each with its
+    // own Postgres fallback below. Merchant location (Caffeine-cached reference data) is
+    // unaffected by this and stays exactly as it was — see the implementation plan's Scope
+    // section.
+    private record RecentActivity(List<Transaction> recent, BigDecimal dailySpend,
+                                   AmountBaselineStats amountBaseline) {}
 
     private RecentActivity loadRecentActivity(Transaction transaction) {
         if (recentActivityStore.isPresent()) {
@@ -129,11 +114,12 @@ public class EvaluationContextBuilder {
         // (CustomerActivityProcessor) — it may have already ingested this exact
         // transaction by the time this read happens. Excluded the same way the Postgres
         // path excludes it below: filtered out of the list, and — since its amount would
-        // otherwise already be folded into the hourly bucket sum too — backed out of the
-        // daily total as well. Safe to key this off the same windowRecords lookup: if the
-        // current (just-published) transaction has been ingested at all, it is by
-        // definition seconds old, so it is always still within this window regardless of
-        // how far the two independent consumers have drifted apart.
+        // otherwise already be folded into the hourly bucket sum and the daily baseline
+        // bucket too — backed out of both aggregates as well. Safe to key this off the same
+        // windowRecords lookup: if the current (just-published) transaction has been
+        // ingested at all, it is by definition seconds old, so it is always still within
+        // this window regardless of how far the two independent consumers have drifted
+        // apart.
         boolean selfAlreadyIngested = windowRecords.stream()
                 .anyMatch(r -> r.id().equals(transaction.getId()));
 
@@ -147,7 +133,17 @@ public class EvaluationContextBuilder {
             dailySpend = dailySpend.subtract(transaction.getAmount());
         }
 
-        return new RecentActivity(recent, dailySpend);
+        AmountBaselineStats amountBaseline = AmountBaselineStats.empty();
+        if (properties.getCustomerAmountAnomaly().isEnabled()) {
+            DailyAmountStats aggregate = state.baselineAggregate(
+                    transaction.getTimestamp(), properties.getCustomerAmountAnomaly().getLookbackDays());
+            if (selfAlreadyIngested) {
+                aggregate = aggregate.minus(transaction.getAmount().doubleValue());
+            }
+            amountBaseline = AmountBaselineStats.of(aggregate);
+        }
+
+        return new RecentActivity(recent, dailySpend, amountBaseline);
     }
 
     private RecentActivity fromPostgres(Transaction transaction) {
@@ -165,7 +161,21 @@ public class EvaluationContextBuilder {
                 transaction.getTimestamp().minus(24, ChronoUnit.HOURS),
                 transaction.getId());
 
-        return new RecentActivity(recent, dailySpend);
+        // Longer, independent window for personal-baseline statistics — skipped entirely
+        // when the rule is disabled to avoid an unnecessary query on the hot path.
+        AmountBaselineStats amountBaseline = AmountBaselineStats.empty();
+        if (properties.getCustomerAmountAnomaly().isEnabled()) {
+            Instant baselineStart = transaction.getTimestamp()
+                    .minus(properties.getCustomerAmountAnomaly().getLookbackDays(), ChronoUnit.DAYS);
+            List<Transaction> baselineHistory = transactionRepository
+                    .findRecentByCustomer(transaction.getCustomerId(), baselineStart)
+                    .stream()
+                    .filter(t -> !t.getId().equals(transaction.getId()))
+                    .collect(Collectors.toList());
+            amountBaseline = AmountBaselineStats.from(baselineHistory);
+        }
+
+        return new RecentActivity(recent, dailySpend, amountBaseline);
     }
 
     private Transaction toTransaction(RecentTransactionRecord r) {

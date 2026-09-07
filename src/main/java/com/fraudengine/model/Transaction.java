@@ -13,8 +13,15 @@ import java.util.UUID;
 @Table(name = "transactions")
 public class Transaction {
 
+    // Not @GeneratedValue: Hibernate's generator strategies overwrite ANY pre-set value at
+    // persist time, including one the caller explicitly assigned — that silently discarded
+    // both the standalone endpoint's client-supplied idempotency key and, far more
+    // seriously, ProtoMapper.toTransactionEntity's id (sourced from the Kafka event's own
+    // transactionId), which TransactionConsumer's redelivery dedup guard (findByIdOnly)
+    // depends on to work at all. assignIdIfMissing() below preserves a caller-assigned id
+    // and only generates one when the caller left it null (the standalone endpoint's
+    // documented "omit to let the server assign one" behaviour).
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @Column(name = "customer_id", nullable = false)
@@ -56,6 +63,13 @@ public class Transaction {
     private Instant createdAt = Instant.now();
 
     public Transaction() {}
+
+    @PrePersist
+    public void assignIdIfMissing() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+    }
 
     // getters
     public UUID getId() { return id; }

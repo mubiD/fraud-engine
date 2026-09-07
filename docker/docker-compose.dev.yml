@@ -8,8 +8,20 @@ services:
     container_name: fraud-postgres-dev
     ports:
       - "5433:5432"
+    # Compose volume lists are replaced, not merged, across -f files — the base file's
+    # postgres-init mount must be repeated here or it silently stops applying under this
+    # overlay (the one make dev actually uses).
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+
+  postgres-replica:
+    container_name: fraud-postgres-replica-dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_replica_data_dev:/var/lib/postgresql/data
+      - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
 
   kafka1:
     container_name: fraud-kafka1-dev
@@ -62,3 +74,4 @@ services:
 
 volumes:
   postgres_data_dev:
+  postgres_replica_data_dev:

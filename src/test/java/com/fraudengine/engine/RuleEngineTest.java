@@ -19,7 +19,6 @@ import org.mockito.quality.Strictness;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,7 +45,6 @@ class RuleEngineTest {
     void setUp() {
         emptyContext = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of())
-                .blacklistedMerchantIds(Set.of())
                 .build();
         when(contextBuilder.build(any())).thenReturn(emptyContext);
         when(fraudMetrics.evaluationTimer()).thenReturn(

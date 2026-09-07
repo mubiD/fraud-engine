@@ -26,7 +26,7 @@ transactions.raw  ────────────────────�
       │                                                                 ▼
       ▼                                                      transactions.raw.DLT
   EvaluationContextBuilder                             (@DltHandler → status=FAILED)
-      │   queries recent transactions, blacklist, merchant locations,
+      │   queries recent transactions, merchant locations,
       │   daily spend total — all before rule evaluation
       ▼
   Rule Engine (Strategy Pattern)
@@ -548,8 +548,9 @@ Response `200 OK`:
 | `MULTI_CHANNEL_ANOMALY` | A physical-channel transaction (CARD_PRESENT, CONTACTLESS, ATM) and an online transaction (CARD_NOT_PRESENT) occur within 5 minutes of each other for the same customer. | MEDIUM | 10 |
 | `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes — provides an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
 | `CUMULATIVE_SPENDING` | Rolling spend exceeds the hourly limit (default R10,000) or daily limit (default R25,000). Hourly is computed from in-context recent transactions; daily is a pre-aggregated DB query. | HIGH | 12 |
+| `CUSTOMER_AMOUNT_ANOMALY` | Amount exceeds `stddev-multiplier` (default 3.0) standard deviations above this specific customer's own historical mean, computed over a 90-day lookback (default `min-history-count` 5 prior transactions required). | MEDIUM | 13 |
 
-> Priority 4 (`BLACKLISTED_MERCHANT`) was removed — see DESIGN.md §5 for why a strictly post-authorisation system gets limited value from a pure blacklist-match rule, and why the underlying cache/data path was kept in place regardless.
+> Priority 4 (`BLACKLISTED_MERCHANT`) was removed entirely — see DESIGN.md §5 for why a strictly post-authorisation system gets limited value from a pure blacklist-match rule.
 
 **Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points — each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100). The verdict is a **three-way disposition**, not a binary flag, driven by two thresholds: `fraud.scoring.fraud-probability-threshold` (default 0.5) and below it, `fraud.scoring.review-probability-threshold` (default 0.10).
 
@@ -922,7 +923,7 @@ The `transactions` table is range-partitioned by `timestamp` (daily). `Partition
 
 The `fraud_assessments` table has a composite foreign key `(transaction_id, transaction_timestamp)` referencing the partitioned table's composite primary key `(id, timestamp)`.
 
-Flyway manages all schema changes (`V1`–`V9`). `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
+Flyway manages schema changes — a single consolidated `V1` migration, since this service hasn't gone live yet and there's no deployed history to preserve against. `spring.jpa.hibernate.ddl-auto=validate` means the app will fail to start if the entity model diverges from the schema.
 
 ---
 
@@ -965,16 +966,16 @@ src/
 │   ├── engine/
 │   │   ├── FraudRule.java                  # Strategy interface (evaluate, getRuleName, getConfig, …)
 │   │   ├── RuleEngine.java                 # Orchestrates evaluation + risk scoring
-│   │   ├── EvaluationContext.java          # Carries pre-fetched context (transactions, blacklist,
+│   │   ├── EvaluationContext.java          # Carries pre-fetched context (transactions,
 │   │   │                                   # merchant location, daily spend total)
 │   │   ├── EvaluationContextBuilder.java   # All DB queries run here before rule evaluation
-│   │   ├── ReferenceDataCache.java         # Caffeine-cached blacklist + merchant location reads
+│   │   ├── ReferenceDataCache.java         # Caffeine-cached merchant location reads
 │   │   │                                   # (separate bean so @Cacheable isn't bypassed by self-invocation)
 │   │   └── rules/
 │   │       ├── AmountThresholdRule.java    # priority 1  — category-tiered thresholds
 │   │       ├── VelocityRule.java           # priority 2  — with high-risk category boost
 │   │       ├── DuplicateTransactionRule.java  # priority 3
-│   │       │                                  # (priority 4, BlacklistedMerchantRule, removed — see DESIGN.md §5)
+│   │       │                                  # (priority 4, BlacklistedMerchantRule, removed entirely — see DESIGN.md §5)
 │   │       ├── GeographicAnomalyRule.java     # priority 5  — merchant location fallback
 │   │       ├── CardCloningRule.java           # priority 6
 │   │       ├── TimeOfDayAnomalyRule.java      # priority 7
@@ -988,14 +989,13 @@ src/
 │   ├── filter/             # MdcLoggingFilter
 │   ├── kafka/              # AssessmentProducer, TransactionEvent (POJO), event POJO classes
 │   ├── model/              # Transaction (+ deviceFingerprint), FraudAssessment, RuleViolation,
-│   │                       # BlacklistedMerchant, MerchantLocation + enums
+│   │                       # MerchantLocation + enums
 │   ├── proto/              # ProtoMapper (Protobuf ↔ domain model conversion)
 │   ├── repository/
 │   │   ├── TransactionRepository.java       # JPQL queries — customer/merchant history, counts,
 │   │   │                                    # timestamps, duplicate candidates
 │   │   ├── FraudAssessmentRepository.java   # JPQL queries — flagged/passed feeds, merchant feed,
 │   │   │                                    # aggregate counts and top-rule GROUP BY
-│   │   ├── BlacklistedMerchantRepository.java
 │   │   └── MerchantLocationRepository.java
 │   └── service/
 │       ├── TransactionQueryService.java     # All read operations for the API layer
@@ -1009,15 +1009,7 @@ src/
 ├── main/resources/
 │   ├── application.yml
 │   └── db/migration/
-│       ├── V1__initial_schema.sql
-│       ├── V2__seed_blacklisted_merchants.sql
-│       ├── V3__add_transaction_type.sql
-│       ├── V4__partition_transactions.sql
-│       ├── V5__add_device_fingerprint.sql      # device_fingerprint column + index
-│       ├── V6__add_merchant_locations.sql      # merchant_locations table + seed data
-│       ├── V7__add_assessment_outcome.sql      # outcome column + index on fraud_assessments
-│       ├── V8__replace_fraudulent_with_disposition.sql # disposition enum replaces fraudulent boolean
-│       └── V9__unique_assessment_per_transaction.sql   # UNIQUE(transaction_id) — Kafka redelivery idempotency backstop
+│       └── V1__init_schema.sql   # Consolidated — no deployed history to preserve pre-launch
 └── test/java/com/fraudengine/
     ├── api/controller/
     │   ├── TransactionQueryControllerTest.java  # 22 tests
@@ -1028,7 +1020,7 @@ src/
     │   └── StandaloneTransactionControllerTest.java
     ├── engine/
     │   ├── RuleEngineTest.java
-    │   └── rules/              # Unit tests — one per rule (13 rule test classes)
+    │   └── rules/              # Unit tests — one per rule (12 rule test classes)
     ├── kafka/                  # AssessmentProducerTest (Mockito)
     └── integration/            # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
 

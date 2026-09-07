@@ -1,2 +1,0 @@
-ALTER TABLE transactions
-    ADD COLUMN transaction_type VARCHAR(32) NOT NULL DEFAULT 'CARD_NOT_PRESENT';

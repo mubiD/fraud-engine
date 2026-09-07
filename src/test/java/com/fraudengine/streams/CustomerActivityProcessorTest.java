@@ -36,6 +36,7 @@ class CustomerActivityProcessorTest {
 
     private static final String TOPIC = "transactions.raw";
     private static final Duration RECENT_WINDOW = Duration.ofMinutes(60);
+    private static final int BASELINE_LOOKBACK_DAYS = 90;
 
     private TopologyTestDriver testDriver;
     private TestInputTopic<String, TransactionEventProto.TransactionEvent> inputTopic;
@@ -51,7 +52,7 @@ class CustomerActivityProcessorTest {
 
         builder.stream(TOPIC, Consumed.with(Serdes.String(), new TransactionEventSerde()))
                 .process((ProcessorSupplier<String, TransactionEventProto.TransactionEvent, Void, Void>)
-                                () -> new CustomerActivityProcessor(RECENT_WINDOW),
+                                () -> new CustomerActivityProcessor(RECENT_WINDOW, BASELINE_LOOKBACK_DAYS),
                         CustomerActivityProcessor.STORE_NAME);
 
         Properties props = new Properties();
@@ -136,6 +137,50 @@ class CustomerActivityProcessorTest {
 
         assertThat(stateFor("CUST_1").recentTransactions()).hasSize(1);
         assertThat(stateFor("CUST_2").recentTransactions()).hasSize(1);
+    }
+
+    @Test
+    void dailyAmountBucket_accumulatesWithinSameDay() {
+        Instant t1 = Instant.parse("2026-01-01T02:00:00Z");
+        Instant t2 = Instant.parse("2026-01-01T22:00:00Z");
+
+        inputTopic.pipeInput("CUST_1", event("M1", "100.00", t1));
+        inputTopic.pipeInput("CUST_1", event("M2", "50.00", t2));
+
+        DailyAmountStats aggregate = stateFor("CUST_1").baselineAggregate(t2, BASELINE_LOOKBACK_DAYS);
+        assertThat(aggregate.count()).isEqualTo(2);
+        assertThat(aggregate.sum()).isEqualTo(150.0);
+        assertThat(aggregate.sumOfSquares()).isEqualTo(100.0 * 100.0 + 50.0 * 50.0);
+    }
+
+    @Test
+    void dailyAmountBuckets_expireAfterConfiguredLookback() {
+        Instant old = Instant.parse("2026-01-01T00:00:00Z");
+        Instant justInside = old.plus(Duration.ofDays(BASELINE_LOOKBACK_DAYS - 1));
+        Instant justOutside = old.plus(Duration.ofDays(BASELINE_LOOKBACK_DAYS + 1));
+
+        inputTopic.pipeInput("CUST_1", event("M1", "100.00", old));
+        inputTopic.pipeInput("CUST_1", event("M2", "20.00", justInside));
+
+        // Still within the lookback as of justInside's own write.
+        assertThat(stateFor("CUST_1").baselineAggregate(justInside, BASELINE_LOOKBACK_DAYS).count()).isEqualTo(2);
+
+        inputTopic.pipeInput("CUST_1", event("M3", "5.00", justOutside));
+
+        // The oldest bucket has aged out of the lookback by the time of the third write.
+        DailyAmountStats aggregate = stateFor("CUST_1").baselineAggregate(justOutside, BASELINE_LOOKBACK_DAYS);
+        assertThat(aggregate.count()).isEqualTo(2);
+        assertThat(aggregate.sum()).isEqualTo(25.0);
+    }
+
+    @Test
+    void distinctCustomers_baselineTrackedIndependently() {
+        Instant now = Instant.now();
+        inputTopic.pipeInput("CUST_1", event("M1", "10.00", now));
+        inputTopic.pipeInput("CUST_2", event("M1", "20.00", now));
+
+        assertThat(stateFor("CUST_1").baselineAggregate(now, BASELINE_LOOKBACK_DAYS).sum()).isEqualTo(10.0);
+        assertThat(stateFor("CUST_2").baselineAggregate(now, BASELINE_LOOKBACK_DAYS).sum()).isEqualTo(20.0);
     }
 
     private TransactionEventProto.TransactionEvent event(String merchantId, String amount, Instant timestamp) {

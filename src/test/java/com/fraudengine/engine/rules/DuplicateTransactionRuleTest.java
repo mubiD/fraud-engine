@@ -11,7 +11,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -185,7 +184,6 @@ class DuplicateTransactionRuleTest {
     private EvaluationContext ctx(List<Transaction> recent) {
         return EvaluationContext.builder()
                 .recentCustomerTransactions(recent)
-                .blacklistedMerchantIds(Set.of())
                 .build();
     }
 }

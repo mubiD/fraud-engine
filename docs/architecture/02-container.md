@@ -26,7 +26,7 @@ flowchart TB
 
   kafkaExt -->|"transactions.raw, 6 partitions<br/>concurrency=6"| consumer
   consumer -->|evaluate| ruleEngineCore
-  ruleEngineCore -->|"blacklist / merchant location"| cache
+  ruleEngineCore -->|"merchant location"| cache
   ruleEngineCore -->|"history, spend, baseline"| db
   consumer -->|"persist transaction + assessment"| db
   consumer --> producer

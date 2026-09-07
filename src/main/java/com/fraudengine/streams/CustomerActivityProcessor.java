@@ -26,10 +26,12 @@ public class CustomerActivityProcessor
     public static final String STORE_NAME = "customer-activity-store";
 
     private final Duration recentWindow;
+    private final int baselineLookbackDays;
     private KeyValueStore<String, CustomerActivityState> store;
 
-    public CustomerActivityProcessor(Duration recentWindow) {
+    public CustomerActivityProcessor(Duration recentWindow, int baselineLookbackDays) {
         this.recentWindow = recentWindow;
+        this.baselineLookbackDays = baselineLookbackDays;
     }
 
     @Override
@@ -54,6 +56,6 @@ public class CustomerActivityProcessor
         if (current == null) {
             current = CustomerActivityState.empty();
         }
-        store.put(customerId, current.withAppended(entry, recentWindow));
+        store.put(customerId, current.withAppended(entry, recentWindow, baselineLookbackDays));
     }
 }

@@ -60,13 +60,14 @@ public class VelocityStreamsTopologyConfig {
         streamsBuilder.addStateStore(storeBuilder);
 
         Duration recentWindow = Duration.ofMinutes(ruleProperties.getContextLookbackMinutes());
+        int baselineLookbackDays = ruleProperties.getCustomerAmountAnomaly().getLookbackDays();
 
         KStream<String, TransactionEventProto.TransactionEvent> stream =
                 streamsBuilder.stream(transactionsRawTopic);
 
         stream.process(
                 (ProcessorSupplier<String, TransactionEventProto.TransactionEvent, Void, Void>)
-                        () -> new CustomerActivityProcessor(recentWindow),
+                        () -> new CustomerActivityProcessor(recentWindow, baselineLookbackDays),
                 CustomerActivityProcessor.STORE_NAME);
 
         return stream;

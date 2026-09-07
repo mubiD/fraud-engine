@@ -17,6 +17,7 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -25,8 +26,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -88,7 +89,6 @@ public class StandaloneTransactionController {
 
     @PostMapping(value = "/submit", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RateLimiter(name = "standalone-submit")
-    @Transactional
     @Operation(
         summary = "Submit a transaction for fraud assessment (standalone demo)",
         description = """
@@ -103,15 +103,18 @@ public class StandaloneTransactionController {
     )
     @ApiResponse(responseCode = "200", description = "Assessment completed")
     @ApiResponse(responseCode = "400", description = "Invalid request body")
+    // Deliberately NOT @Transactional at this method's level, same reason as stream() below:
+    // processor.process(tx) is its own transactional unit (StandaloneTransactionProcessor),
+    // committing before control returns here. That's what makes the race-recovery catch below
+    // actually work — wrapping this whole method in @Transactional (as it used to be) made
+    // processor.process() join that outer transaction instead of committing independently, so
+    // the unique-constraint violation only surfaced when THIS method's own transactional proxy
+    // committed, after the method body (and any try/catch in it) had already finished running.
     public ResponseEntity<FraudAssessmentDto> submit(@RequestBody @Valid TransactionRequest request) {
         if (request.transactionId() != null) {
-            Optional<Transaction> existing = transactionRepository.findByIdOnly(request.transactionId());
+            Optional<FraudAssessmentDto> existing = existingAssessment(request.transactionId());
             if (existing.isPresent()) {
-                FraudAssessment existingAssessment = fraudAssessmentRepository
-                        .findByTransactionIdWithDetails(request.transactionId())
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Transaction " + request.transactionId() + " exists but has no assessment"));
-                return ResponseEntity.ok(mapper.toDto(existingAssessment));
+                return ResponseEntity.ok(existing.get());
             }
         }
 
@@ -133,9 +136,30 @@ public class StandaloneTransactionController {
                 .status(TransactionStatus.PENDING)
                 .build();
 
-        FraudAssessment assessment = processor.process(tx);
+        try {
+            FraudAssessment assessment = processor.process(tx);
+            return ResponseEntity.ok(mapper.toDto(assessment));
+        } catch (DataIntegrityViolationException e) {
+            // Lost a race against a concurrent submission of the same client-supplied
+            // transactionId: both requests passed the existence check above before either had
+            // committed. The winner's row is now committed (this request's own attempt failed
+            // on transactions' PK or fraud_assessments' unique constraint at commit) — return
+            // the winner's result instead of surfacing this as a 500. A null transactionId
+            // can never collide this way (each is freshly generated — see Transaction's
+            // assignIdIfMissing()), so treat that case as a genuine, unexpected failure.
+            if (request.transactionId() == null) {
+                throw e;
+            }
+            return existingAssessment(request.transactionId())
+                    .map(ResponseEntity::ok)
+                    .orElseThrow(() -> e);
+        }
+    }
 
-        return ResponseEntity.ok(mapper.toDto(assessment));
+    private Optional<FraudAssessmentDto> existingAssessment(UUID transactionId) {
+        return transactionRepository.findByIdOnly(transactionId)
+                .flatMap(t -> fraudAssessmentRepository.findByTransactionIdWithDetails(transactionId))
+                .map(mapper::toDto);
     }
 
     @PostMapping("/stream")
@@ -225,26 +249,28 @@ public class StandaloneTransactionController {
         UUID transactionId,
 
         @Schema(description = "Customer identifier", example = "CUST-001")
-        @NotBlank String customerId,
+        @NotBlank @Size(max = 64) String customerId,
 
         @Schema(description = "Merchant identifier", example = "MERCH-NIKE-ZA")
-        @NotBlank String merchantId,
+        @NotBlank @Size(max = 64) String merchantId,
 
         @Schema(description = "Transaction amount — values above 5000 trigger the AmountThresholdRule",
                 example = "6500.00")
-        @NotNull @Positive BigDecimal amount,
+        @NotNull @Positive @Digits(integer = 15, fraction = 4,
+                message = "numeric overflow — amount must fit the database column's precision (up to 15 integer digits, 4 fraction digits)")
+        BigDecimal amount,
 
         @Schema(description = "ISO 4217 currency code", example = "ZAR")
         @NotBlank @Size(min = 3, max = 3) @Pattern(regexp = "[A-Z]{3}", message = "must be a 3-letter uppercase ISO 4217 currency code") String currency,
 
         @Schema(description = "Merchant category", example = "RETAIL")
-        String category,
+        @Size(max = 64) String category,
 
         @Schema(description = "Transaction channel — CARD_PRESENT, CARD_NOT_PRESENT, CONTACTLESS, ATM")
         TransactionType transactionType,
 
         @Schema(description = "Human-readable location", example = "Cape Town, ZA")
-        String location,
+        @Size(max = 128) String location,
 
         @Schema(description = "Latitude", example = "-33.9249")
         @DecimalMin("-90.0") @DecimalMax("90.0")
@@ -257,7 +283,7 @@ public class StandaloneTransactionController {
         @Schema(description = "Device fingerprint (e.g. hashed user-agent + IP). "
                 + "When present, triggers DeviceFingerprintRule if the device is new for this customer.",
                 example = "a3f1c2e9b7d04562")
-        String deviceFingerprint
+        @Size(max = 128) String deviceFingerprint
     ) {}
 
     @Schema(description = "Summary of a stream run")

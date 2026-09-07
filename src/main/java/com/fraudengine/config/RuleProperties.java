@@ -58,9 +58,9 @@ public class RuleProperties {
     // add new rules' window fields to this map, not as a one-off if-check.
     //
     // customerAmountAnomaly.lookbackDays is deliberately NOT in this map: it's measured
-    // in days (not minutes) against a separate, independently-fetched
-    // customerBaselineTransactions list, not recentCustomerTransactions — there's no
-    // contextLookbackMinutes relationship to cross-check.
+    // in days (not minutes) against a separate, independently-tracked baseline
+    // (EvaluationContext.customerAmountBaseline), not recentCustomerTransactions —
+    // there's no contextLookbackMinutes relationship to cross-check.
     @PostConstruct
     public void validate() {
         Map<String, Integer> windowMinutesByRule = Map.of(

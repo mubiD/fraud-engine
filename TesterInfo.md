@@ -6,7 +6,7 @@
 
 ## 1. What This Service Is
 
-This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank — it evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **13** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
+This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank — it evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
 
 In production-like environments (`int`, `qa`, `load`, `prod`), transactions enter **exclusively** via Kafka — there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint — §4.14 — which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
 
@@ -340,7 +340,7 @@ This field exists to eventually calibrate the log-odds scoring model's likelihoo
 
 ## 5. Fraud Detection Rules — Full Specification
 
-All 13 rules are evaluated in priority order (1 → 13). All *enabled* rules are checked regardless of earlier violations — the engine does **not** short-circuit after the first violation. Whether a given violation, or combination of violations, actually produces a `FLAGGED` (or `PENDING_REVIEW`) disposition is governed separately by §6 — treat "does the rule fire" and "what disposition results" as two different questions when writing test cases.
+All 12 rules are evaluated in priority order (priorities 1–13, with 4 absent — see §5.4). All *enabled* rules are checked regardless of earlier violations — the engine does **not** short-circuit after the first violation. Whether a given violation, or combination of violations, actually produces a `FLAGGED` (or `PENDING_REVIEW`) disposition is governed separately by §6 — treat "does the rule fire" and "what disposition results" as two different questions when writing test cases.
 
 ### 5.1 AMOUNT_THRESHOLD (Priority 1)
 
@@ -391,28 +391,21 @@ Config: `fraud.rules.duplicate.card-present-window-seconds`, `fraud.rules.duplic
 
 ---
 
-### 5.4 BLACKLISTED_MERCHANT — removed
+### 5.4 BLACKLISTED_MERCHANT — removed entirely
 
-This rule no longer exists. Submitting a transaction against `MERCHANT_FRAUD_001`/`002`/`003` will
-**not** produce a `FLAGGED` verdict from this — if you see older documentation or a cached test plan
-claiming otherwise, that's stale. Rationale (DESIGN.md §5): this is a strictly post-authorisation
-system, so a pure blacklist-match rule can only report after the fact, not prevent anything — its
-`CRITICAL` severity accurately captured "how certain is this evidence" but oversold "what can this
-system do about it."
+This rule, and every piece of infrastructure that supported it, no longer exist. Submitting a
+transaction against `MERCHANT_FRAUD_001`/`002`/`003` will **not** produce a `FLAGGED` verdict from
+this — if you see older documentation or a cached test plan claiming otherwise, that's stale.
+Rationale (DESIGN.md §5): this is a strictly post-authorisation system, so a pure blacklist-match
+rule can only report after the fact, not prevent anything — its `CRITICAL` severity accurately
+captured "how certain is this evidence" but oversold "what can this system do about it."
 
-The underlying data path was deliberately **kept**, not deleted, as a live example of the tradeoff
-that motivated removing the rule:
-
-- `blacklisted_merchants` table, `BlacklistedMerchantRepository`, and `ReferenceDataCache.getBlacklistedMerchantIds()`
-  (Caffeine, 5-minute TTL, max 10,000 entries) are all still present and still populate
-  `EvaluationContext.blacklistedMerchantIds` on every evaluation — just unread by any rule now.
-- The pre-seeded rows (`MERCHANT_FRAUD_001`/`002`/`003`, §13) are still in the table.
-- A merchant added directly to the DB still wouldn't be picked up until the cache entry expires (up
-  to 5 minutes) — and that TTL is per application instance; in a multi-replica deployment, different
-  pods can disagree on blacklist state for up to 5 minutes independently of each other. This is
-  exactly the mechanism worth discussing if this comes up in an interview: shortening the TTL only
-  helps the instance that's asked; the write path needed to actually invalidate fast doesn't exist in
-  this codebase at all.
+Removed in full, not just unwired: the `blacklisted_merchants` table and its Flyway seed migration,
+the `BlacklistedMerchant` entity, `BlacklistedMerchantRepository`, `ReferenceDataCache.getBlacklistedMerchantIds()`,
+the `blacklistedMerchants` Caffeine cache, and the `blacklistedMerchantIds` field on
+`EvaluationContext`. There is no pre-seeded blacklist data anymore, and the cache-TTL/multi-replica
+staleness question that used to motivate keeping this infrastructure around no longer has anything
+to point at in this codebase.
 
 ---
 
@@ -548,7 +541,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 transactions.raw (Kafka) ──► TransactionConsumer ──► EvaluationContextBuilder
                                                               │
                                                               ▼
-                                          RuleEngine (13 rules, priority order)
+                                          RuleEngine (12 rules, priority order)
                                                               │
                                                               ▼
                               FraudAssessment persisted (same Kafka+DB transaction)
@@ -563,7 +556,7 @@ transactions.raw (Kafka) ──► TransactionConsumer ──► EvaluationConte
 **Dev/standalone path** (`local`/`standalone` profiles — HTTP only, §2):
 
 ```
-POST /api/v1/standalone/submit ──► RuleEngine (same 13 rules) ──► assessment returned inline
+POST /api/v1/standalone/submit ──► RuleEngine (same 12 rules) ──► assessment returned inline
                                                                     (no Kafka publish in this path)
 ```
 
@@ -581,7 +574,7 @@ POST /api/v1/standalone/submit ──► RuleEngine (same 13 rules) ──► as
 | Retry on failure | 3 total attempts, exponential backoff: attempt 1 immediately, attempt 2 after ~1s, attempt 3 after ~2s |
 | Dead-letter | `transactions.raw.DLT` — transaction marked `FAILED` |
 | Idempotency (transaction row) | If a transaction with that ID already exists in the DB (duplicate delivery), the row isn't re-saved. |
-| Idempotency (assessment) | Fixed 2026-09-03. The consumer checks `fraudAssessmentRepository.findByTransactionId` before evaluation; if an assessment already exists for the transaction, evaluation, the assessment save, and the outcome-event publish are all skipped (a `fraud.kafka.duplicate_delivery.total` metric is incremented instead). `fraud_assessments.transaction_id` also carries a `UNIQUE` constraint (`V9` migration) as a database-level backstop. Previously (through 2026-09-03) this was a real gap — every redelivery, including ones after a fully-committed transaction, inserted a second `FraudAssessment` row and re-published a duplicate outcome event. |
+| Idempotency (assessment) | Fixed 2026-09-03. The consumer checks `fraudAssessmentRepository.findByTransactionId` before evaluation; if an assessment already exists for the transaction, evaluation, the assessment save, and the outcome-event publish are all skipped (a `fraud.kafka.duplicate_delivery.total` metric is incremented instead). `fraud_assessments.transaction_id` also carries a `UNIQUE` constraint (`uq_assessments_transaction_id`, in `V1__init_schema.sql`) as a database-level backstop. Previously (through 2026-09-03) this was a real gap — every redelivery, including ones after a fully-committed transaction, inserted a second `FraudAssessment` row and re-published a duplicate outcome event. |
 | Transactional | DB commit and Kafka commit are wrapped in `ChainedKafkaTransactionManager`; a DB failure aborts the Kafka commit |
 
 ---
@@ -627,14 +620,6 @@ POST /api/v1/standalone/submit ──► RuleEngine (same 13 rules) ──► as
 | `rule_version` | VARCHAR(16) | |
 | `description` | TEXT | Human-readable explanation |
 | `severity` | VARCHAR(16) | LOW / MEDIUM / HIGH / CRITICAL |
-
-### blacklisted_merchants table
-
-| Column | Type | Notes |
-|---|---|---|
-| `merchant_id` | VARCHAR(64) | Primary key |
-| `reason` | TEXT | |
-| `added_at` | TIMESTAMPTZ | |
 
 ### merchant_locations table
 
@@ -699,43 +684,25 @@ If you're only ever testing against `make dev`, you won't hit any of this — wh
 
 9. **Pagination cursor is strictly less-than, with an id tie-break:** a cursor of `T` returns records with `timestamp < T`, or `timestamp = T AND id < cursorId` for same-timestamp rows. The cursor row itself is not repeated.
 
-10. **Blacklist cache TTL (mechanism retained, rule removed — §5.4):** the blacklist cache still works exactly as before — adding a merchant to the blacklist DB directly can take up to 5 minutes to be picked up (per-instance Caffeine cache), and different pods can disagree during that window in a multi-replica deployment — but nothing consumes the result anymore, so this no longer affects any fraud verdict. Kept as a live example of the tradeoff, not a functional gap to test against.
+10. **Risk score cap:** score cannot exceed 100 (explicitly clamped) or go below 0.
 
-11. **Risk score cap:** score cannot exceed 100 (explicitly clamped) or go below 0.
+11. **The `disposition` verdict is driven by two probability thresholds, not a point total (§6).** Don't try to hand-predict an exact `riskScore` from "which rules fired" the way you could under the old additive model — verify against a running instance or the approximate table in §6.
 
-12. **The `disposition` verdict is driven by two probability thresholds, not a point total (§6).** Don't try to hand-predict an exact `riskScore` from "which rules fired" the way you could under the old additive model — verify against a running instance or the approximate table in §6.
+12. **`disposition` is three-way, not binary** — `CLEARED` / `PENDING_REVIEW` / `FLAGGED`. Existing test suites or scripts written against a boolean `fraudulent` field need updating; `/transactions/passed` and `/transactions/flagged` are strictly `CLEARED`-only and `FLAGGED`-only respectively (not "everything except the other"), and `/transactions/pending-review` (§4.6) is the third, previously-nonexistent bucket.
 
-13. **`disposition` is three-way, not binary** — `CLEARED` / `PENDING_REVIEW` / `FLAGGED`. Existing test suites or scripts written against a boolean `fraudulent` field need updating; `/transactions/passed` and `/transactions/flagged` are strictly `CLEARED`-only and `FLAGGED`-only respectively (not "everything except the other"), and `/transactions/pending-review` (§4.6) is the third, previously-nonexistent bucket.
+13. **Context lookback (default 60 minutes) bounds every window-based rule**, not just velocity/geographic — also duplicate, card-cloning, device-fingerprint, multi-channel, cross-merchant-velocity, and cumulative-spending's hourly window. The app validates all of these against the lookback at startup and refuses to start if any window is configured wider than it.
 
-14. **Context lookback (default 60 minutes) bounds every window-based rule**, not just velocity/geographic — also duplicate, card-cloning, device-fingerprint, multi-channel, cross-merchant-velocity, and cumulative-spending's hourly window. The app validates all of these against the lookback at startup and refuses to start if any window is configured wider than it.
+14. **Partition maintenance job:** runs at 02:00 daily. Creates the partition 2 days ahead; drops the partition from 91 days ago (90-day retention plus a 1-day buffer). Test data older than ~91 days will be purged.
 
-15. **Partition maintenance job:** runs at 02:00 daily. Creates the partition 2 days ahead; drops the partition from 91 days ago (90-day retention plus a 1-day buffer). Test data older than ~91 days will be purged.
+15. **No runtime rule config change:** rules cannot be enabled/disabled or have thresholds changed via API — requires a redeployment.
 
-16. **No runtime rule config change:** rules cannot be enabled/disabled or have thresholds changed via API — requires a redeployment.
+16. **Device fingerprint rule needs prior history to mean anything.** A customer's very first fingerprinted transaction never triggers `DEVICE_FINGERPRINT` — there's nothing to compare it against yet (§5.9). Set up a prior transaction with a *different* fingerprint first if you want to test the trigger path.
 
-17. **Device fingerprint rule needs prior history to mean anything.** A customer's very first fingerprinted transaction never triggers `DEVICE_FINGERPRINT` — there's nothing to compare it against yet (§5.9). Set up a prior transaction with a *different* fingerprint first if you want to test the trigger path.
-
-18. **`CROSS_MERCHANT_VELOCITY` rarely fires in isolation from `VELOCITY`.** Their default windows overlap and `CROSS_MERCHANT_VELOCITY`'s threshold (≥10) is stricter than `VELOCITY`'s (≥5) in the same window — see §5.11.
+17. **`CROSS_MERCHANT_VELOCITY` rarely fires in isolation from `VELOCITY`.** Their default windows overlap and `CROSS_MERCHANT_VELOCITY`'s threshold (≥10) is stricter than `VELOCITY`'s (≥5) in the same window — see §5.11.
 
 ---
 
-## 13. Pre-seeded Test Data
-
-The following merchants are always blacklisted out of the box:
-
-| Merchant ID | Reason |
-|---|---|
-| `MERCHANT_FRAUD_001` | Phishing |
-| `MERCHANT_FRAUD_002` | Card skimming |
-| `MERCHANT_FRAUD_003` | Synthetic identity fraud |
-
-These no longer trigger anything — `BLACKLISTED_MERCHANT` was removed (§5.4) — but the rows are still
-present out of the box, so `ReferenceDataCache.getBlacklistedMerchantIds()` returns a non-empty set
-without any manual DB setup if you want to exercise that cache directly.
-
----
-
-## 14. Observability (for test verification)
+## 13. Observability (for test verification)
 
 - **Logs:** every log line carries `requestId` (per HTTP request) and `transactionId` (Kafka path also adds `kafkaTopic`/`kafkaPartition`/`kafkaOffset`). Customer and merchant IDs are **not** logged.
 - **Metrics** (Prometheus at `GET /actuator/prometheus`):

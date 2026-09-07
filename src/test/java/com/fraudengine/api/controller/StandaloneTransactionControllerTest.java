@@ -148,6 +148,136 @@ class StandaloneTransactionControllerTest {
     }
 
     @Test
+    void submit_customerIdOverColumnLimit_returns400() throws Exception {
+        // customer_id is VARCHAR(64) — without this @Size bound, an oversized value used to
+        // sail past validation and crash the INSERT with an unhandled
+        // DataIntegrityViolationException (500) instead of a clean 400.
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "%s",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR"
+                            }
+                            """.formatted("C".repeat(65))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_merchantIdOverColumnLimit_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "%s",
+                              "amount": 250.00,
+                              "currency": "ZAR"
+                            }
+                            """.formatted("M".repeat(65))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_categoryOverColumnLimit_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR",
+                              "category": "%s"
+                            }
+                            """.formatted("R".repeat(65))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_locationOverColumnLimit_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR",
+                              "location": "%s"
+                            }
+                            """.formatted("L".repeat(129))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_deviceFingerprintOverColumnLimit_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR",
+                              "deviceFingerprint": "%s"
+                            }
+                            """.formatted("D".repeat(129))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_amountExceedsColumnPrecision_returns400() throws Exception {
+        // amount is NUMERIC(19,4) — 15 integer digits max. 16 used to sail past validation
+        // and crash the INSERT with an unhandled DataIntegrityViolationException (500).
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 1000000000000000.00,
+                              "currency": "ZAR"
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void submit_racesAgainstConcurrentSubmit_returnsWinnersAssessmentInsteadOf500() throws Exception {
+        // Simulates losing the check-then-insert race: the pre-check (findByIdOnly) sees
+        // nothing, so submit() proceeds to process() — which fails because a concurrent
+        // request for the same transactionId committed in the meantime. Recovery re-queries
+        // and must find the winner's row this time.
+        UUID sharedId = UUID.randomUUID();
+        com.fraudengine.api.dto.FraudAssessmentDto winnerDto = new com.fraudengine.api.dto.FraudAssessmentDto();
+
+        when(transactionRepository.findByIdOnly(sharedId))
+                .thenReturn(Optional.empty())   // pre-check: doesn't exist yet
+                .thenReturn(Optional.of(savedTx)); // recovery lookup: winner has since committed
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(sharedId))
+                .thenReturn(Optional.of(passedAssessment));
+        when(mapper.toDto(passedAssessment)).thenReturn(winnerDto);
+        when(processor.process(any())).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException("duplicate key value violates unique constraint"));
+
+        mockMvc.perform(post("/api/v1/standalone/submit")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                            {
+                              "transactionId": "%s",
+                              "customerId": "CUST-001",
+                              "merchantId": "MERCH-WOOLWORTHS-ZA",
+                              "amount": 250.00,
+                              "currency": "ZAR"
+                            }
+                            """.formatted(sharedId)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void submit_duplicateTransactionId_returnsExistingAssessmentWithoutReprocessing() throws Exception {
         UUID existingId = UUID.randomUUID();
 

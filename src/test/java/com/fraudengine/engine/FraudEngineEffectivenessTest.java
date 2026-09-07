@@ -139,7 +139,7 @@ class FraudEngineEffectivenessTest {
 
         FraudAssessment result = evaluate(
                 tx("CUST_VELOCITY", "SHOP_A", new BigDecimal("25.00"), "ZAR", now),
-                history, Set.of());
+                history);
 
         assertThat(hasViolation(result, "VELOCITY"))
                 .as("VELOCITY rule must fire when customer has 5+ transactions in the window")
@@ -158,7 +158,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txFull("CUST_DUP", "STREAMING_SVC", new BigDecimal("149.99"),
                         "ZAR", null, null, TransactionType.CARD_NOT_PRESENT, now),
-                List.of(prior), Set.of());
+                List.of(prior));
 
         assertThat(hasViolation(result, "DUPLICATE_TRANSACTION"))
                 .as("DUPLICATE_TRANSACTION rule must fire for same merchant/amount/currency within CNP window")
@@ -171,7 +171,7 @@ class FraudEngineEffectivenessTest {
     void pattern_highValueTransaction() {
         FraudAssessment result = evaluate(
                 tx("CUST_HV", "ELECTRONICS_STORE", new BigDecimal("7500.00"), "ZAR", BUSINESS_HOURS),
-                List.of(), Set.of());
+                List.of());
 
         assertThat(hasViolation(result, "AMOUNT_THRESHOLD"))
                 .as("AMOUNT_THRESHOLD rule must fire for amounts above 5000 ZAR")
@@ -199,7 +199,7 @@ class FraudEngineEffectivenessTest {
                 new BigDecimal("1200.00"), "GBP",
                 51.5074, -0.1278, now);
 
-        FraudAssessment result = evaluate(london, List.of(capeTown), Set.of());
+        FraudAssessment result = evaluate(london, List.of(capeTown));
 
         assertThat(hasViolation(result, "GEOGRAPHIC_ANOMALY"))
                 .as("GEOGRAPHIC_ANOMALY rule must fire when travel speed exceeds 900 km/h")
@@ -215,8 +215,7 @@ class FraudEngineEffectivenessTest {
                 tx("CUST_CLONE", "ALIEXPRESS.COM", new BigDecimal("99.99"), "ZAR", now),
                 List.of(
                         tx("CUST_CLONE", "AMAZON.COM",  new BigDecimal("99.99"), "ZAR", now.minus(5, ChronoUnit.MINUTES)),
-                        tx("CUST_CLONE", "EBAY.COM",    new BigDecimal("99.99"), "ZAR", now.minus(3, ChronoUnit.MINUTES))),
-                Set.of());
+                        tx("CUST_CLONE", "EBAY.COM",    new BigDecimal("99.99"), "ZAR", now.minus(3, ChronoUnit.MINUTES))));
 
         assertThat(hasViolation(result, "CARD_CLONING"))
                 .as("CARD_CLONING rule must fire when the same amount appears at 2+ different merchants in the window")
@@ -235,7 +234,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txWithCategory("CUST_CRYPTO", "LUNO_EXCHANGE", new BigDecimal("500.00"),
                         "ZAR", "CRYPTO_EXCHANGE", BUSINESS_HOURS),
-                List.of(), Set.of());
+                List.of());
 
         assertThat(hasViolation(result, "HIGH_RISK_MERCHANT_CATEGORY"))
                 .as("HIGH_RISK_MERCHANT_CATEGORY rule must fire for crypto exchange transactions")
@@ -248,7 +247,7 @@ class FraudEngineEffectivenessTest {
     void pattern_timeOfDayAnomaly() {
         FraudAssessment result = evaluate(
                 tx("CUST_NIGHT", "SOME_SHOP", new BigDecimal("200.00"), "ZAR", OFF_HOURS),
-                List.of(), Set.of());
+                List.of());
 
         assertThat(hasViolation(result, "TIME_OF_DAY_ANOMALY"))
                 .as("TIME_OF_DAY_ANOMALY rule must fire for transactions at 03:00 UTC")
@@ -269,7 +268,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txWithFingerprint("CUST_DEVICE", "SHOP_NEW", new BigDecimal("40.00"), "ZAR",
                         "DEV_UNKNOWN", now),
-                List.of(knownDevice), Set.of());
+                List.of(knownDevice));
 
         assertThat(hasViolation(result, "DEVICE_FINGERPRINT"))
                 .as("DEVICE_FINGERPRINT rule must fire for a device fingerprint never seen for this customer")
@@ -288,7 +287,7 @@ class FraudEngineEffectivenessTest {
 
         FraudAssessment result = evaluate(
                 tx("CUST_SPEND", "SHOP_D", new BigDecimal("2600.00"), "ZAR", now),
-                history, Set.of());
+                history);
 
         assertThat(hasViolation(result, "CUMULATIVE_SPENDING"))
                 .as("CUMULATIVE_SPENDING rule must fire when rolling hourly spend exceeds the limit")
@@ -306,7 +305,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txFull("CUST_CHANNEL", "SHOP_ONLINE", new BigDecimal("80.00"), "ZAR",
                         null, null, TransactionType.CARD_NOT_PRESENT, now),
-                List.of(physical), Set.of());
+                List.of(physical));
 
         assertThat(hasViolation(result, "MULTI_CHANNEL_ANOMALY"))
                 .as("MULTI_CHANNEL_ANOMALY rule must fire for a physical->online channel switch within the window")
@@ -325,7 +324,7 @@ class FraudEngineEffectivenessTest {
 
         FraudAssessment result = evaluate(
                 tx("CUST_XVEL", "SHOP_X", new BigDecimal("30.00"), "ZAR", now),
-                history, Set.of());
+                history);
 
         assertThat(hasViolation(result, "CROSS_MERCHANT_VELOCITY"))
                 .as("CROSS_MERCHANT_VELOCITY rule must fire for 10 transactions across merchants within the window")
@@ -353,7 +352,7 @@ class FraudEngineEffectivenessTest {
         // personal anomaly for a customer whose typical transaction is ~80 ZAR
         FraudAssessment result = evaluate(
                 tx("CUST_BASELINE", "SHOP_NEW", new BigDecimal("800.00"), "ZAR", now),
-                List.of(), Set.of(), baseline);
+                List.of(), baseline);
 
         assertThat(hasViolation(result, "CUSTOMER_AMOUNT_ANOMALY"))
                 .as("CUSTOMER_AMOUNT_ANOMALY rule must fire for a transaction far beyond the customer's own baseline")
@@ -387,8 +386,7 @@ class FraudEngineEffectivenessTest {
                         tx("CUST_COMBO", "AMAZON.COM", new BigDecimal("99.99"), "ZAR",
                                 OFF_HOURS.minus(5, ChronoUnit.MINUTES)),
                         tx("CUST_COMBO", "EBAY.COM",   new BigDecimal("99.99"), "ZAR",
-                                OFF_HOURS.minus(3, ChronoUnit.MINUTES))),
-                Set.of());
+                                OFF_HOURS.minus(3, ChronoUnit.MINUTES))));
 
         assertThat(hasViolation(result, "CARD_CLONING")).isTrue();
         assertThat(hasViolation(result, "TIME_OF_DAY_ANOMALY")).isTrue();
@@ -407,7 +405,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txFull("CUST_CHANNEL_COMBO", "SHOP_ONLINE", new BigDecimal("80.00"), "ZAR",
                         null, null, TransactionType.CARD_NOT_PRESENT, OFF_HOURS),
-                List.of(physical), Set.of());
+                List.of(physical));
 
         assertThat(hasViolation(result, "MULTI_CHANNEL_ANOMALY")).isTrue();
         assertThat(hasViolation(result, "TIME_OF_DAY_ANOMALY")).isTrue();
@@ -421,7 +419,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txWithCategory("CUST_GAMBLE", "BETWAY_APP", new BigDecimal("300.00"),
                         "ZAR", "GAMBLING", OFF_HOURS),
-                List.of(), Set.of());
+                List.of());
 
         assertThat(hasViolation(result, "HIGH_RISK_MERCHANT_CATEGORY")).isTrue();
         assertThat(hasViolation(result, "TIME_OF_DAY_ANOMALY")).isTrue();
@@ -443,8 +441,7 @@ class FraudEngineEffectivenessTest {
                         tx("CUST_LEGIT_1", "PICK_N_PAY", new BigDecimal("280.00"), "ZAR",
                                 BUSINESS_HOURS.minus(45, ChronoUnit.MINUTES)),
                         tx("CUST_LEGIT_1", "EDGARS",     new BigDecimal("620.00"), "ZAR",
-                                BUSINESS_HOURS.minus(90, ChronoUnit.MINUTES))),
-                Set.of());
+                                BUSINESS_HOURS.minus(90, ChronoUnit.MINUTES))));
 
         assertThat(result.getDisposition())
                 .as("Legitimate weekend shopping with varied merchants/amounts must be CLEARED")
@@ -456,7 +453,7 @@ class FraudEngineEffectivenessTest {
     void legitimate_largePurchaseUnderThreshold() {
         FraudAssessment result = evaluate(
                 tx("CUST_LEGIT_2", "SAMSUNG_STORE", new BigDecimal("4999.99"), "ZAR", BUSINESS_HOURS),
-                List.of(), Set.of());
+                List.of());
 
         assertThat(result.getDisposition())
                 .as("Purchase of exactly 4999.99 ZAR must NOT trigger AMOUNT_THRESHOLD")
@@ -480,7 +477,7 @@ class FraudEngineEffectivenessTest {
 
         FraudAssessment result = evaluate(
                 tx("CUST_LEGIT_7", "SHOP_F", new BigDecimal("3500.00"), "ZAR", now),
-                List.of(), Set.of(), baseline);
+                List.of(), baseline);
 
         assertThat(hasViolation(result, "CUSTOMER_AMOUNT_ANOMALY"))
                 .as("A purchase within this customer's normal variability must NOT trigger CUSTOMER_AMOUNT_ANOMALY")
@@ -499,7 +496,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txFull("CUST_LEGIT_3", "NETFLIX", new BigDecimal("199.00"),
                         "ZAR", null, null, TransactionType.CARD_NOT_PRESENT, now),
-                List.of(lastMonth), Set.of());
+                List.of(lastMonth));
 
         assertThat(hasViolation(result, "DUPLICATE_TRANSACTION"))
                 .as("Monthly subscription charge (31 days apart) must NOT trigger DUPLICATE_TRANSACTION")
@@ -519,7 +516,7 @@ class FraudEngineEffectivenessTest {
                 new BigDecimal("75.00"), "ZAR",
                 -33.9725, 18.6017, now);
 
-        FraudAssessment result = evaluate(cpt, List.of(jhb), Set.of());
+        FraudAssessment result = evaluate(cpt, List.of(jhb));
 
         assertThat(hasViolation(result, "GEOGRAPHIC_ANOMALY"))
                 .as("JHB→CPT in 3 hours is realistic (1400 km / 3h ≈ 467 km/h) — must NOT trigger GEOGRAPHIC_ANOMALY")
@@ -535,7 +532,7 @@ class FraudEngineEffectivenessTest {
 
         FraudAssessment result = evaluate(
                 tx("CUST_LEGIT_5", "SHOP_X", new BigDecimal("120.00"), "ZAR", now),
-                history, Set.of());
+                history);
 
         assertThat(hasViolation(result, "VELOCITY"))
                 .as("4 prior transactions (below max of 5) must NOT trigger VELOCITY rule")
@@ -556,7 +553,7 @@ class FraudEngineEffectivenessTest {
                 txFull("CUST_LEGIT_6", "INTERNATIONAL_SHOP",
                         new BigDecimal("100.00"), "USD", null, null,
                         TransactionType.CARD_NOT_PRESENT, now),
-                List.of(zarPayment), Set.of());
+                List.of(zarPayment));
 
         assertThat(hasViolation(result, "DUPLICATE_TRANSACTION"))
                 .as("100 ZAR followed by 100 USD at the same merchant must NOT be a duplicate (Gap 7 fix)")
@@ -574,7 +571,7 @@ class FraudEngineEffectivenessTest {
         FraudAssessment result = evaluate(
                 txWithFingerprint("CUST_DEVICE_OK", "SHOP_B", new BigDecimal("75.00"), "ZAR",
                         "DEV_A", now),
-                List.of(prior), Set.of());
+                List.of(prior));
 
         assertThat(hasViolation(result, "DEVICE_FINGERPRINT"))
                 .as("Repeat use of the same device fingerprint must NOT trigger DEVICE_FINGERPRINT")
@@ -592,7 +589,7 @@ class FraudEngineEffectivenessTest {
 
         FraudAssessment result = evaluate(
                 tx("CUST_SPEND_OK", "SHOP_C", new BigDecimal("500.00"), "ZAR", now),
-                history, Set.of());
+                history);
 
         assertThat(hasViolation(result, "CUMULATIVE_SPENDING"))
                 .as("Modest hourly spend (1500 ZAR, well under the 10000 limit) must NOT trigger CUMULATIVE_SPENDING")
@@ -615,53 +612,49 @@ class FraudEngineEffectivenessTest {
         // demonstrations instead — asserting fraudulent=true for them would
         // just be re-litigating the additive-scoring bug this suite now guards
         // against.
-        record FraudScenario(String name, Transaction txn, List<Transaction> history, Set<String> blacklist) {}
+        record FraudScenario(String name, Transaction txn, List<Transaction> history) {}
 
         Instant now = BUSINESS_HOURS;
 
         List<FraudScenario> fraudCases = List.of(
                 new FraudScenario("Velocity Attack",
                         tx("M_VEL", "SHOP", new BigDecimal("50.00"), "ZAR", now),
-                        buildHistory("M_VEL", 5, 1, now), Set.of()),
+                        buildHistory("M_VEL", 5, 1, now)),
 
                 new FraudScenario("Duplicate Charge (CNP)",
                         txFull("M_DUP", "MERCH", new BigDecimal("149.99"), "ZAR",
                                 null, null, TransactionType.CARD_NOT_PRESENT, now),
                         List.of(txFull("M_DUP", "MERCH", new BigDecimal("149.99"), "ZAR",
                                 null, null, TransactionType.CARD_NOT_PRESENT,
-                                now.minus(2, ChronoUnit.MINUTES))),
-                        Set.of()),
+                                now.minus(2, ChronoUnit.MINUTES)))),
 
                 new FraudScenario("Impossible Travel",
                         txWithCoords("M_GEO", "MERCH_LON", new BigDecimal("800.00"), "GBP",
                                 51.5074, -0.1278, now),
                         List.of(txWithCoords("M_GEO", "MERCH_CPT", new BigDecimal("400.00"), "ZAR",
-                                -33.9249, 18.4241, now.minus(30, ChronoUnit.MINUTES))),
-                        Set.of()),
+                                -33.9249, 18.4241, now.minus(30, ChronoUnit.MINUTES)))),
 
                 new FraudScenario("Crypto Exchange",
                         txWithCategory("M_CR", "EXCHANGE", new BigDecimal("500.00"), "ZAR",
                                 "CRYPTO_EXCHANGE", now),
-                        List.of(), Set.of()),
+                        List.of()),
 
                 new FraudScenario("Device Fingerprint - Unknown Device",
                         txWithFingerprint("M_DEV", "SHOP_NEW", new BigDecimal("40.00"), "ZAR",
                                 "DEV_UNKNOWN", now),
                         List.of(txWithFingerprint("M_DEV", "SHOP_KNOWN", new BigDecimal("40.00"), "ZAR",
-                                "DEV_KNOWN", now.minus(30, ChronoUnit.MINUTES))),
-                        Set.of()),
+                                "DEV_KNOWN", now.minus(30, ChronoUnit.MINUTES)))),
 
                 new FraudScenario("Cumulative Spending - Hourly Limit",
                         tx("M_SPEND", "SHOP_D", new BigDecimal("2600.00"), "ZAR", now),
                         List.of(
                                 tx("M_SPEND", "SHOP_A", new BigDecimal("2500.00"), "ZAR", now.minus(15, ChronoUnit.MINUTES)),
                                 tx("M_SPEND", "SHOP_B", new BigDecimal("2500.00"), "ZAR", now.minus(30, ChronoUnit.MINUTES)),
-                                tx("M_SPEND", "SHOP_C", new BigDecimal("2500.00"), "ZAR", now.minus(45, ChronoUnit.MINUTES))),
-                        Set.of())
+                                tx("M_SPEND", "SHOP_C", new BigDecimal("2500.00"), "ZAR", now.minus(45, ChronoUnit.MINUTES))))
         );
 
         // ---- Legitimate scenarios (expected: fraudulent = false) ----
-        record LegitScenario(String name, Transaction txn, List<Transaction> history, Set<String> blacklist) {}
+        record LegitScenario(String name, Transaction txn, List<Transaction> history) {}
 
         List<LegitScenario> legitCases = List.of(
                 new LegitScenario("Weekend Shopping",
@@ -670,44 +663,39 @@ class FraudEngineEffectivenessTest {
                                 tx("L_WS", "PICK_N_PAY", new BigDecimal("280.00"), "ZAR",
                                         now.minus(45, ChronoUnit.MINUTES)),
                                 tx("L_WS", "EDGARS",     new BigDecimal("620.00"), "ZAR",
-                                        now.minus(90, ChronoUnit.MINUTES))),
-                        Set.of()),
+                                        now.minus(90, ChronoUnit.MINUTES)))),
 
                 new LegitScenario("Large Purchase Under Threshold",
                         tx("L_LP", "SAMSUNG", new BigDecimal("4999.99"), "ZAR", now),
-                        List.of(), Set.of()),
+                        List.of()),
 
                 new LegitScenario("Monthly Subscription",
                         txFull("L_SUB", "NETFLIX", new BigDecimal("199.00"), "ZAR",
                                 null, null, TransactionType.CARD_NOT_PRESENT, now),
                         List.of(txFull("L_SUB", "NETFLIX", new BigDecimal("199.00"), "ZAR",
                                 null, null, TransactionType.CARD_NOT_PRESENT,
-                                now.minus(31, ChronoUnit.DAYS))),
-                        Set.of()),
+                                now.minus(31, ChronoUnit.DAYS)))),
 
                 new LegitScenario("Business Travel (JHB→CPT)",
                         txWithCoords("L_BT", "CPT_SHOP", new BigDecimal("75.00"), "ZAR",
                                 -33.9725, 18.6017, now),
                         List.of(txWithCoords("L_BT", "JHB_PARK", new BigDecimal("180.00"), "ZAR",
-                                -26.1367, 28.2411, now.minus(3, ChronoUnit.HOURS))),
-                        Set.of()),
+                                -26.1367, 28.2411, now.minus(3, ChronoUnit.HOURS)))),
 
                 new LegitScenario("4 Transactions (Below Velocity Max)",
                         tx("L_VEL", "SHOP_X", new BigDecimal("120.00"), "ZAR", now),
-                        buildHistory("L_VEL", 4, 1, now), Set.of()),
+                        buildHistory("L_VEL", 4, 1, now)),
 
                 new LegitScenario("Recognised Device Fingerprint",
                         txWithFingerprint("L_DEV", "SHOP_B", new BigDecimal("75.00"), "ZAR", "DEV_A", now),
                         List.of(txWithFingerprint("L_DEV", "SHOP_A", new BigDecimal("60.00"), "ZAR", "DEV_A",
-                                now.minus(20, ChronoUnit.MINUTES))),
-                        Set.of()),
+                                now.minus(20, ChronoUnit.MINUTES)))),
 
                 new LegitScenario("Spend Under Cumulative Limits",
                         tx("L_SPEND", "SHOP_C", new BigDecimal("500.00"), "ZAR", now),
                         List.of(
                                 tx("L_SPEND", "SHOP_A", new BigDecimal("500.00"), "ZAR", now.minus(15, ChronoUnit.MINUTES)),
-                                tx("L_SPEND", "SHOP_B", new BigDecimal("500.00"), "ZAR", now.minus(30, ChronoUnit.MINUTES))),
-                        Set.of())
+                                tx("L_SPEND", "SHOP_B", new BigDecimal("500.00"), "ZAR", now.minus(30, ChronoUnit.MINUTES))))
         );
 
         // ---- Evaluate and classify ----
@@ -716,12 +704,12 @@ class FraudEngineEffectivenessTest {
         Map<String, Boolean> legitResults   = new LinkedHashMap<>();
 
         for (FraudScenario s : fraudCases) {
-            boolean detected = evaluate(s.txn(), s.history(), s.blacklist()).getDisposition() == Disposition.FLAGGED;
+            boolean detected = evaluate(s.txn(), s.history()).getDisposition() == Disposition.FLAGGED;
             fraudResults.put(s.name(), detected);
             if (detected) tp++; else fn++;
         }
         for (LegitScenario s : legitCases) {
-            boolean flagged = evaluate(s.txn(), s.history(), s.blacklist()).getDisposition() == Disposition.FLAGGED;
+            boolean flagged = evaluate(s.txn(), s.history()).getDisposition() == Disposition.FLAGGED;
             legitResults.put(s.name(), flagged);
             if (!flagged) tn++; else fp++;
         }
@@ -743,19 +731,18 @@ class FraudEngineEffectivenessTest {
                 && fraudResults.get("Duplicate Charge (CNP)"));
         patternCoverage.put("AMOUNT_THRESHOLD",            hasViolation(evaluate(
                 tx("AT", "SHOP", new BigDecimal("7500.00"), "ZAR", now),
-                List.of(), Set.of()), "AMOUNT_THRESHOLD"));
+                List.of()), "AMOUNT_THRESHOLD"));
         patternCoverage.put("GEOGRAPHIC_ANOMALY",          fraudResults.get("Impossible Travel") != null
                 && fraudResults.get("Impossible Travel"));
         patternCoverage.put("CARD_CLONING",                hasViolation(evaluate(
                 tx("CC", "ALIEXPRESS.COM", new BigDecimal("99.99"), "ZAR", now),
                 List.of(tx("CC", "AMAZON.COM",  new BigDecimal("99.99"), "ZAR", now.minus(5, ChronoUnit.MINUTES)),
-                        tx("CC", "EBAY.COM",    new BigDecimal("99.99"), "ZAR", now.minus(3, ChronoUnit.MINUTES))),
-                Set.of()), "CARD_CLONING"));
+                        tx("CC", "EBAY.COM",    new BigDecimal("99.99"), "ZAR", now.minus(3, ChronoUnit.MINUTES)))), "CARD_CLONING"));
         patternCoverage.put("HIGH_RISK_MERCHANT_CATEGORY", fraudResults.get("Crypto Exchange") != null
                 && fraudResults.get("Crypto Exchange"));
         patternCoverage.put("TIME_OF_DAY_ANOMALY",         hasViolation(evaluate(
                 tx("TOD", "SHOP", new BigDecimal("200.00"), "ZAR", OFF_HOURS),
-                List.of(), Set.of()), "TIME_OF_DAY_ANOMALY"));
+                List.of()), "TIME_OF_DAY_ANOMALY"));
         patternCoverage.put("DEVICE_FINGERPRINT",          fraudResults.get("Device Fingerprint - Unknown Device") != null
                 && fraudResults.get("Device Fingerprint - Unknown Device"));
         patternCoverage.put("CUMULATIVE_SPENDING",         fraudResults.get("Cumulative Spending - Hourly Limit") != null
@@ -764,15 +751,13 @@ class FraudEngineEffectivenessTest {
                 txFull("MCA", "SHOP_ONLINE", new BigDecimal("80.00"), "ZAR", null, null,
                         TransactionType.CARD_NOT_PRESENT, now),
                 List.of(txFull("MCA", "STORE_PHYS", new BigDecimal("50.00"), "ZAR", null, null,
-                        TransactionType.CARD_PRESENT, now.minus(3, ChronoUnit.MINUTES))),
-                Set.of()), "MULTI_CHANNEL_ANOMALY"));
+                        TransactionType.CARD_PRESENT, now.minus(3, ChronoUnit.MINUTES)))), "MULTI_CHANNEL_ANOMALY"));
         patternCoverage.put("CROSS_MERCHANT_VELOCITY",     hasViolation(evaluate(
                 tx("XVEL", "SHOP_X", new BigDecimal("30.00"), "ZAR", now),
-                buildHistory("XVEL", 9, 1, now),
-                Set.of()), "CROSS_MERCHANT_VELOCITY"));
+                buildHistory("XVEL", 9, 1, now)), "CROSS_MERCHANT_VELOCITY"));
         patternCoverage.put("CUSTOMER_AMOUNT_ANOMALY",     hasViolation(evaluate(
                 tx("CAA", "SHOP_NEW", new BigDecimal("800.00"), "ZAR", now),
-                List.of(), Set.of(),
+                List.of(),
                 List.of(tx("CAA", "SHOP_1", new BigDecimal("76.00"), "ZAR", now.minus(1, ChronoUnit.DAYS)),
                         tx("CAA", "SHOP_2", new BigDecimal("77.00"), "ZAR", now.minus(2, ChronoUnit.DAYS)),
                         tx("CAA", "SHOP_3", new BigDecimal("78.00"), "ZAR", now.minus(3, ChronoUnit.DAYS)),
@@ -828,16 +813,15 @@ class FraudEngineEffectivenessTest {
     // Helpers
     // =========================================================================
 
-    private FraudAssessment evaluate(Transaction txn, List<Transaction> history, Set<String> blacklist) {
-        return evaluate(txn, history, blacklist, List.of());
+    private FraudAssessment evaluate(Transaction txn, List<Transaction> history) {
+        return evaluate(txn, history, List.of());
     }
 
-    private FraudAssessment evaluate(Transaction txn, List<Transaction> history, Set<String> blacklist,
+    private FraudAssessment evaluate(Transaction txn, List<Transaction> history,
                                       List<Transaction> baselineHistory) {
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(history)
-                .blacklistedMerchantIds(blacklist)
-                .customerBaselineTransactions(baselineHistory)
+                .customerAmountBaseline(AmountBaselineStats.from(baselineHistory))
                 .build();
         when(mockContextBuilder.build(any())).thenReturn(ctx);
 

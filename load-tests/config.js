@@ -11,8 +11,7 @@ export const CUSTOMERS = [
 ];
 
 export const MERCHANTS = {
-  clean:       ['MERCH_CLEAN_1', 'MERCH_CLEAN_2', 'MERCH_CLEAN_3'],
-  blacklisted: ['MERCHANT_FRAUD_001', 'MERCHANT_FRAUD_002'],
+  clean: ['MERCH_CLEAN_1', 'MERCH_CLEAN_2', 'MERCH_CLEAN_3'],
 };
 
 export function pick(arr) {

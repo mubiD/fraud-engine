@@ -13,14 +13,9 @@ public class CacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager manager = new CaffeineCacheManager("blacklistedMerchants");
-        manager.setCaffeine(Caffeine.newBuilder()
-                .expireAfterWrite(5, TimeUnit.MINUTES)
-                .maximumSize(10_000));
-
-        // Merchant locations are near-static reference data (registered address) —
-        // safe to cache far longer than the blacklist. Registered explicitly since
-        // it needs its own TTL, separate from the default spec above.
+        // Merchant locations are near-static reference data (registered address),
+        // so a long TTL is safe.
+        CaffeineCacheManager manager = new CaffeineCacheManager();
         manager.registerCustomCache("merchantLocations", Caffeine.newBuilder()
                 .expireAfterWrite(60, TimeUnit.MINUTES)
                 .maximumSize(10_000)

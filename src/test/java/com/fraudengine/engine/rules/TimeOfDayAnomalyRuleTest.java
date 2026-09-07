@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,7 +29,6 @@ class TimeOfDayAnomalyRuleTest {
         rule = new TimeOfDayAnomalyRule(props);
         emptyContext = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of())
-                .blacklistedMerchantIds(Set.of())
                 .build();
     }
 

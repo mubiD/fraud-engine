@@ -12,13 +12,56 @@ services:
       POSTGRES_DB: frauddb
       POSTGRES_USER: fraud
       POSTGRES_PASSWORD: fraud
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: replicator
+    # wal_level=replica + max_wal_senders/max_replication_slots: minimum primary-side
+    # config for streaming replication (see postgres-replica below). hot_standby only
+    # takes effect on a standby, but is harmless to set here too.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fraud -d frauddb"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Read replica — DataSourceConfig routes every read-only transaction here instead of the
+  # primary above, once fraud-engine's DB_REPLICA_HOST points at it (see below). Real
+  # streaming replication via pg_basebackup, not just a second empty database — see
+  # postgres-replica-entrypoint.sh. Unverified end-to-end in any sandbox without Docker;
+  # this is standard-pattern scripting, not something that's been run against a live
+  # cluster here.
+  postgres-replica:
+    image: postgres:16-alpine
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARY_HOST: postgres
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
+    entrypoint: ["sh", "/usr/local/bin/postgres-replica-entrypoint.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud -d frauddb"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
@@ -130,6 +173,7 @@ services:
       DB_NAME: frauddb
       DB_USER: fraud
       DB_PASSWORD: fraud
+      DB_REPLICA_HOST: postgres-replica
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093,kafka3:29094
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       # MANAGEMENT_OTLP_TRACING_ENDPOINT is intentionally absent here.
@@ -139,6 +183,8 @@ services:
       VAULT_TOKEN: dev-root-token
     depends_on:
       postgres:
+        condition: service_healthy
+      postgres-replica:
         condition: service_healthy
       kafka1:
         condition: service_healthy
@@ -168,4 +214,5 @@ services:
 
 volumes:
   postgres_data:
+  postgres_replica_data:
   prometheus_data:
