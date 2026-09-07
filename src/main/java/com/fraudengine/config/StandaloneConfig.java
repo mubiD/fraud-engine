@@ -50,8 +50,10 @@ public class StandaloneConfig {
 
     /**
      * STUB: Programmatic seed in lieu of Flyway migration V2.
-     * The merchant IDs here must match V2__seed_blacklisted_merchants.sql so that
-     * the BlacklistedMerchantRule fires consistently in both modes.
+     * The merchant IDs here must match V2__seed_blacklisted_merchants.sql. No rule
+     * reads this data anymore (BlacklistedMerchantRule was removed — see DESIGN.md
+     * §5) but the table/cache path was deliberately kept, so this keeps standalone
+     * and production presenting identical reference data through it regardless.
      */
     @Bean
     public CommandLineRunner seedBlacklistedMerchants(BlacklistedMerchantRepository repo) {

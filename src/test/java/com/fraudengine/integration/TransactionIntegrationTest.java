@@ -151,21 +151,6 @@ class TransactionIntegrationTest {
         }
     }
 
-    @Test
-    void blacklistedMerchant_isFlagged() {
-        UUID txId = UUID.randomUUID();
-        TransactionEventProto.TransactionEvent event = buildEvent(txId, "CUST_003", "MERCHANT_FRAUD_001",
-                new BigDecimal("50.00"), TransactionType.CARD_PRESENT);
-
-        testTemplate.send(rawTopic, event.getCustomerId(), event);
-
-        await().atMost(10, TimeUnit.SECONDS).until(() ->
-                assessmentRepository.findByTransactionId(txId).isPresent());
-
-        assertThat(assessmentRepository.findByTransactionId(txId).orElseThrow().getDisposition())
-                .isEqualTo(Disposition.FLAGGED);
-    }
-
     // -----------------------------------------------------------------------
     // Query API
     // -----------------------------------------------------------------------

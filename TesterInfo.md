@@ -65,7 +65,7 @@ Persists the transaction, runs it through the rule engine, and returns the asses
 |---|---|---|---|
 | `transactionId` | UUID | No | Idempotency key — if already processed, the existing assessment is returned without re-evaluation. Omit to let the server assign one (no idempotency guarantee). |
 | `customerId` | string | Yes | Not blank |
-| `merchantId` | string | Yes | Not blank — use `MERCHANT_FRAUD_001`/`002`/`003` to trigger the blacklist rule (§13) |
+| `merchantId` | string | Yes | Not blank |
 | `amount` | decimal | Yes | Must be positive |
 | `currency` | string | Yes | Exactly 3 uppercase letters (ISO 4217) |
 | `category` | string | No | Drives category-tiered amount thresholds and high-risk-category detection — see §5.1, §5.8 |
@@ -99,7 +99,7 @@ Generates `n` randomised transactions through the rule engine to populate the da
 { "total": 100, "passed": 75, "flagged": 25 }
 ```
 
-Approximately **15%** of generated transactions exceed the (flat, non-category-tiered) amount threshold and **~10%** hit a blacklisted merchant — generated transactions don't carry a `category`, so category-tiered thresholds (§5.1) never apply here.
+Approximately **15%** of generated transactions exceed the (flat, non-category-tiered) amount threshold — generated transactions don't carry a `category`, so category-tiered thresholds (§5.1) never apply here.
 
 | Status | Condition |
 |---|---|
@@ -149,10 +149,10 @@ Path variable: `transactionId` (UUID).
   "assessmentId": "...",
   "transactionId": "...",
   "disposition": "FLAGGED",
-  "riskScore": 89,
+  "riskScore": 62,
   "assessedAt": "2026-07-23T09:15:01Z",
   "violations": [
-    { "ruleName": "BLACKLISTED_MERCHANT", "ruleVersion": "1.0", "description": "...", "severity": "CRITICAL" }
+    { "ruleName": "DEVICE_FINGERPRINT", "ruleVersion": "1.0", "description": "...", "severity": "HIGH" }
   ],
   "outcome": "UNRESOLVED"
 }
@@ -391,14 +391,28 @@ Config: `fraud.rules.duplicate.card-present-window-seconds`, `fraud.rules.duplic
 
 ---
 
-### 5.4 BLACKLISTED_MERCHANT (Priority 4)
+### 5.4 BLACKLISTED_MERCHANT — removed
 
-**Trigger:** The transaction's `merchantId` appears in the blacklisted-merchants table.
+This rule no longer exists. Submitting a transaction against `MERCHANT_FRAUD_001`/`002`/`003` will
+**not** produce a `FLAGGED` verdict from this — if you see older documentation or a cached test plan
+claiming otherwise, that's stale. Rationale (DESIGN.md §5): this is a strictly post-authorisation
+system, so a pure blacklist-match rule can only report after the fact, not prevent anything — its
+`CRITICAL` severity accurately captured "how certain is this evidence" but oversold "what can this
+system do about it."
 
-**Pre-seeded blacklisted merchants** (§13 has the full list): `MERCHANT_FRAUD_001`, `MERCHANT_FRAUD_002`, `MERCHANT_FRAUD_003`.
+The underlying data path was deliberately **kept**, not deleted, as a live example of the tradeoff
+that motivated removing the rule:
 
-- Cached in-memory (Caffeine, 5-minute TTL, max 10,000 entries) via a dedicated `ReferenceDataCache` bean.
-- A merchant added directly to the DB is not picked up until the cache entry expires (up to 5 minutes) — and note this TTL is per application instance; in a multi-replica deployment, different pods can disagree on blacklist state for up to 5 minutes independently of each other.
+- `blacklisted_merchants` table, `BlacklistedMerchantRepository`, and `ReferenceDataCache.getBlacklistedMerchantIds()`
+  (Caffeine, 5-minute TTL, max 10,000 entries) are all still present and still populate
+  `EvaluationContext.blacklistedMerchantIds` on every evaluation — just unread by any rule now.
+- The pre-seeded rows (`MERCHANT_FRAUD_001`/`002`/`003`, §13) are still in the table.
+- A merchant added directly to the DB still wouldn't be picked up until the cache entry expires (up
+  to 5 minutes) — and that TTL is per application instance; in a multi-replica deployment, different
+  pods can disagree on blacklist state for up to 5 minutes independently of each other. This is
+  exactly the mechanism worth discussing if this comes up in an interview: shortening the TTL only
+  helps the instance that's asked; the write path needed to actually invalidate fast doesn't exist in
+  this codebase at all.
 
 ---
 
@@ -503,7 +517,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 > Scoring uses a log-odds (naive-Bayes) model, not a flat point sum — see README.md's "Risk scoring" section and `ScoringProperties.java` for the full mechanism and rationale. Summary for test-writing purposes:
 
 - Every fired rule contributes a calibrated **likelihood ratio** (keyed by `RULE_NAME:SEVERITY`, since some rules like `VELOCITY` escalate severity at runtime and are calibrated per variant). These are **not** interchangeable just because two rules share a `Severity` enum value.
-- **Standalone-sufficient** (`FLAGGED` alone, given current defaults): `BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, `VELOCITY` (both severity variants), `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, crypto/wire-transfer-tier `HIGH_RISK_MERCHANT_CATEGORY`.
+- **Standalone-sufficient** (`FLAGGED` alone, given current defaults): `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, `VELOCITY` (both severity variants), `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, crypto/wire-transfer-tier `HIGH_RISK_MERCHANT_CATEGORY`.
 - **Weak alone, needs a second corroborating signal**: `AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`.
 - `riskScore` = posterior fraud probability × 100 (0–100). A transaction with **zero** violations scores near the assumed base rate (≈1), not 0.
 - **`disposition` is a three-way verdict, not a boolean**, driven by two thresholds:
@@ -522,7 +536,6 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 | 1 × CARD_CLONING alone | ~6 | `CLEARED` |
 | 1 × CARD_CLONING + 1 × TIME_OF_DAY_ANOMALY | ~15 | `PENDING_REVIEW` |
 | 1 × VELOCITY (unboosted, HIGH) | ~57 | `FLAGGED` |
-| 1 × BLACKLISTED_MERCHANT | ~89 | `FLAGGED` |
 | 1 × DEVICE_FINGERPRINT | ~62 | `FLAGGED` |
 
 ---
@@ -686,7 +699,7 @@ If you're only ever testing against `make dev`, you won't hit any of this — wh
 
 9. **Pagination cursor is strictly less-than, with an id tie-break:** a cursor of `T` returns records with `timestamp < T`, or `timestamp = T AND id < cursorId` for same-timestamp rows. The cursor row itself is not repeated.
 
-10. **Blacklist cache TTL:** adding a merchant to the blacklist DB directly can take up to 5 minutes to be picked up (per-instance Caffeine cache, §5.4). In a multi-replica deployment, different pods can disagree during that window.
+10. **Blacklist cache TTL (mechanism retained, rule removed — §5.4):** the blacklist cache still works exactly as before — adding a merchant to the blacklist DB directly can take up to 5 minutes to be picked up (per-instance Caffeine cache), and different pods can disagree during that window in a multi-replica deployment — but nothing consumes the result anymore, so this no longer affects any fraud verdict. Kept as a live example of the tradeoff, not a functional gap to test against.
 
 11. **Risk score cap:** score cannot exceed 100 (explicitly clamped) or go below 0.
 
@@ -716,7 +729,9 @@ The following merchants are always blacklisted out of the box:
 | `MERCHANT_FRAUD_002` | Card skimming |
 | `MERCHANT_FRAUD_003` | Synthetic identity fraud |
 
-Use these to reliably trigger `BLACKLISTED_MERCHANT` without any DB setup.
+These no longer trigger anything — `BLACKLISTED_MERCHANT` was removed (§5.4) — but the rows are still
+present out of the box, so `ReferenceDataCache.getBlacklistedMerchantIds()` returns a non-empty set
+without any manual DB setup if you want to exercise that cache directly.
 
 ---
 

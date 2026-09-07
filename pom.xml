@@ -60,6 +60,13 @@
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>
         </dependency>
+        <!-- Kafka Streams: materialised per-customer velocity/spend state, replacing
+             EvaluationContextBuilder's live Postgres queries on the streaming path.
+             Version managed by spring-boot-starter-parent's dependency management. -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams</artifactId>
+        </dependency>
 
         <!-- PostgreSQL -->
         <dependency>
@@ -193,6 +200,13 @@
             <artifactId>spring-kafka-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- TopologyTestDriver for CustomerActivityProcessor — pipes records through
+             the topology without a running broker. -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams-test-utils</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -291,6 +305,16 @@
                 <dependency>
                     <groupId>io.confluent</groupId>
                     <artifactId>kafka-protobuf-serializer</artifactId>
+                    <version>7.6.1</version>
+                </dependency>
+                <!-- Kafka Streams' Protobuf Serde (VelocityStreamsTopologyConfig /
+                     application.yml's spring.kafka.streams.properties.default.value.serde)
+                     — referenced only by class name in YAML, resolved reflectively at
+                     runtime, so this is needed here for -Pconfluent runtime classpath
+                     only, never as a compile-time import. -->
+                <dependency>
+                    <groupId>io.confluent</groupId>
+                    <artifactId>kafka-streams-protobuf-serde</artifactId>
                     <version>7.6.1</version>
                 </dependency>
             </dependencies>

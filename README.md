@@ -33,7 +33,6 @@ transactions.raw  ────────────────────�
   ├── AmountThresholdRule           priority 1   HIGH      (category-tiered thresholds)
   ├── VelocityRule                  priority 2   HIGH      (high-risk category boost → CRITICAL)
   ├── DuplicateTransactionRule      priority 3   CRITICAL  (type-aware window, currency-aware)
-  ├── BlacklistedMerchantRule       priority 4   CRITICAL  (Caffeine-cached)
   ├── GeographicAnomalyRule         priority 5   CRITICAL  (speed + clock-skew guard)
   ├── CardCloningRule               priority 6   MEDIUM    (same amount, multiple merchants)
   ├── TimeOfDayAnomalyRule          priority 7   MEDIUM    (23:00–05:00 UTC off-hours)
@@ -199,16 +198,16 @@ Response `200 OK`:
     {
       "transactionId": "550e8400-e29b-41d4-a716-446655440000",
       "customerId": "CUST-001",
-      "merchantId": "MERCH-FRAUD-003",
+      "merchantId": "MERCH-NIKE-ZA",
       "amount": "350.00",
       "currency": "ZAR",
-      "transactionType": "CARD_PRESENT",
+      "transactionType": "CARD_NOT_PRESENT",
       "status": "ASSESSED",
       "timestamp": "2026-07-23T09:00:00Z",
       "assessment": {
         "disposition": "FLAGGED",
-        "riskScore": 89,
-        "violations": [{ "ruleName": "BLACKLISTED_MERCHANT", "severity": "CRITICAL" }]
+        "riskScore": 62,
+        "violations": [{ "ruleName": "DEVICE_FINGERPRINT", "severity": "HIGH" }]
       }
     }
   ],
@@ -525,7 +524,7 @@ Response `200 OK`:
   "ruleBreakdown": [
     { "ruleName": "AmountThresholdRule", "count": 98,  "percentage": 40.66 },
     { "ruleName": "VelocityRule",        "count": 72,  "percentage": 29.88 },
-    { "ruleName": "BlacklistedMerchantRule", "count": 45, "percentage": 18.67 }
+    { "ruleName": "GeographicAnomalyRule", "count": 45, "percentage": 18.67 }
   ]
 }
 ```
@@ -541,7 +540,6 @@ Response `200 OK`:
 | `AMOUNT_THRESHOLD` | Amount exceeds threshold — default R5,000, with configurable per-category overrides (e.g. RETAIL R15,000, GROCERY R3,000) | HIGH | 1 |
 | `VELOCITY` | > 5 transactions in 10 minutes for same customer. Boosted to CRITICAL when the merchant category is high-risk (crypto, money-transfer, wire-transfer). | HIGH → CRITICAL | 2 |
 | `DUPLICATE_TRANSACTION` | Same merchant + same amount + same currency within window — **120 s** for CARD_PRESENT / CONTACTLESS / ATM, **300 s** for CARD_NOT_PRESENT. | CRITICAL | 3 |
-| `BLACKLISTED_MERCHANT` | Merchant ID on the blacklist (Caffeine-cached, 5-min TTL) | CRITICAL | 4 |
 | `GEOGRAPHIC_ANOMALY` | Implied travel speed between two consecutive physical locations exceeds 900 km/h. Skipped when transactions are < 1 minute apart (clock-skew guard). Falls back to merchant registered location when the transaction carries no coordinates. | CRITICAL | 5 |
 | `CARD_CLONING` | Same transaction amount charged to 2+ different merchants within 10 minutes — hallmark of automated card testing with a cloned card. | MEDIUM | 6 |
 | `TIME_OF_DAY_ANOMALY` | Transaction occurs in the off-hours window (default 23:00–05:00 UTC). | MEDIUM | 7 |
@@ -551,6 +549,8 @@ Response `200 OK`:
 | `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes — provides an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
 | `CUMULATIVE_SPENDING` | Rolling spend exceeds the hourly limit (default R10,000) or daily limit (default R25,000). Hourly is computed from in-context recent transactions; daily is a pre-aggregated DB query. | HIGH | 12 |
 
+> Priority 4 (`BLACKLISTED_MERCHANT`) was removed — see DESIGN.md §5 for why a strictly post-authorisation system gets limited value from a pure blacklist-match rule, and why the underlying cache/data path was kept in place regardless.
+
 **Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points — each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100). The verdict is a **three-way disposition**, not a binary flag, driven by two thresholds: `fraud.scoring.fraud-probability-threshold` (default 0.5) and below it, `fraud.scoring.review-probability-threshold` (default 0.10).
 
 | `disposition` | When |
@@ -559,7 +559,7 @@ Response `200 OK`:
 | `PENDING_REVIEW` | probability ≥ `review-probability-threshold`, below `fraud-probability-threshold` |
 | `CLEARED` | probability below `review-probability-threshold` |
 
-This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would — some rules (`BLACKLISTED_MERCHANT`, `GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be `FLAGGED` on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the `FLAGGED` threshold. Two transactions that fired only a weak rule each land in `PENDING_REVIEW` instead of being silently treated the same as a clean transaction — that band is exactly what `GET /transactions/pending-review` (§ API Reference) surfaces for an analyst to work.
+This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would — some rules (`GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be `FLAGGED` on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the `FLAGGED` threshold. Two transactions that fired only a weak rule each land in `PENDING_REVIEW` instead of being silently treated the same as a clean transaction — that band is exactly what `GET /transactions/pending-review` (§ API Reference) surfaces for an analyst to work.
 
 The likelihood ratios in `ScoringProperties` are domain-judgment starting points, not values derived from labelled outcome data — this system doesn't yet have a confirmed-fraud / false-positive feedback loop to calibrate against, so treat them as a reasoned first pass rather than ground truth.
 
@@ -655,7 +655,6 @@ Spins up real PostgreSQL and Kafka containers. Tests the full pipeline end-to-en
 - Transaction published to `transactions.raw` → consumed → rule engine → assessment persisted
 - Clean transaction published to `transactions.passed`
 - High-amount transaction published to `transactions.flagged`
-- Blacklisted merchant detection
 - Query API: customer transactions returning `PENDING` and `ASSESSED` statuses
 - 404 on assessment for unknown transaction ID
 
@@ -749,8 +748,6 @@ fraud:
       enabled: true
       card-present-window-seconds: 120
       card-not-present-window-seconds: 300
-    blacklisted-merchant:
-      enabled: true
     geographic:
       enabled: true
       window-minutes: 60
@@ -977,7 +974,7 @@ src/
 │   │       ├── AmountThresholdRule.java    # priority 1  — category-tiered thresholds
 │   │       ├── VelocityRule.java           # priority 2  — with high-risk category boost
 │   │       ├── DuplicateTransactionRule.java  # priority 3
-│   │       ├── BlacklistedMerchantRule.java   # priority 4
+│   │       │                                  # (priority 4, BlacklistedMerchantRule, removed — see DESIGN.md §5)
 │   │       ├── GeographicAnomalyRule.java     # priority 5  — merchant location fallback
 │   │       ├── CardCloningRule.java           # priority 6
 │   │       ├── TimeOfDayAnomalyRule.java      # priority 7

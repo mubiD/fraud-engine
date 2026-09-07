@@ -1,10 +1,15 @@
 package com.fraudengine.engine;
 
+import com.fraudengine.config.FraudMetrics;
 import com.fraudengine.config.RuleProperties;
 import com.fraudengine.model.MerchantLocation;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.TransactionRepository;
+import com.fraudengine.streams.CustomerActivityState;
+import com.fraudengine.streams.RecentActivityStore;
+import com.fraudengine.streams.RecentTransactionRecord;
+import com.fraudengine.streams.StoreUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -30,6 +36,8 @@ class EvaluationContextBuilderTest {
 
     @Mock private TransactionRepository transactionRepository;
     @Mock private ReferenceDataCache referenceDataCache;
+    @Mock private FraudMetrics metrics;
+    @Mock private RecentActivityStore recentActivityStore;
 
     private RuleProperties properties;
     private EvaluationContextBuilder builder;
@@ -38,11 +46,17 @@ class EvaluationContextBuilderTest {
     void setUp() {
         properties = new RuleProperties();
         properties.setContextLookbackMinutes(60);
-        builder = new EvaluationContextBuilder(transactionRepository, referenceDataCache, properties);
+        // Optional.empty() here mirrors standalone/local, where no RecentActivityStore
+        // bean is registered at all (see KafkaStreamsRecentActivityStore's @Profile) —
+        // every pre-existing test in this class exercises the Postgres path unchanged.
+        // The streaming path is covered separately below, with its own builder instance.
+        builder = new EvaluationContextBuilder(
+                transactionRepository, referenceDataCache, properties, Optional.empty(), metrics);
 
         when(referenceDataCache.getBlacklistedMerchantIds()).thenReturn(Set.of());
         lenient().when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
-        when(transactionRepository.sumAmountByCustomerSince(any(), any(), any())).thenReturn(BigDecimal.ZERO);
+        // lenient: unused by the streaming-path tests below, which never reach Postgres.
+        lenient().when(transactionRepository.sumAmountByCustomerSince(any(), any(), any())).thenReturn(BigDecimal.ZERO);
     }
 
     @Test
@@ -236,6 +250,72 @@ class EvaluationContextBuilderTest {
 
         assertThat(ctx.getMerchantLatitude()).isNull();
         assertThat(ctx.getMerchantLongitude()).isNull();
+    }
+
+    // ---- RecentActivityStore (Kafka Streams) path ----
+
+    private EvaluationContextBuilder streamingBuilder() {
+        return new EvaluationContextBuilder(
+                transactionRepository, referenceDataCache, properties,
+                Optional.of(recentActivityStore), metrics);
+    }
+
+    @Test
+    void streamingStorePresent_usedInsteadOfPostgres_forRecentAndDailySpend() {
+        properties.getCustomerAmountAnomaly().setEnabled(false);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        Transaction current = tx;
+        RecentTransactionRecord other = new RecentTransactionRecord(
+                UUID.randomUUID(), "M2", new BigDecimal("42.00"), "ZAR", "RETAIL",
+                TransactionType.CARD_NOT_PRESENT, current.getTimestamp().minus(5, ChronoUnit.MINUTES), null, null);
+        CustomerActivityState state = new CustomerActivityState(
+                List.of(other), Map.of());
+        when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
+
+        EvaluationContext ctx = streamingBuilder().build(current);
+
+        assertThat(ctx.getRecentCustomerTransactions()).hasSize(1);
+        assertThat(ctx.getRecentCustomerTransactions().get(0).getMerchantId()).isEqualTo("M2");
+        verifyNoInteractions(transactionRepository);
+        verify(metrics).recordContextFromStreams();
+        verify(metrics, never()).recordContextFromPostgres();
+    }
+
+    @Test
+    void streamingStoreThrowsUnavailable_fallsBackToPostgres() {
+        properties.getCustomerAmountAnomaly().setEnabled(false);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        when(recentActivityStore.lookup("CUST_1")).thenThrow(new StoreUnavailableException("not ready"));
+        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
+
+        EvaluationContext ctx = streamingBuilder().build(tx);
+
+        assertThat(ctx.getRecentCustomerTransactions()).isEmpty();
+        verify(transactionRepository).findRecentByCustomer(eq("CUST_1"), any());
+        verify(metrics).recordContextFromPostgres();
+        verify(metrics, never()).recordContextFromStreams();
+    }
+
+    @Test
+    void streamingStore_selfAlreadyIngested_excludedFromListAndDailySpend() {
+        // The Kafka Streams app is an independent consumer of the same topic (see
+        // CustomerActivityProcessor) — it can ingest the current transaction before this
+        // read happens. Regression coverage for the same double-count risk the Postgres
+        // path already guards against (see dailySpend_excludesCurrentTransactionFromSum).
+        properties.getCustomerAmountAnomaly().setEnabled(false);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        RecentTransactionRecord self = new RecentTransactionRecord(
+                tx.getId(), tx.getMerchantId(), tx.getAmount(), tx.getCurrency(), tx.getCategory(),
+                tx.getTransactionType(), tx.getTimestamp(), null, null);
+        long bucket = tx.getTimestamp().getEpochSecond() / 3600;
+        CustomerActivityState state = new CustomerActivityState(
+                List.of(self), Map.of(bucket, tx.getAmount()));
+        when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
+
+        EvaluationContext ctx = streamingBuilder().build(tx);
+
+        assertThat(ctx.getRecentCustomerTransactions()).isEmpty();
+        assertThat(ctx.getDailySpendTotal()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     private Transaction tx(String customerId, String merchantId, Double latitude, TransactionType type) {

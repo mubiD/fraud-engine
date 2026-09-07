@@ -2,13 +2,13 @@ package com.fraudengine.api.controller;
 
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.mapper.TransactionMapper;
-import com.fraudengine.engine.RuleEngine;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
+import com.fraudengine.service.StandaloneTransactionProcessor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -73,16 +73,16 @@ public class StandaloneTransactionController {
 
     private final TransactionRepository transactionRepository;
     private final FraudAssessmentRepository fraudAssessmentRepository;
-    private final RuleEngine ruleEngine;
+    private final StandaloneTransactionProcessor processor;
     private final TransactionMapper mapper;
 
     public StandaloneTransactionController(TransactionRepository transactionRepository,
                                            FraudAssessmentRepository fraudAssessmentRepository,
-                                           RuleEngine ruleEngine,
+                                           StandaloneTransactionProcessor processor,
                                            TransactionMapper mapper) {
         this.transactionRepository = transactionRepository;
         this.fraudAssessmentRepository = fraudAssessmentRepository;
-        this.ruleEngine = ruleEngine;
+        this.processor = processor;
         this.mapper = mapper;
     }
 
@@ -133,13 +133,7 @@ public class StandaloneTransactionController {
                 .status(TransactionStatus.PENDING)
                 .build();
 
-        tx = transactionRepository.save(tx);
-
-        FraudAssessment assessment = ruleEngine.evaluate(tx);
-        fraudAssessmentRepository.save(assessment);
-
-        tx.setStatus(TransactionStatus.ASSESSED);
-        transactionRepository.save(tx);
+        FraudAssessment assessment = processor.process(tx);
 
         return ResponseEntity.ok(mapper.toDto(assessment));
     }
@@ -149,13 +143,12 @@ public class StandaloneTransactionController {
         summary = "Stream N fake transactions through the fraud engine (standalone demo)",
         description = """
             STUB: Generates and processes N randomised transactions through the rule engine.
-            Roughly 15% will exceed the amount threshold and ~10% will hit the merchant blacklist.
+            Roughly 15% will exceed the amount threshold.
             Use this to quickly populate the DB and observe fraud rule behaviour at scale.
             """
     )
     @ApiResponse(responseCode = "200", description = "Streaming complete")
     @ApiResponse(responseCode = "400", description = "count out of range")
-    @Transactional
     public ResponseEntity<StreamResult> stream(
             @RequestParam @Min(1) @Max(10_000) int count) {
 
@@ -163,15 +156,14 @@ public class StandaloneTransactionController {
         int pendingReview = 0;
         int flagged = 0;
 
+        // Deliberately NOT @Transactional at this method's level — each iteration commits
+        // independently via processor.process() (see StandaloneTransactionProcessor's javadoc).
+        // A single @Transactional wrapping this whole loop used to hold one Postgres transaction
+        // open for the entire batch: nothing committed until every iteration finished, and a
+        // large count (e.g. 9999) both got slower per-iteration as EvaluationContextBuilder's
+        // live per-customer queries grew and risked losing the whole batch to any single failure.
         for (int i = 0; i < count; i++) {
-            Transaction tx = buildFakeTransaction();
-            tx = transactionRepository.save(tx);
-
-            FraudAssessment assessment = ruleEngine.evaluate(tx);
-            fraudAssessmentRepository.save(assessment);
-
-            tx.setStatus(TransactionStatus.ASSESSED);
-            transactionRepository.save(tx);
+            FraudAssessment assessment = processor.process(buildFakeTransaction());
 
             switch (assessment.getDisposition()) {
                 case FLAGGED -> flagged++;
@@ -190,7 +182,6 @@ public class StandaloneTransactionController {
                               "CUST-006","CUST-007","CUST-008","CUST-009","CUST-010"};
         String[] merchants  = {"MERCH-WOOLWORTHS-ZA","MERCH-CHECKERS-ZA","MERCH-PICK-N-PAY-ZA",
                                "MERCH-SHOPRITE-ZA","MERCH-CLICKS-ZA","MERCH-DISCHEM-ZA"};
-        String[] fraudMerch = {"MERCHANT_FRAUD_001","MERCHANT_FRAUD_002","MERCHANT_FRAUD_003"};
         String[][] locations = {
             {"-33.9249","18.4241","Cape Town, ZA"},
             {"-26.2041","28.0473","Johannesburg, ZA"},
@@ -201,12 +192,9 @@ public class StandaloneTransactionController {
         String[] categories = {"RETAIL","GROCERY","PHARMACY","FUEL","DINING"};
         TransactionType[] types = TransactionType.values();
 
-        boolean isFraudMerchant = rng.nextInt(100) < 10;
-        boolean isHighAmount    = rng.nextInt(100) < 15;
+        boolean isHighAmount = rng.nextInt(100) < 15;
 
-        String merchantId = isFraudMerchant
-                ? fraudMerch[rng.nextInt(fraudMerch.length)]
-                : merchants[rng.nextInt(merchants.length)];
+        String merchantId = merchants[rng.nextInt(merchants.length)];
 
         BigDecimal amount = isHighAmount
                 ? BigDecimal.valueOf(rng.nextDouble(5001, 50_000)).setScale(2, RoundingMode.HALF_UP)
@@ -239,8 +227,7 @@ public class StandaloneTransactionController {
         @Schema(description = "Customer identifier", example = "CUST-001")
         @NotBlank String customerId,
 
-        @Schema(description = "Merchant identifier — use MERCHANT_FRAUD_001/002/003 to trigger the blacklist rule",
-                example = "MERCH-NIKE-ZA")
+        @Schema(description = "Merchant identifier", example = "MERCH-NIKE-ZA")
         @NotBlank String merchantId,
 
         @Schema(description = "Transaction amount — values above 5000 trigger the AmountThresholdRule",

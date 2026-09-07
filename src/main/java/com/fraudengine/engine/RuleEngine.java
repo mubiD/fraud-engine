@@ -1,10 +1,12 @@
 package com.fraudengine.engine;
 
+import com.fraudengine.config.FraudMetrics;
 import com.fraudengine.config.ScoringProperties;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.RuleViolation;
 import com.fraudengine.model.Transaction;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,15 +25,23 @@ public class RuleEngine {
     private final List<FraudRule> rules;
     private final EvaluationContextBuilder contextBuilder;
     private final ScoringProperties scoringProperties;
+    private final FraudMetrics metrics;
 
     public RuleEngine(List<FraudRule> rules, EvaluationContextBuilder contextBuilder,
-                       ScoringProperties scoringProperties) {
+                       ScoringProperties scoringProperties, FraudMetrics metrics) {
         this.rules = rules;
         this.contextBuilder = contextBuilder;
         this.scoringProperties = scoringProperties;
+        this.metrics = metrics;
     }
 
+    // Metrics are recorded here, not by callers (TransactionConsumer / StandaloneTransactionController),
+    // so every ingress path — Kafka consumer in real environments, the synchronous standalone/local
+    // demo stub — reports the same fraud.assessments.total / fraud.rule.evaluation.duration.seconds
+    // regardless of which one is active. A caller-side recording once left the local/standalone path
+    // (make dev's only ingress) with zero counters no matter how much traffic it processed.
     public FraudAssessment evaluate(Transaction transaction) {
+        Timer.Sample sample = Timer.start();
         Instant start = Instant.now();
         List<FraudRule> enabledRules = rules.stream()
                 .filter(FraudRule::isEnabled)
@@ -83,6 +93,13 @@ public class RuleEngine {
         long elapsedMs = Duration.between(start, Instant.now()).toMillis();
         log.debug("Rule evaluation complete: disposition={}, riskScore={}, violations={}, elapsedMs={}",
                 disposition, riskScore, violations.size(), elapsedMs);
+
+        sample.stop(metrics.evaluationTimer());
+        switch (disposition) {
+            case FLAGGED -> metrics.recordFlagged();
+            case PENDING_REVIEW -> metrics.recordPendingReview();
+            case CLEARED -> metrics.recordCleared();
+        }
 
         return assessment;
     }

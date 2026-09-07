@@ -11,7 +11,6 @@ import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.proto.TransactionEventProto;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
-import io.micrometer.core.instrument.Timer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,7 +38,6 @@ class TransactionConsumerTest {
     @Mock RuleEngine ruleEngine;
     @Mock AssessmentProducer assessmentProducer;
     @Mock FraudMetrics metrics;
-    @Mock Timer evaluationTimer;
 
     @Captor ArgumentCaptor<Transaction> txCaptor;
 
@@ -55,7 +53,6 @@ class TransactionConsumerTest {
         consumer = new TransactionConsumer(
                 transactionRepository, fraudAssessmentRepository,
                 ruleEngine, assessmentProducer, metrics);
-        lenient().when(metrics.evaluationTimer()).thenReturn(evaluationTimer);
     }
 
     // ── consume() — new transaction path ────────────────────────────────────
@@ -144,65 +141,11 @@ class TransactionConsumerTest {
         verify(transactionRepository, never()).save(any());
     }
 
-    // ── consume() — metrics ─────────────────────────────────────────────────
-
-    @Test
-    void consume_flaggedAssessment_incrementsFlaggedCounter() {
-        TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
-        Transaction tx = buildTransaction(TX_ID);
-
-        when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.FLAGGED, 75));
-
-        consumer.consume(event, TOPIC, PARTITION, OFFSET);
-
-        verify(metrics).recordFlagged();
-        verify(metrics, never()).recordCleared();
-        verify(metrics, never()).recordPendingReview();
-    }
-
-    @Test
-    void consume_pendingReviewAssessment_incrementsPendingReviewCounter() {
-        TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
-        Transaction tx = buildTransaction(TX_ID);
-
-        when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.PENDING_REVIEW, 20));
-
-        consumer.consume(event, TOPIC, PARTITION, OFFSET);
-
-        verify(metrics).recordPendingReview();
-        verify(metrics, never()).recordFlagged();
-        verify(metrics, never()).recordCleared();
-    }
-
-    @Test
-    void consume_clearedAssessment_incrementsClearedCounter() {
-        TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
-        Transaction tx = buildTransaction(TX_ID);
-
-        when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.CLEARED, 0));
-
-        consumer.consume(event, TOPIC, PARTITION, OFFSET);
-
-        verify(metrics).recordCleared();
-        verify(metrics, never()).recordFlagged();
-        verify(metrics, never()).recordPendingReview();
-    }
-
-    @Test
-    void consume_recordsEvaluationTimerLatency() {
-        TransactionEventProto.TransactionEvent event = buildEvent(TX_ID);
-        Transaction tx = buildTransaction(TX_ID);
-
-        when(transactionRepository.findByIdOnly(TX_ID)).thenReturn(Optional.of(tx));
-        when(ruleEngine.evaluate(tx)).thenReturn(buildAssessment(tx, Disposition.CLEARED, 0));
-
-        consumer.consume(event, TOPIC, PARTITION, OFFSET);
-
-        verify(metrics, atLeastOnce()).evaluationTimer();
-    }
+    // Disposition-counter and evaluation-timer metrics are recorded inside
+    // RuleEngine.evaluate() itself now (see RuleEngineTest), not by this consumer —
+    // ruleEngine is mocked here, so those interactions can't be observed from this
+    // test class any more. This keeps the metrics contract identical regardless of
+    // which ingress path (this consumer, or StandaloneTransactionController) is active.
 
     // ── handleDlt() ──────────────────────────────────────────────────────────
 

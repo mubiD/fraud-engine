@@ -69,7 +69,6 @@ public class ScoringProperties {
         m.put("VELOCITY:CRITICAL", 300.0);
 
         m.put("DUPLICATE_TRANSACTION:CRITICAL", 150.0);
-        m.put("BLACKLISTED_MERCHANT:CRITICAL", 800.0);
         m.put("GEOGRAPHIC_ANOMALY:CRITICAL", 400.0);
 
         // Weak alone by design — see CardCloningRule/TimeOfDayAnomalyRule javadoc

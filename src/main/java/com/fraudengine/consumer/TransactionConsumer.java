@@ -10,7 +10,6 @@ import com.fraudengine.proto.ProtoMapper;
 import com.fraudengine.proto.TransactionEventProto;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
-import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -101,9 +100,10 @@ public class TransactionConsumer {
                 return;
             }
 
-            Timer.Sample sample = Timer.start();
+            // Timing/disposition metrics are recorded inside RuleEngine.evaluate() itself, not here —
+            // see its javadoc: that keeps this consumer and StandaloneTransactionController reporting
+            // the same counters instead of only the Kafka path doing so.
             FraudAssessment assessment = ruleEngine.evaluate(transaction);
-            sample.stop(metrics.evaluationTimer());
 
             fraudAssessmentRepository.save(assessment);
 
@@ -113,20 +113,11 @@ public class TransactionConsumer {
             assessmentProducer.publish(transaction, assessment);
 
             switch (assessment.getDisposition()) {
-                case FLAGGED -> {
-                    metrics.recordFlagged();
-                    log.warn("Transaction flagged as FRAUDULENT: riskScore={}, violations={}",
-                            assessment.getRiskScore(), assessment.getRuleViolations().size());
-                }
-                case PENDING_REVIEW -> {
-                    metrics.recordPendingReview();
-                    log.warn("Transaction marked PENDING_REVIEW: riskScore={}, violations={}",
-                            assessment.getRiskScore(), assessment.getRuleViolations().size());
-                }
-                case CLEARED -> {
-                    metrics.recordCleared();
-                    log.info("Transaction cleared: riskScore={}", assessment.getRiskScore());
-                }
+                case FLAGGED -> log.warn("Transaction flagged as FRAUDULENT: riskScore={}, violations={}",
+                        assessment.getRiskScore(), assessment.getRuleViolations().size());
+                case PENDING_REVIEW -> log.warn("Transaction marked PENDING_REVIEW: riskScore={}, violations={}",
+                        assessment.getRiskScore(), assessment.getRuleViolations().size());
+                case CLEARED -> log.info("Transaction cleared: riskScore={}", assessment.getRiskScore());
             }
         } finally {
             MDC.clear();

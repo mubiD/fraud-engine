@@ -1,5 +1,6 @@
 package com.fraudengine.engine;
 
+import com.fraudengine.config.FraudMetrics;
 import com.fraudengine.config.RuleProperties;
 import com.fraudengine.config.ScoringProperties;
 import com.fraudengine.engine.rules.*;
@@ -8,6 +9,8 @@ import com.fraudengine.model.RuleViolation;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionType;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
@@ -79,7 +82,6 @@ class FraudEngineEffectivenessTest {
                 new AmountThresholdRule(props),
                 new VelocityRule(props),
                 new DuplicateTransactionRule(props),
-                new BlacklistedMerchantRule(props),
                 new GeographicAnomalyRule(props),
                 new CardCloningRule(props),
                 new TimeOfDayAnomalyRule(props),
@@ -92,7 +94,10 @@ class FraudEngineEffectivenessTest {
         );
 
         mockContextBuilder = mock(EvaluationContextBuilder.class);
-        ruleEngine = new RuleEngine(rules, mockContextBuilder, new ScoringProperties());
+        FraudMetrics mockMetrics = mock(FraudMetrics.class);
+        when(mockMetrics.evaluationTimer()).thenReturn(
+                Timer.builder("test.evaluation").register(new SimpleMeterRegistry()));
+        ruleEngine = new RuleEngine(rules, mockContextBuilder, new ScoringProperties(), mockMetrics);
     }
 
     // =========================================================================
@@ -180,19 +185,6 @@ class FraudEngineEffectivenessTest {
                 "  [GAP NOTE] AMOUNT_THRESHOLD fired alone — disposition: %s, riskScore: %d. "
                 + "Needs a corroborating signal to cross the fraud threshold.%n",
                 result.getDisposition(), result.getRiskScore());
-    }
-
-    @Test @Order(40)
-    @DisplayName("Pattern: Blacklisted Merchant — known bad actor")
-    void pattern_blacklistedMerchant() {
-        FraudAssessment result = evaluate(
-                tx("CUST_BL", "MERCHANT_FRAUD_001", new BigDecimal("350.00"), "ZAR", BUSINESS_HOURS),
-                List.of(), Set.of("MERCHANT_FRAUD_001", "MERCHANT_FRAUD_002", "MERCHANT_FRAUD_003"));
-
-        assertThat(hasViolation(result, "BLACKLISTED_MERCHANT"))
-                .as("BLACKLISTED_MERCHANT rule must fire for pre-seeded bad merchants")
-                .isTrue();
-        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
     }
 
     @Test @Order(50)
@@ -640,10 +632,6 @@ class FraudEngineEffectivenessTest {
                                 now.minus(2, ChronoUnit.MINUTES))),
                         Set.of()),
 
-                new FraudScenario("Blacklisted Merchant",
-                        tx("M_BL", "MERCHANT_FRAUD_002", new BigDecimal("500.00"), "ZAR", now),
-                        List.of(), Set.of("MERCHANT_FRAUD_001", "MERCHANT_FRAUD_002", "MERCHANT_FRAUD_003")),
-
                 new FraudScenario("Impossible Travel",
                         txWithCoords("M_GEO", "MERCH_LON", new BigDecimal("800.00"), "GBP",
                                 51.5074, -0.1278, now),
@@ -756,8 +744,6 @@ class FraudEngineEffectivenessTest {
         patternCoverage.put("AMOUNT_THRESHOLD",            hasViolation(evaluate(
                 tx("AT", "SHOP", new BigDecimal("7500.00"), "ZAR", now),
                 List.of(), Set.of()), "AMOUNT_THRESHOLD"));
-        patternCoverage.put("BLACKLISTED_MERCHANT",        fraudResults.get("Blacklisted Merchant") != null
-                && fraudResults.get("Blacklisted Merchant"));
         patternCoverage.put("GEOGRAPHIC_ANOMALY",          fraudResults.get("Impossible Travel") != null
                 && fraudResults.get("Impossible Travel"));
         patternCoverage.put("CARD_CLONING",                hasViolation(evaluate(

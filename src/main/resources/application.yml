@@ -49,6 +49,25 @@ spring:
     listener:
       concurrency: 6
       shutdown-timeout: 30000
+    # Second, independent consumer group on transactions.raw (see
+    # VelocityStreamsTopologyConfig) — materialises "customer-activity-store" for
+    # EvaluationContextBuilder to read via Interactive Queries, replacing its live
+    # Postgres queries for the rules listed in the implementation plan's Scope section.
+    # Only active under !standalone & !local (see VelocityStreamsTopologyConfig's own
+    # @Profile — this block being unconditionally present in the base application.yml
+    # does not itself start any Kafka Streams machinery under those profiles).
+    streams:
+      application-id: fraud-engine-velocity-streams
+      properties:
+        num.stream.threads: 6
+        default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        # Same Confluent Protobuf class the producer/consumer serializers above use,
+        # referenced only as a string here too — kept out of the default (non
+        # -Pconfluent) build's compile-time dependencies, resolved reflectively at
+        # runtime exactly like spring.kafka.producer.value-serializer above.
+        default.value.serde: io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde
+        specific.protobuf.value.type: "com.fraudengine.proto.TransactionEventProto$TransactionEvent"
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
 
   cache:
     type: caffeine
@@ -118,8 +137,6 @@ fraud:
       enabled: true
       card-present-window-seconds: 120
       card-not-present-window-seconds: 300
-    blacklisted-merchant:
-      enabled: true
     geographic:
       enabled: true
       window-minutes: 60

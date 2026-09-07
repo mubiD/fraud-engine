@@ -14,7 +14,6 @@ public class RuleProperties {
     private AmountThresholdConfig amountThreshold = new AmountThresholdConfig();
     private VelocityConfig velocity = new VelocityConfig();
     private DuplicateConfig duplicate = new DuplicateConfig();
-    private BlacklistedMerchantConfig blacklistedMerchant = new BlacklistedMerchantConfig();
     private GeographicConfig geographic = new GeographicConfig();
     private CardCloningConfig cardCloning = new CardCloningConfig();
     private TimeOfDayConfig timeOfDay = new TimeOfDayConfig();
@@ -33,8 +32,6 @@ public class RuleProperties {
     public void setVelocity(VelocityConfig v) { this.velocity = v; }
     public DuplicateConfig getDuplicate() { return duplicate; }
     public void setDuplicate(DuplicateConfig v) { this.duplicate = v; }
-    public BlacklistedMerchantConfig getBlacklistedMerchant() { return blacklistedMerchant; }
-    public void setBlacklistedMerchant(BlacklistedMerchantConfig v) { this.blacklistedMerchant = v; }
     public GeographicConfig getGeographic() { return geographic; }
     public void setGeographic(GeographicConfig v) { this.geographic = v; }
     public CardCloningConfig getCardCloning() { return cardCloning; }
@@ -123,12 +120,6 @@ public class RuleProperties {
         public void setCardPresentWindowSeconds(int v) { this.cardPresentWindowSeconds = v; }
         public int getCardNotPresentWindowSeconds() { return cardNotPresentWindowSeconds; }
         public void setCardNotPresentWindowSeconds(int v) { this.cardNotPresentWindowSeconds = v; }
-    }
-
-    public static class BlacklistedMerchantConfig {
-        private boolean enabled = true;
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean v) { this.enabled = v; }
     }
 
     public static class GeographicConfig {

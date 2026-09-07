@@ -2,7 +2,6 @@ package com.fraudengine.api.controller;
 
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.config.SecurityConfig;
-import com.fraudengine.engine.RuleEngine;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Disposition;
@@ -10,6 +9,7 @@ import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
+import com.fraudengine.service.StandaloneTransactionProcessor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +43,7 @@ class StandaloneTransactionControllerTest {
 
     @MockBean TransactionRepository transactionRepository;
     @MockBean FraudAssessmentRepository fraudAssessmentRepository;
-    @MockBean RuleEngine ruleEngine;
+    @MockBean StandaloneTransactionProcessor processor;
     @MockBean TransactionMapper mapper;
 
     private Transaction savedTx;
@@ -73,9 +73,6 @@ class StandaloneTransactionControllerTest {
                 .disposition(Disposition.FLAGGED)
                 .riskScore(80)
                 .build();
-
-        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(fraudAssessmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ── POST /api/v1/standalone/submit ──────────────────────────────────────
@@ -171,14 +168,14 @@ class StandaloneTransactionControllerTest {
                             """.formatted(existingId)))
                 .andExpect(status().isOk());
 
-        verify(ruleEngine, never()).evaluate(any());
+        verify(processor, never()).process(any());
     }
 
     // ── POST /api/v1/standalone/stream ──────────────────────────────────────
 
     @Test
     void stream_allPass_returnsCorrectTotals() throws Exception {
-        when(ruleEngine.evaluate(any())).thenReturn(passedAssessment);
+        when(processor.process(any())).thenReturn(passedAssessment);
 
         mockMvc.perform(post("/api/v1/standalone/stream").param("count", "5"))
                 .andExpect(status().isOk())
@@ -190,7 +187,7 @@ class StandaloneTransactionControllerTest {
 
     @Test
     void stream_allFraudulent_flaggedCountMatchesTotal() throws Exception {
-        when(ruleEngine.evaluate(any())).thenReturn(fraudulentAssessment);
+        when(processor.process(any())).thenReturn(fraudulentAssessment);
 
         mockMvc.perform(post("/api/v1/standalone/stream").param("count", "3"))
                 .andExpect(status().isOk())
