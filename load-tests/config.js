@@ -38,7 +38,7 @@ export function authHeaders(token) {
 
 // Matches the app's own Kafka config (application.yml `spring.kafka.bootstrap-servers` /
 // `fraud.kafka.schema-registry.url`) — same brokers, same registry, reachable by compose
-// service name from inside the `load` network.
+// service name from inside the `load-test` network.
 export const KAFKA_BROKERS = (__ENV.KAFKA_BOOTSTRAP_SERVERS || 'kafka1:29092,kafka2:29093,kafka3:29094').split(',');
 export const SCHEMA_REGISTRY_URL = __ENV.SCHEMA_REGISTRY_URL || 'http://schema-registry:8081';
 export const RAW_TOPIC = 'transactions.raw';

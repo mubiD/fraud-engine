@@ -169,7 +169,6 @@ class EvaluationContextBuilderTest {
 
     @Test
     void txWithCoordinatesPresent_merchantLocationNotQueried() {
-        // Transaction already has coords — no fallback needed
         Transaction tx = Transaction.builder()
                 .id(UUID.randomUUID()).customerId("C").merchantId("M1")
                 .amount(BigDecimal.TEN).currency("ZAR")

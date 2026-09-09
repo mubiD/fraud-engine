@@ -25,11 +25,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 @Profile("standalone")
 public class StandaloneConfig {
 
-    /**
-     * STUB: Plain JPA transaction manager.
-     * Production replacement: KafkaConfig.chainedKafkaTransactionManager() — chains
-     * Kafka + DB transactions to guarantee exactly-once delivery.
-     */
     @Bean
     @Primary
     public PlatformTransactionManager transactionManager(EntityManagerFactory emf) {

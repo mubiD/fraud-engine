@@ -47,10 +47,8 @@ echo "==> Generating per-broker keystores..."
 for broker in "${BROKERS[@]}"; do
   echo "    $broker"
 
-  # Private key
   openssl genrsa -out "$CERTS_DIR/$broker.key" 2048 2>/dev/null
 
-  # Certificate signing request
   openssl req -new \
     -key "$CERTS_DIR/$broker.key" \
     -out "$CERTS_DIR/$broker.csr" \

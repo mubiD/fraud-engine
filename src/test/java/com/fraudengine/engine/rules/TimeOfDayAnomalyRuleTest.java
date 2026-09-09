@@ -34,7 +34,6 @@ class TimeOfDayAnomalyRuleTest {
 
     @Test
     void midnightTransaction_isViolation() {
-        // 00:30 UTC — well inside 23:00–05:00 window
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T00:30:00Z")), emptyContext);
         assertThat(result.isViolation()).isTrue();
         assertThat(result.getRuleName()).isEqualTo("TIME_OF_DAY_ANOMALY");
@@ -43,14 +42,12 @@ class TimeOfDayAnomalyRuleTest {
 
     @Test
     void earlyMorningTransaction_isViolation() {
-        // 03:00 UTC — inside window
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T03:00:00Z")), emptyContext);
         assertThat(result.isViolation()).isTrue();
     }
 
     @Test
     void justBeforeWindowStart_passes() {
-        // 22:59 UTC — one minute before 23:00 start
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T22:59:00Z")), emptyContext);
         assertThat(result.isViolation()).isFalse();
     }
@@ -71,14 +68,12 @@ class TimeOfDayAnomalyRuleTest {
 
     @Test
     void businessHoursTransaction_passes() {
-        // 10:00 UTC — normal business hours
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T10:00:00Z")), emptyContext);
         assertThat(result.isViolation()).isFalse();
     }
 
     @Test
     void afternoonTransaction_passes() {
-        // 14:00 UTC
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T14:00:00Z")), emptyContext);
         assertThat(result.isViolation()).isFalse();
     }

@@ -71,7 +71,6 @@ public class Transaction {
         }
     }
 
-    // getters
     public UUID getId() { return id; }
     public String getCustomerId() { return customerId; }
     public String getMerchantId() { return merchantId; }
@@ -88,7 +87,6 @@ public class Transaction {
     public TransactionStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
 
-    // setters
     public void setId(UUID id) { this.id = id; }
     public void setCustomerId(String customerId) { this.customerId = customerId; }
     public void setMerchantId(String merchantId) { this.merchantId = merchantId; }

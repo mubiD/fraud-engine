@@ -13,7 +13,8 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
 
-// PRODUCTION/DEV/INT/QA/LOAD: registers writer + reader DataSources and routes every
+// Every profile except standalone (local, test, load-test, prod): registers writer + reader
+// DataSources and routes every
 // connection checkout between them via ReplicationRoutingDataSource — no repository or
 // service code needs to change, since every read-path query service method is already
 // @Transactional(readOnly = true) (see TransactionQueryService), and the only place that

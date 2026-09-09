@@ -43,18 +43,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
 
     @Query("""
             SELECT t FROM Transaction t
-            WHERE t.merchantId   = :merchantId
-              AND t.customerId   = :customerId
-              AND t.amount       = :amount
-              AND t.timestamp   >= :since
-            """)
-    List<Transaction> findDuplicateCandidates(@Param("merchantId") String merchantId,
-                                              @Param("customerId") String customerId,
-                                              @Param("amount") java.math.BigDecimal amount,
-                                              @Param("since") Instant since);
-
-    @Query("""
-            SELECT t FROM Transaction t
             LEFT JOIN FETCH t.assessment a
             LEFT JOIN FETCH a.ruleViolations
             WHERE t.customerId = :customerId
