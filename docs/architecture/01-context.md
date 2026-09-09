@@ -1,6 +1,6 @@
 # System Context — Fraud Rule Engine
 
-C4 Model, Level 1 (Context). Scope: production topology (`int`/`qa`/`load`/`prod`), where Kafka is
+C4 Model, Level 1 (Context). Scope: production topology (`load-test`/`prod`), where Kafka is
 the only ingestion path. See "Assumptions" for how `local`/`standalone` differ.
 
 ```mermaid
@@ -37,7 +37,7 @@ flowchart TB
   class postgres db
 ```
 
-- Kafka is the only ingestion path in `int`/`qa`/`load`/`prod` — no HTTP submission endpoint exists there.
+- Kafka is the only ingestion path in `load-test`/`prod` — no HTTP submission endpoint exists there.
 - The Analyst's only write action is `PATCH .../outcome`; everything else is read-only.
 - Schema Registry and Vault are production-only — `local`/`standalone` skip both.
 - The IDP is bypassed entirely in `local`/`standalone`/`test` (`SecurityConfig`'s `noSecurityFilterChain`).

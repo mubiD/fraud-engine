@@ -82,8 +82,8 @@ vault secrets enable -version=2 -path=secret kv 2>/dev/null || \
 # Placeholder values — replace with real secrets before go-live or supply them
 # as env vars (DB_PASSWORD, KAFKA_CLIENT_PASSWORD, etc.) injected by the operator.
 
-echo "==> Seeding secret/fraud-engine..."
-vault kv put secret/fraud-engine \
+echo "==> Seeding secret/fraud-rule-engine..."
+vault kv put secret/fraud-rule-engine \
   db-password="${DB_PASSWORD:-CHANGE_ME_DB_PASSWORD}" \
   kafka-client-password="${KAFKA_CLIENT_PASSWORD:-CHANGE_ME_KAFKA_PASSWORD}" \
   kafka-ssl-truststore-password="${KAFKA_SSL_TRUSTSTORE_PASSWORD:-CHANGE_ME_TS_PASSWORD}" \
@@ -97,11 +97,19 @@ echo "==> Enabling AppRole auth method..."
 vault auth enable approle 2>/dev/null || echo "    (already enabled)"
 
 echo "==> Writing fraud-engine policy (read-only access to its own secret path)..."
+# Path must match spring.application.name (application.yml) — Spring Cloud Vault's
+# default KV v2 backend resolves secrets at secret/{spring.application.name} and
+# secret/{spring.application.name}/{profile}, i.e. secret/fraud-rule-engine and
+# secret/fraud-rule-engine/prod, not the shorter "fraud-engine" artifact/container
+# name used elsewhere in this repo. A policy scoped to secret/data/fraud-engine
+# silently 403s every real lookup — found live 2026-09-09 running `make prod`
+# end-to-end (app booted "healthy" regardless, since local-verification-only
+# fallback passwords were in play — the mismatch was invisible until reading logs).
 vault policy write fraud-engine - <<'POLICY'
-path "secret/data/fraud-engine" {
+path "secret/data/fraud-rule-engine" {
   capabilities = ["read"]
 }
-path "secret/data/fraud-engine/*" {
+path "secret/data/fraud-rule-engine/*" {
   capabilities = ["read"]
 }
 POLICY

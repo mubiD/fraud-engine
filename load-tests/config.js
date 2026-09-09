@@ -10,9 +10,9 @@ import {
 export const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 // /api/v1/** requires a Bearer JWT with a FRAUD_ANALYST/FRAUD_ENGINEER role claim under
-// SPRING_PROFILES_ACTIVE=load (SecurityConfig, application.yml's resource-server config) —
+// SPRING_PROFILES_ACTIVE=load-test (SecurityConfig, application.yml's resource-server config) —
 // even for GETs. OIDC_TOKEN_URL points at the mock IdP's token endpoint (see
-// docker-compose.load.yml's mock-oidc service); fetch once per test run, not per iteration.
+// docker-compose.load-test.yml's mock-oidc service); fetch once per test run, not per iteration.
 export function fetchAccessToken() {
   const tokenUrl = __ENV.OIDC_TOKEN_URL;
   if (!tokenUrl) return null; // no auth wired up (e.g. running against local/standalone) — fine

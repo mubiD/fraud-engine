@@ -8,7 +8,7 @@
 
 This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank — it evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
 
-In production-like environments (`int`, `qa`, `load`, `prod`), transactions enter **exclusively** via Kafka — there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint — §4.14 — which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
+In production-like environments (`load-test`, `prod`), transactions enter **exclusively** via Kafka — there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint — §4.14 — which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
 
 ---
 
@@ -16,7 +16,7 @@ In production-like environments (`int`, `qa`, `load`, `prod`), transactions ente
 
 | Path | Active When |
 |---|---|
-| **Kafka topic** `transactions.raw` (Protobuf) | `int`, `qa`, `load`, `prod` — the real production path |
+| **Kafka topic** `transactions.raw` (Protobuf) | `load-test`, `prod` — the real production path |
 | **HTTP POST** `/api/v1/standalone/submit` or `/api/v1/standalone/stream` | `standalone` and `local` Spring profiles only — an explicit demo/dev stub, not a production feature |
 
 **Verified directly from the docker-compose files** (this matters — don't infer it from environment names):
@@ -24,12 +24,10 @@ In production-like environments (`int`, `qa`, `load`, `prod`), transactions ente
 | `make` target | Environment name | `SPRING_PROFILES_ACTIVE` |
 |---|---|---|
 | `make dev` | dev | **`local`** |
-| `make int` | int | `int` |
-| `make qa` | qa | `qa` |
-| `make load` | load | `load` |
+| `make load-test` | load-test | `load-test` |
 | `make prod` | prod | `prod` |
 
-So **`make dev` is the one environment where the standalone HTTP endpoints are reachable** — its Spring profile is `local`, not a profile literally named `dev`. `int`/`qa`/`load`/`prod` all run their own matching profile name, none of which is `local`/`standalone`/`test`, so the real Kafka consumer pipeline is active there and the standalone controller is not wired in at all (`@Profile("standalone | local")` on `StandaloneTransactionController`).
+So **`make dev` is the one environment where the standalone HTTP endpoints are reachable** — its Spring profile is `local`, not a profile literally named `dev`. `load-test`/`prod` each run their own matching profile name, neither of which is `local`/`standalone`/`test`, so the real Kafka consumer pipeline is active there and the standalone controller is not wired in at all (`@Profile("standalone | local")` on `StandaloneTransactionController`).
 
 The `standalone` profile (not tied to any `make` target — run manually with `--spring.profiles.active=standalone`) uses an **H2 in-memory database** (no PostgreSQL, no Kafka, no Vault) — the quickest way to exercise the rule engine with zero infrastructure. `local` (i.e. `make dev`) uses real PostgreSQL + Kafka with JSON wire format (no Confluent Schema Registry needed).
 
@@ -40,9 +38,7 @@ The `standalone` profile (not tied to any `make` target — run manually with `-
 | Environment | App (host) | PostgreSQL (host) | Kafka Broker 1/2/3 (host) |
 |---|---|---|---|
 | `dev` | **8081** | 5433 | 9192 / 9193 / 9194 |
-| `int` | 8082 | 5434 | 9292 / 9293 / 9294 |
-| `qa` | 8083 | 5435 | 9392 / 9393 / 9394 |
-| `load` | 8084 | 5436 | 9492 / 9493 / 9494 |
+| `load-test` | 8084 | 5436 | 9492 / 9493 / 9494 |
 | `prod` | 8085 | 5437 | 9592 / 9593 / 9594 |
 
 Container-internal port is always **8080**. Each environment runs its own 3-broker Kafka cluster (replication factor 2).
@@ -535,7 +531,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 ## 7. Transaction Lifecycle
 
-**Production path** (`int`/`qa`/`load`/`prod` — Kafka only):
+**Production path** (`load-test`/`prod` — Kafka only):
 
 ```
 transactions.raw (Kafka) ──► TransactionConsumer ──► EvaluationContextBuilder
@@ -656,7 +652,7 @@ All error responses use `Content-Type: application/problem+json`.
 |---|---|---|
 | `dev` (`make dev`) | `local` | **No** — all requests permitted |
 | standalone (manual run) | `standalone` | **No** |
-| `int`, `qa`, `load`, `prod` | `int` / `qa` / `load` / `prod` | **Yes** — OAuth2 JWT bearer token |
+| `load-test`, `prod` | `load-test` / `prod` | **Yes** — OAuth2 JWT bearer token |
 
 Where auth is required: `Authorization: Bearer <jwt>`, issued by the Acme IDP configured via `FRAUD_IDP_URI`. The token's `roles` claim must contain `FRAUD_ANALYST` or `FRAUD_ENGINEER` (mapped to `ROLE_*` Spring Security authorities). `/actuator/health`, `/actuator/info`, `/actuator/prometheus`, and the Swagger/OpenAPI paths are open in every profile. If the configured IDP is unreachable at startup, the app **fails to start** — this is intentional, not a bug, if you see it in a secured environment.
 

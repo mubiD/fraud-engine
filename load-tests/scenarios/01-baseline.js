@@ -6,7 +6,7 @@
  * ../README.md's "Capacity numbers" section for the full derivation). Produces real
  * Confluent-Protobuf TransactionEvent messages to transactions.raw — the actual production
  * ingestion path (TransactionConsumer), not the standalone/local HTTP stub, which isn't even
- * loaded under SPRING_PROFILES_ACTIVE=load (StandaloneTransactionController's @Profile).
+ * loaded under SPRING_PROFILES_ACTIVE=load-test (StandaloneTransactionController's @Profile).
  * Each iteration produces a transaction then polls for its assessment, establishing the
  * real end-to-end (produce -> consume -> evaluate -> persist -> queryable) latency baseline.
  */

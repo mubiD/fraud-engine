@@ -4,13 +4,13 @@ Performance and load tests for the Fraud Rule Engine. Runs independently of the 
 
 All four scenarios produce real Confluent-Protobuf `TransactionEvent` messages directly to
 `transactions.raw` — the actual production ingestion path (`TransactionConsumer`), not the
-standalone/local HTTP stub. That stub isn't even loaded under `SPRING_PROFILES_ACTIVE=load`
+standalone/local HTTP stub. That stub isn't even loaded under `SPRING_PROFILES_ACTIVE=load-test`
 (`StandaloneTransactionController`'s `@Profile("standalone | local")`), so a Kafka producer is the
-only way to generate real traffic against the `load` environment.
+only way to generate real traffic against the `load-test` environment.
 
 ## Prerequisites
 
-None to install locally — `make load-test` runs k6 fully containerised, using the
+None to install locally — `make k6-run` runs k6 fully containerised, using the
 [xk6-kafka](https://github.com/mostafa/xk6-kafka) build (`mostafamoradian/xk6-kafka` on Docker Hub,
 `k6/x/kafka` module) instead of stock `grafana/k6`, since producing real Confluent-Protobuf messages
 via Schema Registry needs that extension. No local k6 install, and no custom image build — the
@@ -18,30 +18,32 @@ extension's Protobuf + Schema Registry support has been fully implemented since 
 
 ## Running
 
-Start the `load` environment first (brings up the app, Postgres, a 3-broker Kafka cluster, Schema
-Registry, InfluxDB, and Grafana — the `k6` service itself stays down until explicitly triggered):
+Start the `load-test` environment first (brings up the app, Postgres, a 3-broker Kafka cluster,
+Schema Registry, InfluxDB, and Grafana — the `k6` service itself stays down until explicitly
+triggered):
 
 ```bash
-make load
+make load-test
 ```
 
 ### Run a single scenario
 
 ```bash
-make load-test                      # runs 01-baseline
-make load-test SCENARIO=02-ramp
-make load-test SCENARIO=03-spike
-make load-test SCENARIO=04-fraud-rules
+make k6-run                         # runs 01-baseline
+make k6-run SCENARIO=02-ramp
+make k6-run SCENARIO=03-spike
+make k6-run SCENARIO=04-fraud-rules
+make k6-run SCENARIO=01-baseline RATE=500   # override target concurrent load
 ```
 
-(Equivalent to `docker compose -f docker/docker-compose.yml -f docker/docker-compose.load.yml -p
-fraud-load --profile k6 run --rm k6 run /scripts/scenarios/<name>.js`, if you need to run it
+(Equivalent to `docker compose -f docker/docker-compose.yml -f docker/docker-compose.load-test.yml
+-p fraud-load-test --profile k6 run --rm k6 run /scripts/scenarios/<name>.js`, if you need to run it
 directly.)
 
 ### Run all scenarios
 
 ```bash
-make load-test-all
+make k6-run-all
 ```
 
 ### View results

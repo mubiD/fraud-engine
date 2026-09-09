@@ -15,6 +15,7 @@ flowchart TB
     consumer["Kafka Consumer<br/>@KafkaListener + @RetryableTopic"]
     ruleEngineCore["Rule Engine Core<br/>Strategy pattern"]
     cache["Reference Data Cache<br/>Caffeine"]
+    streams["Kafka Streams Topology<br/>customer-activity-store (RocksDB)"]
     producer["Kafka Producer<br/>KafkaTemplate"]
     partitionJob["Partition Maintenance Job<br/>@Scheduled, nightly"]
     db[("PostgreSQL<br/>Flyway-managed")]
@@ -25,9 +26,11 @@ flowchart TB
   schemaRegistryExt(["Confluent Schema Registry"])
 
   kafkaExt -->|"transactions.raw, 6 partitions<br/>concurrency=6"| consumer
+  kafkaExt -->|"transactions.raw, second<br/>independent consumer group"| streams
   consumer -->|evaluate| ruleEngineCore
   ruleEngineCore -->|"merchant location"| cache
-  ruleEngineCore -->|"history, spend, baseline"| db
+  ruleEngineCore -->|"recent history, daily spend,<br/>amount-anomaly baseline"| streams
+  streams -.->|"fallback: store not<br/>RUNNING yet"| db
   consumer -->|"persist transaction + assessment"| db
   consumer --> producer
   producer -->|"flagged / pending-review / passed"| kafkaExt
@@ -44,7 +47,7 @@ flowchart TB
   classDef db fill:#438dd5,color:#fff,stroke:#2d76bd
 
   class analyst person
-  class queryApi,queryServices,consumer,ruleEngineCore,cache,producer,partitionJob container
+  class queryApi,queryServices,consumer,ruleEngineCore,cache,streams,producer,partitionJob container
   class kafkaExt,idpExt,schemaRegistryExt external
   class db db
 ```
@@ -58,6 +61,7 @@ Vault isn't shown here — it's a one-time startup config fetch, not owned by an
 - Rule Engine Core is shared by two ingress paths (Kafka consumer in prod, HTTP stub in local/standalone) — same `RuleEngine.evaluate()` call, not duplicated.
 - Kafka Consumer/Producer are `@Profile("!standalone & !local")` — absent entirely outside production.
 - Listener concurrency (6) matches `transactions.raw`'s 6 partitions (customer-keyed) — preserves per-customer ordering while parallelising.
+- Kafka Streams is a second, independent consumer group on `transactions.raw` — not a downstream consumer of the fraud engine's own output. Rule Engine Core reads its state via Interactive Queries instead of live Postgres queries; a `StoreUnavailableException` (store not yet `RUNNING`, or restoring from its changelog) falls back to Postgres for that one evaluation. Absent under `local`/`standalone`, same as the Kafka Consumer/Producer.
 
 ## Assumptions / things to verify
 

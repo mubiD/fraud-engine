@@ -86,17 +86,17 @@ Prerequisites: **Docker**, plus a local **JDK 21** and **Maven** (`mvn` on `PATH
 
 Each environment is fully self-contained: its own app instance, Postgres database, Kafka cluster, and observability stack, all on separate host ports so multiple environments can run simultaneously.
 
-| Service | dev | int | qa | load | prod |
-|---|---|---|---|---|---|
-| App | 8081 | 8082 | 8083 | 8084 | 8085 |
-| Postgres | 5433 | 5434 | 5435 | 5436 | 5437 |
-| Kafka broker 1 | 9192 | 9292 | 9392 | 9492 | 9592 |
-| Kafka broker 2 | 9193 | 9293 | 9393 | 9493 | 9593 |
-| Kafka broker 3 | 9194 | 9294 | 9394 | 9494 | 9594 |
-| Schema Registry | 8091 | — | — | — | — |
-| Vault | 8200 | — | — | — | — |
-| Instana agent | — | — | — | — | — |
-| Prometheus | 9090 | — | — | — | — |
+| Service | dev | load-test | prod |
+|---|---|---|---|
+| App | 8081 | 8084 | 8085 |
+| Postgres | 5433 | 5436 | 5437 |
+| Kafka broker 1 | 9192 | 9492 | 9592 |
+| Kafka broker 2 | 9193 | 9493 | 9593 |
+| Kafka broker 3 | 9194 | 9494 | 9594 |
+| Schema Registry | 8091 | — | — |
+| Vault | 8200 | — | — |
+| Instana agent | — | — | — |
+| Prometheus | 9090 | — | — |
 
 > Schema Registry, Vault, and Prometheus host-port mappings are only exposed in the `dev` environment; in other environments they're accessible within the Docker network. The Instana agent row is intentionally all dashes — tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only; none of the `docker-compose*.yml` files run one, so locally (any environment, including `dev`) the app finds no tracing backend and drops spans gracefully.
 
@@ -104,9 +104,7 @@ Each environment is fully self-contained: its own app instance, Postgres databas
 
 ```bash
 make dev
-make int
-make qa
-make load
+make load-test
 make prod
 ```
 
@@ -115,7 +113,7 @@ Each command:
 2. Starts Postgres and waits until healthy
 3. Starts the 3-broker Kafka cluster and waits until healthy
 4. Starts Schema Registry and waits until healthy
-5. Starts Vault — dev mode, pre-unsealed, for `dev`/`int`/`qa`/`load`; `prod`'s compose override replaces this with a server-mode Vault + one-shot `vault-init` AppRole flow (`VAULT_ROLE_ID`/`VAULT_SECRET_ID` printed on first run) instead
+5. Starts Vault — dev mode, pre-unsealed, for `dev`/`load-test`; `prod`'s compose override replaces this with a server-mode Vault + one-shot `vault-init` AppRole flow (`VAULT_ROLE_ID`/`VAULT_SECRET_ID` printed on first run) instead
 6. Starts the fraud-engine (Flyway runs migrations on boot)
 7. Polls `/actuator/health` until the app is ready
 
@@ -123,7 +121,7 @@ Postgres data volumes are named per environment and persist across restarts.
 
 ### Try it out (`dev` only)
 
-`make dev` runs the app under the `local` Spring profile, which disables the Kafka consumer and activates a synchronous HTTP stub instead (`StandaloneTransactionController`) — it's the only way to feed transactions into a locally-run environment without producing raw Protobuf to Kafka yourself. Not present in `int`/`qa`/`load`/`prod`, where the real Kafka pipeline is the only ingress (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
+`make dev` runs the app under the `local` Spring profile, which disables the Kafka consumer and activates a synchronous HTTP stub instead (`StandaloneTransactionController`) — it's the only way to feed transactions into a locally-run environment without producing raw Protobuf to Kafka yourself. Not present in `load-test`/`prod`, where the real Kafka pipeline is the only ingress (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
 
 ```bash
 # Submit one transaction and see the assessment inline
@@ -157,7 +155,7 @@ make ps
 
 ## API Reference
 
-> In `int`/`qa`/`load`/`prod` there is no HTTP submission endpoint — transactions enter exclusively via the `transactions.raw` Kafka topic, and the API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `dev`/`standalone` are the exception to that: `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under those two profiles — see "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
+> In `load-test`/`prod` there is no HTTP submission endpoint — transactions enter exclusively via the `transactions.raw` Kafka topic, and the API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `dev`/`standalone` are the exception to that: `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under those two profiles — see "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
 
 All paginated endpoints return a consistent envelope:
 
@@ -167,7 +165,7 @@ All paginated endpoints return a consistent envelope:
 
 Pass `nextCursor` as the `cursor` parameter on the next request to advance the page. All timestamps are ISO-8601 UTC.
 
-> Replace `8081` with the port for the environment you started (`8082` = int, `8083` = qa, etc.).
+> Replace `8081` with the port for the environment you started (`8084` = load-test, `8085` = prod).
 
 ---
 
@@ -571,8 +569,8 @@ The likelihood ratios in `ScoringProperties` are domain-judgment starting points
 | Topic | Partitions | Direction | Message type |
 |---|---|---|---|
 | `transactions.raw` | 6 | Inbound (consumed) | `TransactionEvent` Protobuf |
-| `transactions.raw-0`, `transactions.raw-1` | 6 | Internal (retry) | auto-created by `@RetryableTopic` |
-| `transactions.raw.DLT` | 1 | Dead-letter | exhausted-retry events |
+| `transactions.raw-retry-0`, `transactions.raw-retry-1` | 6 | Internal (retry) | auto-created by `@RetryableTopic` |
+| `transactions.raw.DLT` | 6 | Dead-letter | exhausted-retry events |
 | `transactions.flagged` | 3 | Outbound (produced) | `FraudulentTransactionEvent` Protobuf |
 | `transactions.pending-review` | 3 | Outbound (produced) | `PendingReviewTransactionEvent` Protobuf |
 | `transactions.passed` | 3 | Outbound (produced) | `ClearedTransactionEvent` Protobuf |
@@ -615,11 +613,12 @@ Each rule is tested in isolation with zero Spring context — fast and determini
 | Test class | Controller | Tests |
 |---|---|---|
 | `TransactionQueryControllerTest` | `TransactionQueryController` | 38 |
-| `MerchantControllerTest` | `MerchantController` | 11 |
+| `MerchantControllerTest` | `MerchantController` | 13 |
 | `StatsControllerTest` | `StatsController` | 4 |
 | `CustomerControllerTest` | `CustomerController` | 4 |
-| `RuleControllerTest` | `RuleController` | 4 |
-| `StandaloneTransactionControllerTest` | Standalone profile smoke test | 1 |
+| `RuleControllerTest` | `RuleController` | 3 |
+| `TransactionOutcomeControllerTest` | `TransactionOutcomeController` | 6 |
+| `StandaloneTransactionControllerTest` | Standalone/local profile endpoints | 17 |
 
 Coverage per controller:
 
@@ -644,6 +643,8 @@ Coverage per controller:
 **`GET /stats/fraud-summary`** — no date range, with date range (verifies Instant passthrough), malformed from → 400, empty breakdown
 
 **`GET /rules`** — returns all rules, empty list, disabled rule included, `config` map populated
+
+**`PATCH /transactions/{id}/outcome`** — 200 on first resolution, 409 on a second attempt, 404 for an unknown transaction, 400 for a missing/invalid `outcome` value
 
 ### Integration tests (Testcontainers)
 
@@ -683,12 +684,12 @@ make test
 
 ## Load & Performance Tests
 
-Load tests run exclusively against the `load` environment, which includes InfluxDB and Grafana for live metrics.
+Load tests run exclusively against the `load-test` environment, which includes InfluxDB and Grafana for live metrics.
 
-### 1. Start the load environment
+### 1. Start the load-test environment
 
 ```bash
-make load
+make load-test
 ```
 
 ### 2. Open the live dashboard
@@ -703,16 +704,17 @@ The k6 dashboard is pre-provisioned — no login or setup required.
 ### 3. Run a scenario
 
 ```bash
-make load-test                       # 01-baseline (default)
-make load-test SCENARIO=02-ramp
-make load-test SCENARIO=03-spike
-make load-test SCENARIO=04-fraud-rules
+make k6-run                          # 01-baseline (default)
+make k6-run SCENARIO=02-ramp
+make k6-run SCENARIO=03-spike
+make k6-run SCENARIO=04-fraud-rules
+make k6-run SCENARIO=01-baseline RATE=500   # override target concurrent load
 ```
 
 ### 4. Run all scenarios sequentially
 
 ```bash
-make load-test-all
+make k6-run-all
 ```
 
 ### Scenarios
@@ -833,9 +835,9 @@ Security is profile-gated so local development and tests require no credentials.
 |---|---|
 | `local`, `standalone` | All requests permitted. No IDP contact. |
 | `test` | All requests permitted. `@WebMvcTest` tests pass without auth headers. |
-| `int`, `qa`, `load`, `prod` | JWT bearer token required on `/api/v1/**`. |
+| `load-test`, `prod` | JWT bearer token required on `/api/v1/**`. |
 
-> Note: the `dev` **environment** (`make dev`, `docker-compose.dev.yml`) activates the `local` Spring **profile** — not a profile named `dev` — so it falls in the open bucket above, with no auth required. The `int`/`qa`/`load`/`prod` environments each activate their own like-named profile.
+> Note: the `dev` **environment** (`make dev`, `docker-compose.dev.yml`) activates the `local` Spring **profile** — not a profile named `dev` — so it falls in the open bucket above, with no auth required. The `load-test`/`prod` environments each activate their own like-named profile.
 
 ### Authentication
 
@@ -890,8 +892,9 @@ curl http://localhost:8081/actuator/prometheus
 
 | Metric | Type | Description |
 |---|---|---|
-| `fraud.assessments.total{verdict="FRAUDULENT"}` | Counter | Fraudulent assessments since startup |
-| `fraud.assessments.total{verdict="PASSED"}` | Counter | Cleared assessments since startup |
+| `fraud.assessments.total{verdict="FLAGGED"}` | Counter | Flagged assessments since startup |
+| `fraud.assessments.total{verdict="PENDING_REVIEW"}` | Counter | Pending-review assessments since startup |
+| `fraud.assessments.total{verdict="CLEARED"}` | Counter | Cleared assessments since startup |
 | `fraud.dlt.total` | Counter | Transactions that exhausted all retries and reached the dead-letter topic |
 | `fraud.rule.evaluation.duration.seconds` | Timer | Full rule engine evaluation time (p50/p95/p99) |
 
@@ -956,10 +959,12 @@ src/
 │   ├── api/
 │   │   ├── controller/
 │   │   │   ├── TransactionQueryController.java  # /api/v1/transactions — history, flagged, passed
+│   │   │   ├── TransactionOutcomeController.java # PATCH /transactions/{id}/outcome — the one write endpoint
 │   │   │   ├── RuleController.java              # /api/v1/rules
 │   │   │   ├── CustomerController.java          # /api/v1/customers/{id}/risk-summary
 │   │   │   ├── MerchantController.java          # /api/v1/merchants/{id}/flagged + risk-summary
-│   │   │   └── StatsController.java             # /api/v1/stats/fraud-summary
+│   │   │   ├── StatsController.java             # /api/v1/stats/fraud-summary
+│   │   │   └── StandaloneTransactionController.java # /standalone/submit + /stream — local/standalone only
 │   │   ├── dto/
 │   │   │   ├── TransactionSummaryDto.java
 │   │   │   ├── FraudAssessmentDto.java
@@ -973,7 +978,9 @@ src/
 │   │   └── mapper/
 │   │       └── TransactionMapper.java           # MapStruct — FraudAssessment, RuleViolation,
 │   │                                            # Transaction, FraudRule → DTOs
-│   ├── config/             # KafkaConfig, CacheConfig, RuleProperties, FraudMetrics, SchedulingConfig
+│   ├── config/              # KafkaConfig, CacheConfig, RuleProperties, ScoringProperties,
+│   │                        # FraudMetrics, SchedulingConfig, DataSourceConfig +
+│   │                        # ReplicationRoutingDataSource (reader/writer routing)
 │   ├── consumer/           # TransactionConsumer (@KafkaListener + @DltHandler)
 │   ├── engine/
 │   │   ├── FraudRule.java                  # Strategy interface (evaluate, getRuleName, getConfig, …)
@@ -999,7 +1006,7 @@ src/
 │   │       └── CustomerAmountAnomalyRule.java # priority 13 — personal spending baseline
 │   ├── exception/          # GlobalExceptionHandler (400 for validation, type mismatch, date parse)
 │   ├── filter/             # MdcLoggingFilter
-│   ├── kafka/              # AssessmentProducer, TransactionEvent (POJO), event POJO classes
+│   ├── kafka/              # AssessmentProducer — publishes to flagged/pending-review/passed
 │   ├── model/              # Transaction (+ deviceFingerprint), FraudAssessment, RuleViolation,
 │   │                       # MerchantLocation + enums
 │   ├── proto/              # ProtoMapper (Protobuf ↔ domain model conversion)
@@ -1009,10 +1016,21 @@ src/
 │   │   ├── FraudAssessmentRepository.java   # JPQL queries — flagged/passed feeds, merchant feed,
 │   │   │                                    # aggregate counts and top-rule GROUP BY
 │   │   └── MerchantLocationRepository.java
-│   └── service/
-│       ├── TransactionQueryService.java     # All read operations for the API layer
-│       ├── RuleManagementService.java
-│       └── PartitionMaintenanceJob.java
+│   ├── service/
+│   │   ├── TransactionQueryService.java     # All read operations for the API layer, routed
+│   │   │                                    # through the reader DataSource
+│   │   ├── AssessmentOutcomeService.java    # PATCH .../outcome — one-time disposition write
+│   │   ├── StandaloneTransactionProcessor.java # Per-item @Transactional persist→evaluate→
+│   │   │                                    # save→publish, shared by submit() and stream()
+│   │   ├── RuleManagementService.java
+│   │   └── PartitionMaintenanceJob.java
+│   └── streams/            # Kafka Streams topology (com.fraudengine.streams) — second,
+│                            # independent consumer group on transactions.raw, maintains a
+│                            # changelog-backed per-customer state store (RocksDB) serving
+│                            # recent-transaction history, daily spend, and the customer
+│                            # amount-anomaly baseline via Interactive Queries, instead of a
+│                            # live Postgres query per evaluation. Falls back to Postgres if
+│                            # the store isn't RUNNING yet — see DESIGN.md §5.
 ├── main/proto/
 │   ├── transaction_event.proto           # TransactionEvent + TransactionType enum
 │   ├── cleared_transaction_event.proto   # ClearedTransactionEvent
@@ -1024,17 +1042,24 @@ src/
 │       └── V1__init_schema.sql   # Consolidated — no deployed history to preserve pre-launch
 └── test/java/com/fraudengine/
     ├── api/controller/
-    │   ├── TransactionQueryControllerTest.java  # 22 tests
-    │   ├── MerchantControllerTest.java          # 11 tests
+    │   ├── TransactionQueryControllerTest.java  # 38 tests
+    │   ├── MerchantControllerTest.java          # 13 tests
     │   ├── CustomerControllerTest.java          # 4 tests
     │   ├── StatsControllerTest.java             # 4 tests
-    │   ├── RuleControllerTest.java              # 4 tests
-    │   └── StandaloneTransactionControllerTest.java
+    │   ├── RuleControllerTest.java              # 3 tests
+    │   ├── TransactionOutcomeControllerTest.java # 6 tests
+    │   └── StandaloneTransactionControllerTest.java # 17 tests
     ├── engine/
     │   ├── RuleEngineTest.java
     │   └── rules/              # Unit tests — one per rule (12 rule test classes)
     ├── kafka/                  # AssessmentProducerTest (Mockito)
-    └── integration/            # TransactionIntegrationTest (Testcontainers + mock Schema Registry)
+    ├── service/                # AssessmentOutcomeServiceTest, TransactionQueryServiceTest,
+    │                           # PartitionMaintenanceJobTest
+    ├── config/                 # KafkaConfigTest (retry/DLT partition-count cross-check),
+    │                           # ReplicationRoutingDataSourceTest
+    ├── streams/                # CustomerActivityProcessorTest (TopologyTestDriver, no broker)
+    └── integration/            # TransactionIntegrationTest (Testcontainers + mock Schema Registry,
+                                 # requires -Pconfluent — see "Integration tests" above)
 
 load-tests/
 ├── config.js               # Shared BASE_URL, thresholds, data pools

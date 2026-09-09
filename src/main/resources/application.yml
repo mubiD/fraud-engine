@@ -103,7 +103,14 @@ spring:
       kv:
         enabled: true
         backend: secret
-        default-context: fraud-engine
+        # Matches spring.application.name (top of this file) and the one secret path
+        # vault-init.sh actually seeds/grants (secret/fraud-rule-engine). Spring Cloud Vault
+        # loads secret/{default-context} and secret/{spring.application.name} as two
+        # independent property sources — leaving this at a different name ("fraud-engine",
+        # the shorter artifact/container name used elsewhere in this repo) meant the
+        # default-context lookup kept 403ing even after vault-init.sh's policy was fixed to
+        # cover the application-name path. Found live 2026-09-09 running `make prod`.
+        default-context: fraud-rule-engine
 
 logging:
   pattern:
