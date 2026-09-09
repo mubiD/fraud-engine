@@ -22,6 +22,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -48,6 +49,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// "test" profile activates SecurityConfig.noSecurityFilterChain (no JWT decoder — real IDP
+// resolution is unreachable in a test sandbox) while still keeping TransactionConsumer,
+// AssessmentProducer, and the Kafka Streams topology active (their @Profile guards are
+// "!standalone & !local" — "test" satisfies both), unlike "local"/"standalone" which would
+// disable the very Kafka consumer path this test exercises. Missing before 2026-09-09 — this
+// test had never actually reached Spring context startup until that session's Docker-API-
+// version fix let Testcontainers find a daemon at all, so this gap went unnoticed.
+@ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @Testcontainers
@@ -105,7 +114,7 @@ class TransactionIntegrationTest {
     void cleanTransaction_isAssessedAndPublishedToPassedTopic() {
         UUID txId = UUID.randomUUID();
         TransactionEventProto.TransactionEvent event = buildEvent(txId, "CUST_001", "CLEAN_MERCH",
-                new BigDecimal("100.00"), TransactionType.CARD_PRESENT);
+                new BigDecimal("100.00"), "RETAIL", TransactionType.CARD_PRESENT);
 
         try (KafkaConsumer<String, byte[]> consumer = openConsumer("transactions.passed")) {
             consumer.poll(Duration.ofMillis(300)); // position at current end
@@ -117,7 +126,12 @@ class TransactionIntegrationTest {
 
             FraudAssessment assessment = assessmentRepository.findByTransactionId(txId).orElseThrow();
             assertThat(assessment.getDisposition()).isEqualTo(Disposition.CLEARED);
-            assertThat(assessment.getRiskScore()).isZero();
+            // Not zero: RuleEngine.probabilityToRiskScore rounds ScoringProperties'
+            // priorFraudProbability (0.01) itself when no rule fires — round(0.01 * 100) = 1,
+            // not 0. Stale from before the flat-point-sum -> log-odds scoring rewrite
+            // (ScoringProperties javadoc); never caught because this test never reached this
+            // assertion until the Docker-API-version/profile fixes above, 2026-09-09.
+            assertThat(assessment.getRiskScore()).isEqualTo(1);
 
             ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofSeconds(5));
             assertThat(records.count()).isGreaterThanOrEqualTo(1);
@@ -129,10 +143,18 @@ class TransactionIntegrationTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void highAmountTransaction_isFlaggedAndPublishedToFlaggedTopic() {
+    void highRiskCategoryTransaction_isFlaggedAndPublishedToFlaggedTopic() {
+        // A large amount alone (the old scenario here) no longer flags under the log-odds
+        // model — ScoringProperties.likelihoodRatios rates AMOUNT_THRESHOLD:HIGH at only 2.0
+        // ("weak alone by design", see its own comment), which keeps posterior probability
+        // under 3% for a single hit. HIGH_RISK_MERCHANT_CATEGORY:HIGH (ratio 130.0) is
+        // explicitly "calibrated as standalone-sufficient evidence of fraud"
+        // (HighRiskMerchantCategoryRule javadoc) and needs no transaction history to fire, so
+        // it's the deterministic single-transaction choice for this smoke test. Stale from
+        // before the same scoring rewrite as the test above — never caught for the same reason.
         UUID txId = UUID.randomUUID();
         TransactionEventProto.TransactionEvent event = buildEvent(txId, "CUST_002", "SOME_MERCH",
-                new BigDecimal("10000.00"), TransactionType.CARD_NOT_PRESENT);
+                new BigDecimal("10000.00"), "WIRE_TRANSFER", TransactionType.CARD_NOT_PRESENT);
 
         try (KafkaConsumer<String, byte[]> consumer = openConsumer("transactions.flagged")) {
             consumer.poll(Duration.ofMillis(300));
@@ -171,7 +193,7 @@ class TransactionIntegrationTest {
 
         UUID kafkaTxId = UUID.randomUUID();
         TransactionEventProto.TransactionEvent event = buildEvent(kafkaTxId, customerId, "MERCH_B",
-                new BigDecimal("75.00"), TransactionType.CARD_NOT_PRESENT);
+                new BigDecimal("75.00"), "RETAIL", TransactionType.CARD_NOT_PRESENT);
         testTemplate.send(rawTopic, customerId, event);
 
         await().atMost(10, TimeUnit.SECONDS).until(() ->
@@ -196,7 +218,7 @@ class TransactionIntegrationTest {
 
     private TransactionEventProto.TransactionEvent buildEvent(UUID id, String customerId,
                                                                String merchantId, BigDecimal amount,
-                                                               TransactionType type) {
+                                                               String category, TransactionType type) {
         TransactionEventProto.TransactionType protoType = switch (type) {
             case CARD_PRESENT  -> TransactionEventProto.TransactionType.CARD_PRESENT;
             case CONTACTLESS   -> TransactionEventProto.TransactionType.CONTACTLESS;
@@ -211,6 +233,7 @@ class TransactionIntegrationTest {
                 .setMerchantId(merchantId)
                 .setAmount(amount.toPlainString())
                 .setCurrency("GBP")
+                .setCategory(category)
                 .setTransactionType(protoType)
                 .setTimestamp(com.google.protobuf.Timestamp.newBuilder()
                         .setSeconds(now.getEpochSecond())

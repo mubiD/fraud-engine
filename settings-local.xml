@@ -7,7 +7,8 @@
   from outside the corporate network. This file restores the real Maven Central
   so that a local build can resolve all dependencies directly.
 
-  Used automatically by: ./scripts/deploy.sh
+  Not wired into ./scripts/deploy.sh automatically — pass it explicitly if your
+  ~/.m2/settings.xml redirects Maven Central: mvn -s settings-local.xml package ...
   Not committed as the default settings — developers inside the Acme network
   should continue to use their ~/.m2/settings.xml.
 -->

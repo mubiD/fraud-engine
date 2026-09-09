@@ -651,11 +651,23 @@ Coverage per controller:
 make test-integration
 ```
 
+Requires the `confluent` Maven profile (`make test-integration` already passes it) — this test
+produces real Confluent Protobuf `TransactionEvent` messages, and `KafkaProtobufDeserializer`
+is only on the classpath under that opt-in profile (see the "Running Locally" prerequisites
+above for why it's opt-in). Running `mvn test -Dtest="**/integration/**"` directly without
+`-Pconfluent` fails with `ClassNotFoundException`, not a real bug. Also needs a real Docker
+daemon reachable from Maven — on Windows with a non-Docker-Desktop engine (e.g. Rancher Desktop
+on Docker Engine 29+), Testcontainers 1.x may fail with "Could not find a valid Docker
+environment" / "client version 1.32 is too old" unless `src/test/resources/docker-java.properties`
+pins a compatible API version (already committed).
+
 Spins up real PostgreSQL and Kafka containers. Tests the full pipeline end-to-end:
 
 - Transaction published to `transactions.raw` → consumed → rule engine → assessment persisted
 - Clean transaction published to `transactions.passed`
-- High-amount transaction published to `transactions.flagged`
+- High-risk-category transaction (`WIRE_TRANSFER`) published to `transactions.flagged` — not a
+  high amount alone, which no longer flags by itself under the log-odds scoring model (see
+  "Risk scoring" above); `HIGH_RISK_MERCHANT_CATEGORY` is calibrated as standalone-sufficient
 - Query API: customer transactions returning `PENDING` and `ASSESSED` statuses
 - 404 on assessment for unknown transaction ID
 

@@ -53,10 +53,15 @@ public class DataSourceConfig {
     @Bean
     @ConfigurationProperties("spring.datasource.hikari")
     public DataSource readerDataSource(DataSourceProperties dataSourceProperties,
-                                       @Value("${fraud.datasource.reader.host}") String readerHost,
-                                       @Value("${DB_PORT:5432}") String dbPort,
-                                       @Value("${DB_NAME:frauddb}") String dbName) {
-        String readerUrl = "jdbc:postgresql://" + readerHost + ":" + dbPort + "/" + dbName;
+                                       @Value("${fraud.datasource.reader.host:}") String replicaHost) {
+        // Blank replicaHost (the common case — no DB_REPLICA_HOST configured) means reuse the
+        // writer's own resolved URL verbatim, whatever it actually is, instead of
+        // reconstructing one from DB_HOST/DB_PORT/DB_NAME — see fraud.datasource.reader.host's
+        // comment in application.yml for why the two can diverge.
+        String writerUrl = dataSourceProperties.getUrl();
+        String readerUrl = replicaHost.isBlank()
+                ? writerUrl
+                : writerUrl.replaceFirst("(?<=://)[^:/]+", replicaHost);
         return dataSourceProperties.initializeDataSourceBuilder()
                 .type(HikariDataSource.class)
                 .url(readerUrl)

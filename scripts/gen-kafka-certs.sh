@@ -23,7 +23,15 @@ BROKERS=("kafka1" "kafka2" "kafka3")
 
 mkdir -p "$CERTS_DIR"
 
-# ── 1. Certificate Authority ────────────────────────────────────────────────
+# On Git Bash/MSYS (Windows), a -subj value like "/C=ZA/ST=.../CN=..." isn't a file path, but
+# MSYS's argv translation can't tell and mangles it into something openssl's DN parser can't
+# read. MSYS2_ARG_CONV_EXCL="/C=" tells MSYS to leave just that one argument (any value
+# starting with "/C=") untouched, while every genuine path argument in the same command
+# (-out/-in/-key/-CA/...) still gets translated normally — unlike MSYS_NO_PATHCONV=1, which
+# disables translation for the whole command and broke every absolute path argument instead
+# (openssl.exe is a native, non-MSYS binary and can't resolve a raw untranslated POSIX path
+# like "/c/Users/.../ca.key"). Found and fixed live 2026-09-08.
+export MSYS2_ARG_CONV_EXCL="/C="
 
 echo "==> Generating CA key and self-signed certificate..."
 openssl genrsa -out "$CERTS_DIR/ca.key" 4096 2>/dev/null
@@ -48,7 +56,13 @@ for broker in "${BROKERS[@]}"; do
     -out "$CERTS_DIR/$broker.csr" \
     -subj "/C=ZA/O=Acme Bank/OU=Fraud Engine/CN=$broker"
 
-  # Sign with CA — add SANs so the cert covers the Docker hostname and localhost
+  # Sign with CA — add SANs so the cert covers the Docker hostname and localhost.
+  # A real temp file, not <(process substitution): the latter passes openssl a
+  # "/proc/<pid>/fd/<n>"-style path, which MSYS's normal path translation also mangles,
+  # the same class of problem as the -subj value above but with no equivalent workaround
+  # (it's not an argument we control the prefix of). Found live 2026-09-08.
+  EXTFILE="$(mktemp)"
+  printf "subjectAltName=DNS:%s,DNS:localhost,IP:127.0.0.1" "$broker" > "$EXTFILE"
   openssl x509 -req \
     -in  "$CERTS_DIR/$broker.csr" \
     -CA  "$CERTS_DIR/ca.crt" \
@@ -56,7 +70,8 @@ for broker in "${BROKERS[@]}"; do
     -CAcreateserial \
     -out "$CERTS_DIR/$broker.crt" \
     -days "$VALIDITY_DAYS" \
-    -extfile <(printf "subjectAltName=DNS:%s,DNS:localhost,IP:127.0.0.1" "$broker")
+    -extfile "$EXTFILE"
+  rm -f "$EXTFILE"
 
   # Package into PKCS12 keystore (private key + signed cert + CA chain)
   openssl pkcs12 -export \
@@ -68,6 +83,16 @@ for broker in "${BROKERS[@]}"; do
     -out    "$CERTS_DIR/$broker.keystore.p12" \
     -passout "pass:$KS_PASS"
 done
+
+# cp-kafka's own SSL setup ("dub ensure") requires KAFKA_SSL_KEYSTORE_FILENAME/
+# KAFKA_SSL_KEYSTORE_CREDENTIALS (a *file* containing the password, referenced by filename
+# relative to /etc/kafka/secrets) once SASL_SSL is in the listener security protocol map —
+# the KAFKA_SSL_KEYSTORE_LOCATION/_PASSWORD vars alone aren't enough to satisfy that
+# pre-flight check ("KAFKA_SSL_KEYSTORE_FILENAME is required", found live 2026-09-08). Same
+# password for every broker's keystore and the shared truststore, so one file each suffices.
+printf '%s' "$KS_PASS" > "$CERTS_DIR/keystore_creds"
+printf '%s' "$KS_PASS" > "$CERTS_DIR/key_creds"
+printf '%s' "$TS_PASS" > "$CERTS_DIR/truststore_creds"
 
 # ── 3. Client truststore ─────────────────────────────────────────────────────
 # Contains only the CA cert — enough for any client to verify broker identity.

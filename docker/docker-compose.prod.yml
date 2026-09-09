@@ -52,7 +52,24 @@ services:
       KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.truststore.p12
       KAFKA_SSL_TRUSTSTORE_TYPE: PKCS12
       KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+      # cp-kafka's own SSL pre-flight check ("dub ensure") requires these filename/credentials
+      # vars once SASL_SSL is in the listener map — the _LOCATION/_PASSWORD vars above aren't
+      # enough on their own ("KAFKA_SSL_KEYSTORE_FILENAME is required", found live
+      # 2026-09-08). Filenames are relative to /etc/kafka/secrets; the credentials files are
+      # written by scripts/gen-kafka-certs.sh alongside the keystores.
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka1.keystore.p12
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds
+      KAFKA_SSL_KEY_CREDENTIALS: key_creds
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.p12
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore_creds
       # SASL — PLAIN over TLS; user_<name> entries declare valid client identities
+      # cp-kafka's "dub ensure" SASL pre-flight check requires KAFKA_OPTS to be non-empty
+      # (an empty string wasn't enough — found live 2026-09-08, one retry after discovering
+      # it's required at all) even though the actual JAAS config here is supplied inline via
+      # KAFKA_LISTENER_NAME_SASL__SSL_PLAIN_SASL_JAAS_CONFIG below, not via a
+      # -Djava.security.auth.login.config file KAFKA_OPTS would normally point at. Any
+      # harmless real JVM flag satisfies it.
+      KAFKA_OPTS: "-Djava.net.preferIPv4Stack=true"
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL__SSL_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL__SSL_PLAIN_SASL_JAAS_CONFIG: >-
@@ -77,6 +94,18 @@ services:
       KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.truststore.p12
       KAFKA_SSL_TRUSTSTORE_TYPE: PKCS12
       KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka2.keystore.p12
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds
+      KAFKA_SSL_KEY_CREDENTIALS: key_creds
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.p12
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore_creds
+      # cp-kafka's "dub ensure" SASL pre-flight check requires KAFKA_OPTS to be non-empty
+      # (an empty string wasn't enough — found live 2026-09-08, one retry after discovering
+      # it's required at all) even though the actual JAAS config here is supplied inline via
+      # KAFKA_LISTENER_NAME_SASL__SSL_PLAIN_SASL_JAAS_CONFIG below, not via a
+      # -Djava.security.auth.login.config file KAFKA_OPTS would normally point at. Any
+      # harmless real JVM flag satisfies it.
+      KAFKA_OPTS: "-Djava.net.preferIPv4Stack=true"
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL__SSL_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL__SSL_PLAIN_SASL_JAAS_CONFIG: >-
@@ -101,6 +130,18 @@ services:
       KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.truststore.p12
       KAFKA_SSL_TRUSTSTORE_TYPE: PKCS12
       KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka3.keystore.p12
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds
+      KAFKA_SSL_KEY_CREDENTIALS: key_creds
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.p12
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore_creds
+      # cp-kafka's "dub ensure" SASL pre-flight check requires KAFKA_OPTS to be non-empty
+      # (an empty string wasn't enough — found live 2026-09-08, one retry after discovering
+      # it's required at all) even though the actual JAAS config here is supplied inline via
+      # KAFKA_LISTENER_NAME_SASL__SSL_PLAIN_SASL_JAAS_CONFIG below, not via a
+      # -Djava.security.auth.login.config file KAFKA_OPTS would normally point at. Any
+      # harmless real JVM flag satisfies it.
+      KAFKA_OPTS: "-Djava.net.preferIPv4Stack=true"
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL__SSL_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL__SSL_PLAIN_SASL_JAAS_CONFIG: >-
@@ -115,18 +156,31 @@ services:
 
   vault:
     container_name: fraud-vault-prod
-    # No VAULT_DEV_ROOT_TOKEN_ID — server mode reads config from /vault/config/
+    # Deliberately no -config flag here. The base image's docker-entrypoint.sh always
+    # prepends `-config="/vault/config"` (the whole mounted directory, not a specific file) to
+    # any `server` command before appending ours — so an explicit
+    # -config=/vault/config/vault-prod.hcl argument made Vault load that same file twice
+    # (once via the directory scan, once via our explicit path) and declare its one listener
+    # stanza twice, double-binding 0.0.0.0:8200 within a single process
+    # ("bind: address already in use", found live 2026-09-08, confirmed by reading the
+    # image's own entrypoint script). The directory only contains vault-prod.hcl, so the
+    # entrypoint's own default -config="/vault/config" is already correct on its own.
+    command: ["server"]
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ""
       VAULT_DEV_LISTEN_ADDRESS: ""
     volumes:
       - ../vault/config:/vault/config:ro
-      - vault_data_prod:/vault/data
+      - vault_data_prod:/vault/file
     cap_add:
       - IPC_LOCK
     healthcheck:
-      # Exit 0 = unsealed, exit 2 = sealed but running — both mean the API is up.
-      test: ["CMD-SHELL", "VAULT_ADDR=http://localhost:8200 vault status; ec=$?; [ $ec -eq 0 ] || [ $ec -eq 2 ]"]
+      # Exit 0 = unsealed, exit 2 = sealed but running — both mean the API is up. $? must be
+      # escaped as $$? — Docker Compose's own ${VAR} interpolation swallows a bare $? before
+      # the string ever reaches the container's shell, turning this into a malformed test
+      # ("sh: 0/2: unknown operand" — never healthy, blocking vault-init indefinitely). Found
+      # live 2026-09-08.
+      test: ["CMD-SHELL", "VAULT_ADDR=http://localhost:8200 vault status; ec=$$?; [ $$ec -eq 0 ] || [ $$ec -eq 2 ]"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -155,6 +209,24 @@ services:
     entrypoint: ["sh", "/vault-init.sh"]
     restart: "no"
 
+  # Mock OIDC/JWKS issuer — verification-only, same rationale as load-test's (see
+  # docker-compose.load-test.yml). Real prod points FRAUD_IDP_URI at Acme's real IdP;
+  # this stands in for it so `make prod` boots and is exercisable outside the corporate
+  # network. Override FRAUD_IDP_URI back to the real issuer for an actual prod deployment.
+  mock-oidc:
+    container_name: fraud-mock-oidc-prod
+    image: ghcr.io/navikt/mock-oauth2-server:latest
+    environment:
+      JSON_CONFIG_PATH: /config.json
+    volumes:
+      - ./mock-oidc/config.json:/config.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/default/.well-known/openid-configuration || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   # ── Application ──────────────────────────────────────────────────────────────
   # Connects to SASL_SSL Kafka listeners and authenticates with Vault via AppRole
   # (role-id + secret-id) instead of the hardcoded root token used in dev mode.
@@ -164,6 +236,8 @@ services:
     depends_on:
       vault-init:
         condition: service_completed_successfully
+      mock-oidc:
+        condition: service_healthy
     ports:
       - "8085:8080"
     volumes:
@@ -176,8 +250,10 @@ services:
       # AppRole credentials output by vault-init on first run (store securely thereafter)
       VAULT_ROLE_ID: ${VAULT_ROLE_ID}
       VAULT_SECRET_ID: ${VAULT_SECRET_ID}
+      VAULT_AUTH_METHOD: APPROLE
       # Clear the dev-mode root token so it cannot be used in prod
       VAULT_TOKEN: ""
+      FRAUD_IDP_URI: http://mock-oidc:8080/default
 
 volumes:
   postgres_data_prod:

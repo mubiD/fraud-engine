@@ -83,6 +83,22 @@ spring:
       host: ${VAULT_HOST:vault}
       port: ${VAULT_PORT:8200}
       token: ${VAULT_TOKEN:dev-root-token}
+      # Env-var-driven here, not overridden in application-prod.yml: spring.config.import:
+      # "optional:vault://" below resolves the Vault connection during early config-data
+      # loading, before profile-specific files are layered in, so an authentication: APPROLE
+      # override placed in application-prod.yml never took effect — found live 2026-09-08 (see
+      # that file's own comment). docker-compose.prod.yml sets VAULT_AUTH_METHOD=APPROLE.
+      authentication: ${VAULT_AUTH_METHOD:TOKEN}
+      # Same early-resolution reasoning as authentication above: app-role.role-id/secret-id
+      # must live here too, not in application-prod.yml, or ClientAuthenticationFactory fails
+      # with "Cannot configure RoleId" before that file's properties are layered in (found
+      # live 2026-09-08, same session as the authentication-method fix). Blank/unset in every
+      # profile except prod, where docker-compose.prod.yml sets VAULT_ROLE_ID/VAULT_SECRET_ID
+      # — harmless no-op for TOKEN authentication, which ignores app-role entirely.
+      app-role:
+        role-id: ${VAULT_ROLE_ID:}
+        secret-id: ${VAULT_SECRET_ID:}
+        app-role-path: approle
       scheme: http
       kv:
         enabled: true
@@ -116,13 +132,17 @@ fraud:
 
   datasource:
     # DataSourceConfig (!standalone only) routes every read-only transaction to a reader
-    # DataSource built from this host, reusing the writer's port/db-name/credentials — see
-    # DataSourceConfig and spring.datasource above. Defaults to DB_HOST, i.e. the same
-    # instance as the writer, so every environment without a real replica configured is a
-    # safe no-op. docker-compose.yml's postgres-replica service is the only place
-    # DB_REPLICA_HOST is actually set to something different today.
+    # DataSource. Blank by default (not DB_HOST) — DataSourceConfig.readerDataSource()
+    # reuses the writer's own resolved spring.datasource.url verbatim when this is blank,
+    # rather than reconstructing a URL from DB_HOST/DB_PORT/DB_NAME independently. That
+    # reconstruction used to silently diverge from the real writer URL whenever
+    # spring.datasource.url was set directly instead of through those three env vars — e.g.
+    # TransactionIntegrationTest's @DynamicPropertySource override (Testcontainers' ephemeral
+    # host/port), which the old DB_HOST-based default never picked up, found live 2026-09-09.
+    # docker-compose.yml's postgres-replica service is the only place DB_REPLICA_HOST is
+    # actually set to something different today.
     reader:
-      host: ${DB_REPLICA_HOST:${DB_HOST:localhost}}
+      host: ${DB_REPLICA_HOST:}
 
   schema-registry:
     url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}

@@ -2,21 +2,18 @@
 #
 # Overrides the base application.yml with:
 #   - Kafka SASL_SSL (PLAIN credentials over TLS)
-#   - Vault AppRole authentication (scoped policy, not root token)
+#
+# Vault AppRole authentication (method + role-id/secret-id) is NOT set here — it lives
+# entirely in the base application.yml, env-var-driven (VAULT_AUTH_METHOD/VAULT_ROLE_ID/
+# VAULT_SECRET_ID, all set by docker-compose.prod.yml). spring.config.import:
+# "optional:vault://" in application.yml resolves the Vault connection during early
+# config-data loading, before this profile-specific file's properties are layered in — any
+# spring.cloud.vault.* override placed here instead never takes effect in time (found live
+# 2026-09-08: first with `authentication: APPROLE` alone, "Cannot create authentication
+# mechanism for TOKEN"; then again with app-role.role-id/secret-id alone, "Cannot configure
+# RoleId" — both silently ignored at the point Vault's own client actually connects).
 
 spring:
-  cloud:
-    vault:
-      # Switch from the dev-mode root token to AppRole (minimum-privilege identity).
-      # VAULT_ROLE_ID and VAULT_SECRET_ID are output by scripts/vault-init.sh on
-      # first run and must be injected as env vars at deployment time.
-      authentication: APPROLE
-      app-role:
-        role-id: ${VAULT_ROLE_ID}
-        secret-id: ${VAULT_SECRET_ID}
-        app-role-path: approle
-      # Inherit host/port/kv settings from base application.yml (vault:8200, secret/).
-
   kafka:
     # Bootstrap via the SASL_SSL listener — overrides the INTERNAL address used in dev/local.
     # Resolved from KAFKA_BOOTSTRAP_SERVERS env var set in docker-compose.prod.yml.

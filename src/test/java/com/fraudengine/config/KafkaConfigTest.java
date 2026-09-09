@@ -4,6 +4,7 @@ import com.fraudengine.consumer.TransactionConsumer;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -24,7 +25,7 @@ class KafkaConfigTest {
 
     @BeforeEach
     void setUp() {
-        config = new KafkaConfig();
+        config = new KafkaConfig(new KafkaProperties());
         ReflectionTestUtils.setField(config, "transactionsRawTopic", "transactions.raw");
         ReflectionTestUtils.setField(config, "transactionsDltTopic", "transactions.raw.DLT");
         ReflectionTestUtils.setField(config, "replicationFactor", 1);

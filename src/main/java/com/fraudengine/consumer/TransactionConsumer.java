@@ -75,7 +75,9 @@ public class TransactionConsumer {
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "kafkaListenerContainerFactory"
     )
-    @Transactional(transactionManager = "chainedKafkaTransactionManager")
+    // Bean name is "transactionManager" (KafkaConfig.chainedKafkaTransactionManager()'s
+    // @Bean("transactionManager")) — not just the method name — see that bean's javadoc for why.
+    @Transactional(transactionManager = "transactionManager")
     public void consume(TransactionEventProto.TransactionEvent event,
                         @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
                         @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,

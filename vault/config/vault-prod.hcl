@@ -15,7 +15,13 @@
 # Acme-managed KMS so the cluster unseals automatically after a restart.
 
 storage "file" {
-  path = "/vault/data"
+  # /vault/file, not /vault/data: the base hashicorp/vault image's entrypoint only
+  # auto-chowns /vault/config, /vault/logs, and /vault/file to the non-root "vault" user it
+  # runs as — an arbitrary custom path like /vault/data is left root-owned on a fresh Docker
+  # volume mount, so Vault's own (unprivileged) process can't write to it
+  # ("mkdir /vault/data/core: permission denied", found live 2026-09-08). Matching the
+  # image's own convention sidesteps needing a chown step of our own.
+  path = "/vault/file"
 }
 
 listener "tcp" {
