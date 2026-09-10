@@ -1,4 +1,4 @@
-# Runtime image only — the JAR is pre-built on the host by deploy.sh before this runs.
+# Runtime image only: the JAR is pre-built on the host by deploy.sh before this runs.
 #
 # Why not a multi-stage Maven build here?
 # The Confluent Schema Registry Maven repository (packages.confluent.io/maven) now
@@ -18,11 +18,11 @@
 FROM amazoncorretto:21-alpine
 WORKDIR /app
 
-# libstdc++ — required by RocksDB's native JNI library (org.rocksdb:rocksdbjni, pulled in via
+# libstdc++: required by RocksDB's native JNI library (org.rocksdb:rocksdbjni, pulled in via
 # kafka-streams' RocksDBStore, com.fraudengine.streams). Alpine's musl-based minimal image
 # doesn't include it by default; without it, every Kafka Streams state-store initialization
 # fails with UnsatisfiedLinkError ("libstdc++.so.6: No such file or directory") and the
-# customer-activity-store topology (VelocityStreamsTopologyConfig) can never come up — found
+# customer-activity-store topology (VelocityStreamsTopologyConfig) can never come up. Found
 # live 2026-09-08. EvaluationContextBuilder's Postgres fallback masks this as a silent
 # performance degradation rather than a startup failure, which is why it went unnoticed:
 # dev/local (the only previously-verified profiles) never activate Kafka Streams at all.

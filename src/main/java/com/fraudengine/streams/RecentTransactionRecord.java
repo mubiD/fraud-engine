@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-// Lightweight projection of Transaction held inside CustomerActivityState — only the
+// Lightweight projection of Transaction held inside CustomerActivityState: only the
 // fields the recentCustomerTransactions-consuming rules actually read (VelocityRule,
 // CrossMerchantVelocityRule, DuplicateTransactionRule, CardCloningRule,
 // MultiChannelAnomalyRule, GeographicAnomalyRule). Deliberately excludes

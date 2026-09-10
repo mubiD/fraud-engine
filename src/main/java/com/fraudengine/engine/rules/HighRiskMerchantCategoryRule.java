@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  * HIGH tier (crypto exchanges, money transfers) is calibrated as standalone-
  * sufficient evidence of fraud. MEDIUM tier (gambling, payday loans) is
  * calibrated as weak evidence that needs a corroborating signal from another
- * rule to cross the fraud threshold — see RuleEngine/ScoringProperties.
+ * rule to cross the fraud threshold. See RuleEngine/ScoringProperties.
  */
 @Component
 @Order(8)

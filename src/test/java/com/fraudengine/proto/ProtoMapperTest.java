@@ -54,7 +54,7 @@ class ProtoMapperTest {
 
     @Test
     void toTransactionEntity_zeroLatLon_treatedAsAbsent() {
-        // proto3 default for double is 0.0 — the Gulf of Guinea is treated as "no coordinates"
+        // proto3 default for double is 0.0, so the Gulf of Guinea is treated as "no coordinates"
         TransactionEventProto.TransactionEvent proto = baseProto()
                 .setLatitude(0.0).setLongitude(0.0).build();
 
@@ -73,6 +73,43 @@ class ProtoMapperTest {
 
         assertThat(tx.getLatitude()).isEqualTo(51.5074);
         assertThat(tx.getLongitude()).isEqualTo(-0.1278);
+    }
+
+    @Test
+    void toTransactionEntity_timestampNeverSet_fallsBackToNow() {
+        // hasTimestamp() is false only when the producer genuinely never set the field:
+        // proto3 message fields track real presence, unlike scalars. baseProto() always
+        // sets it, so build one from scratch without calling setTimestamp(...) at all.
+        TransactionEventProto.TransactionEvent proto = TransactionEventProto.TransactionEvent.newBuilder()
+                .setTransactionId(UUID.randomUUID().toString())
+                .setCustomerId("C")
+                .setMerchantId("M")
+                .setAmount("100.00")
+                .setCurrency("ZAR")
+                .setTransactionType(TransactionEventProto.TransactionType.CARD_NOT_PRESENT)
+                .build();
+        assertThat(proto.hasTimestamp()).isFalse();
+
+        Instant before = Instant.now();
+        Transaction tx = ProtoMapper.toTransactionEntity(proto);
+        Instant after = Instant.now();
+
+        assertThat(tx.getTimestamp()).isBetween(before, after);
+    }
+
+    @Test
+    void toTransactionEntity_timestampExplicitlySetToEpoch_preservedNotTreatedAsMissing() {
+        // Contrast with the fallback above: an explicitly-set epoch (seconds=0, nanos=0) is
+        // real presence (hasTimestamp() true) and must be preserved as-is, not silently
+        // reinterpreted as "now".
+        TransactionEventProto.TransactionEvent proto = baseProto()
+                .setTimestamp(Timestamp.newBuilder().setSeconds(0).setNanos(0).build())
+                .build();
+        assertThat(proto.hasTimestamp()).isTrue();
+
+        Transaction tx = ProtoMapper.toTransactionEntity(proto);
+
+        assertThat(tx.getTimestamp()).isEqualTo(Instant.EPOCH);
     }
 
     @Test

@@ -15,7 +15,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,14 +35,29 @@ class PartitionMaintenanceJobTest {
         job = new PartitionMaintenanceJob();
         ReflectionTestUtils.setField(job, "em", em);
         when(em.createNativeQuery(anyString())).thenReturn(query);
+        when(query.setParameter(anyString(), any())).thenReturn(query);
         when(query.executeUpdate()).thenReturn(0);
+        // Default: the expired partition is still attached, so detach proceeds, matching
+        // the common case (the exists-check test below overrides this for the skip case).
+        when(query.getSingleResult()).thenReturn(Boolean.TRUE);
     }
 
     @Test
-    void run_issuesTwoQueries_createAndDrop() {
+    void run_whenExpiredPartitionAttached_issuesThreeQueries_createExistsCheckAndDetach() {
         job.run();
 
-        verify(em, times(2)).createNativeQuery(anyString());
+        verify(em, times(3)).createNativeQuery(anyString());
+    }
+
+    @Test
+    void run_whenExpiredPartitionAlreadyDetached_skipsDetachQuery() {
+        when(query.getSingleResult()).thenReturn(Boolean.FALSE);
+
+        job.run();
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(em, times(2)).createNativeQuery(sqlCaptor.capture());
+        assertThat(sqlCaptor.getAllValues()).noneMatch(sql -> sql.startsWith("ALTER TABLE"));
     }
 
     @Test
@@ -51,7 +68,7 @@ class PartitionMaintenanceJobTest {
         String expectedName = "transactions_" + expectedTarget.format(FMT);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(em, times(2)).createNativeQuery(sqlCaptor.capture());
+        verify(em, times(3)).createNativeQuery(sqlCaptor.capture());
 
         String createSql = sqlCaptor.getAllValues().stream()
                 .filter(s -> s.startsWith("CREATE"))
@@ -70,7 +87,7 @@ class PartitionMaintenanceJobTest {
         LocalDate next   = target.plusDays(1);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(em, times(2)).createNativeQuery(sqlCaptor.capture());
+        verify(em, times(3)).createNativeQuery(sqlCaptor.capture());
 
         String createSql = sqlCaptor.getAllValues().stream()
                 .filter(s -> s.startsWith("CREATE"))
@@ -81,21 +98,35 @@ class PartitionMaintenanceJobTest {
     }
 
     @Test
-    void dropPartition_targetsCorrectDate_91DaysAgo() {
+    void detachPartition_checksAttachmentForCorrectDate_91DaysAgo() {
         job.run();
 
         LocalDate expectedExpired = LocalDate.now().minusDays(91);
         String expectedName = "transactions_" + expectedExpired.format(FMT);
 
-        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(em, times(2)).createNativeQuery(sqlCaptor.capture());
+        ArgumentCaptor<String> paramCaptor = ArgumentCaptor.forClass(String.class);
+        verify(query).setParameter(eq("partitionName"), paramCaptor.capture());
 
-        String dropSql = sqlCaptor.getAllValues().stream()
-                .filter(s -> s.startsWith("DROP"))
+        assertThat(paramCaptor.getValue()).isEqualTo(expectedName);
+    }
+
+    @Test
+    void detachPartition_issuesAlterTableDetachPartition_notDrop() {
+        job.run();
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(em, times(3)).createNativeQuery(sqlCaptor.capture());
+
+        LocalDate expectedExpired = LocalDate.now().minusDays(91);
+        String expectedName = "transactions_" + expectedExpired.format(FMT);
+
+        String detachSql = sqlCaptor.getAllValues().stream()
+                .filter(s -> s.startsWith("ALTER TABLE"))
                 .findFirst().orElseThrow();
 
-        assertThat(dropSql).contains(expectedName);
-        assertThat(dropSql).contains("DROP TABLE IF EXISTS");
+        assertThat(detachSql).contains("DETACH PARTITION");
+        assertThat(detachSql).contains(expectedName);
+        assertThat(sqlCaptor.getAllValues()).noneMatch(s -> s.contains("DROP TABLE"));
     }
 
     @Test
@@ -103,20 +134,26 @@ class PartitionMaintenanceJobTest {
         job.run();
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(em, times(2)).createNativeQuery(sqlCaptor.capture());
+        verify(em, times(3)).createNativeQuery(sqlCaptor.capture());
 
-        List<String> sqls = sqlCaptor.getAllValues();
-        // Both partition names in the generated SQL should match transactions_YYYYMMDD
-        sqls.forEach(sql -> {
+        // The exists-check query references the partition name only via a bind parameter,
+        // not string-concatenated SQL text, so restrict this literal-text check to the two
+        // queries that do embed the name directly (CREATE, ALTER).
+        List<String> sqlsWithEmbeddedName = sqlCaptor.getAllValues().stream()
+                .filter(sql -> sql.startsWith("CREATE") || sql.startsWith("ALTER"))
+                .toList();
+        assertThat(sqlsWithEmbeddedName).hasSize(2);
+        sqlsWithEmbeddedName.forEach(sql -> {
             String name = sql.replaceAll(".*?(transactions_\\d{8}).*", "$1");
             assertThat(name).matches("transactions_\\d{8}");
         });
     }
 
     @Test
-    void executeUpdate_calledForBothQueries() {
+    void executeUpdate_calledForCreateAndDetach_notForExistsCheck() {
         job.run();
 
+        // exists-check uses getSingleResult(), not executeUpdate(); only CREATE and ALTER do.
         verify(query, times(2)).executeUpdate();
     }
 }

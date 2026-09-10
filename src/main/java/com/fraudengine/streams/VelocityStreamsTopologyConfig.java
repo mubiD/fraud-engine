@@ -19,7 +19,7 @@ import java.time.Duration;
 
 // PRODUCTION ONLY: mirrors KafkaConfig / TransactionConsumer / AssessmentProducer's exact
 // profile scoping. `local` never runs real Kafka ingestion either (TransactionConsumer
-// doesn't activate under it — see application-local.yml), so this topology has no reason
+// doesn't activate under it, see application-local.yml), so this topology has no reason
 // to run there. `standalone` has no Kafka at all.
 //
 // Builds "customer-activity-store": a second, independent consumer group on
@@ -31,7 +31,7 @@ import java.time.Duration;
 //
 // The source Serde is deliberately configured via spring.kafka.streams.properties
 // (default.value.serde = Confluent's protobuf Serde, as a string class name), not a
-// compile-time import — this project keeps Confluent's Schema-Registry-aware classes out
+// compile-time import: this project keeps Confluent's Schema-Registry-aware classes out
 // of the default (non -Pconfluent) build entirely, the same way KafkaConfig's producer/
 // consumer serializers are wired purely through application.yml property strings.
 @Configuration

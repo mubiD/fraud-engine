@@ -1,9 +1,11 @@
 package com.fraudengine.repository;
 
 import com.fraudengine.model.FraudAssessment;
+import com.fraudengine.model.enums.AssessmentOutcome;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -17,6 +19,21 @@ import java.util.UUID;
 public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment, UUID> {
 
     Optional<FraudAssessment> findByTransactionId(UUID transactionId);
+
+    // Atomic, conditional resolution used by AssessmentOutcomeService instead of a
+    // read-then-save check-then-act: the WHERE clause re-verifies outcome = UNRESOLVED at
+    // the database, at write time, so two concurrent PATCHes on the same assessment can no
+    // longer both pass a stale in-memory check and last-write-win each other. Returns the
+    // number of rows updated (0 or 1); 0 means someone else resolved it first.
+    // clearAutomatically = true: this bulk update bypasses the persistence context, so any
+    // already-loaded FraudAssessment instance must not be relied on as still representing
+    // the DB row past this call.
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE FraudAssessment fa SET fa.outcome = :newOutcome
+            WHERE fa.id = :id AND fa.outcome = com.fraudengine.model.enums.AssessmentOutcome.UNRESOLVED
+            """)
+    int resolveOutcomeIfUnresolved(@Param("id") UUID id, @Param("newOutcome") AssessmentOutcome newOutcome);
 
     // Query-API variant of findByTransactionId: eagerly fetches the transaction + rule
     // violations so TransactionMapper can map to a DTO after this method's @Transactional
@@ -35,7 +52,7 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
 
     // LEFT JOIN FETCH on ruleViolations (a to-many collection) combined with Pageable means
     // Hibernate falls back to in-memory pagination for this query (can't LIMIT at the SQL
-    // level with a to-many fetch join) — acceptable at this project's scale (pageSize capped
+    // level with a to-many fetch join), which is acceptable at this project's scale (pageSize capped
     // at 1000). The fetch join is needed so TransactionMapper can map ruleViolations to a DTO
     // after this method's @Transactional scope closes (open-in-view is disabled).
     @Query("""

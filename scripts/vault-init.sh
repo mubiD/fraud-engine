@@ -2,7 +2,7 @@
 # One-time Vault initialisation for the prod environment.
 # Runs as the vault-init service in docker-compose.prod.yml.
 #
-# IDEMPOTENT — safe to run on every compose up:
+# IDEMPOTENT: safe to run on every compose up.
 #   First run  : init → unseal → configure AppRole → seed secrets
 #   Later runs : read saved unseal key → unseal only (if sealed after restart)
 #
@@ -14,7 +14,7 @@
 #   In production, use -key-shares=5 -key-threshold=3 and distribute the five
 #   unseal key shards to separate operator workstations. No single person should
 #   hold a quorum. Alternatively, replace Shamir unseal entirely with Vault's
-#   auto-unseal pointing at the Acme-managed KMS.
+#   auto-unseal pointing at Acme Bank's managed KMS.
 
 set -e
 
@@ -37,12 +37,12 @@ until vault status 2>/dev/null; ret=$?; [ "$ret" -eq 0 ] || [ "$ret" -eq 2 ]; do
 done
 echo "    Vault API is up."
 
-# ── Already initialised — unseal only ────────────────────────────────────────
+# ── Already initialised, unseal only ────────────────────────────────────────
 
 if vault status 2>/dev/null | grep -q "Initialized.*true"; then
   echo "==> Vault already initialised."
   if vault status 2>/dev/null | grep -q "Sealed.*true"; then
-    echo "==> Vault is sealed — unsealing from saved key..."
+    echo "==> Vault is sealed, unsealing from saved key..."
     if [ ! -f "$INIT_FILE" ]; then
       echo "ERROR: Vault is sealed but $INIT_FILE is missing." >&2
       echo "       Provide the unseal key manually: vault operator unseal <key>" >&2
@@ -79,7 +79,7 @@ vault secrets enable -version=2 -path=secret kv 2>/dev/null || \
   echo "    (already enabled)"
 
 # ── Seed fraud-engine secrets ─────────────────────────────────────────────────
-# Placeholder values — replace with real secrets before go-live or supply them
+# Placeholder values: replace with real secrets before go-live or supply them
 # as env vars (DB_PASSWORD, KAFKA_CLIENT_PASSWORD, etc.) injected by the operator.
 
 echo "==> Seeding secret/fraud-rule-engine..."
@@ -97,14 +97,14 @@ echo "==> Enabling AppRole auth method..."
 vault auth enable approle 2>/dev/null || echo "    (already enabled)"
 
 echo "==> Writing fraud-engine policy (read-only access to its own secret path)..."
-# Path must match spring.application.name (application.yml) — Spring Cloud Vault's
+# Path must match spring.application.name (application.yml). Spring Cloud Vault's
 # default KV v2 backend resolves secrets at secret/{spring.application.name} and
 # secret/{spring.application.name}/{profile}, i.e. secret/fraud-rule-engine and
 # secret/fraud-rule-engine/prod, not the shorter "fraud-engine" artifact/container
 # name used elsewhere in this repo. A policy scoped to secret/data/fraud-engine
-# silently 403s every real lookup — found live 2026-09-09 running `make prod`
-# end-to-end (app booted "healthy" regardless, since local-verification-only
-# fallback passwords were in play — the mismatch was invisible until reading logs).
+# silently 403s every real lookup (found live 2026-09-09 running `make prod`
+# end-to-end; the app booted "healthy" regardless, since local-verification-only
+# fallback passwords were in play, so the mismatch was invisible until reading logs).
 vault policy write fraud-engine - <<'POLICY'
 path "secret/data/fraud-rule-engine" {
   capabilities = ["read"]
@@ -138,5 +138,5 @@ echo "│  Export these before starting fraud-engine:                  │"
 echo "│    export VAULT_ROLE_ID=<role-id>                            │"
 echo "│    export VAULT_SECRET_ID=<secret-id>                        │"
 echo "│  Full output saved to: /vault/init/init-output.txt           │"
-echo "│  SECURE that file — it contains the unseal key + root token. │"
+echo "│  SECURE that file: it contains the unseal key + root token.  │"
 echo "└──────────────────────────────────────────────────────────────┘"

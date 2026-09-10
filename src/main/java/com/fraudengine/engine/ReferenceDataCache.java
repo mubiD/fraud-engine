@@ -34,18 +34,18 @@ public class ReferenceDataCache {
         this.cacheManager = cacheManager;
     }
 
-    // Merchant locations change rarely (registered address) — see CacheConfig for TTL.
+    // Merchant locations change rarely (registered address); see CacheConfig for TTL.
     @Cacheable(MERCHANT_LOCATIONS_CACHE)
     public Optional<MerchantLocation> getMerchantLocation(String merchantId) {
         return merchantLocationRepository.findById(merchantId);
     }
 
-    // Eagerly loads every known merchant location into the cache — merchant_locations is
+    // Eagerly loads every known merchant location into the cache. merchant_locations is
     // small, near-static reference data (low thousands of rows at most), so a full table
     // scan is cheap and turns "cache miss blocks on a DB read" into "cache miss only for a
     // merchant added since the last warm-up," a much narrower gap than the unbounded
     // per-lookup DB round trip this replaces. Runs at startup (initialDelay=0) and on the
-    // configured interval thereafter — writes directly into the same Spring Cache instance
+    // configured interval thereafter, writing directly into the same Spring Cache instance
     // @Cacheable reads from, using the same key shape (merchantId -> Optional<MerchantLocation>)
     // a real lookup would have produced, so a warmed entry is indistinguishable from one
     // populated lazily.

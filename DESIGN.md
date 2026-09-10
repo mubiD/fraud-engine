@@ -3,7 +3,7 @@
 **Author:** Mubashir
 **Date:** 2026-08-31
 **Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · Prometheus · OpenTelemetry · Docker · JUnit 5 · Mockito · Testcontainers · k6
-**Status:** Current — describes the production architecture as implemented
+**Status:** Current: describes the production architecture as implemented
 
 ---
 
@@ -27,7 +27,7 @@
 
 This document describes the architecture, design decisions, and trade-offs of the Fraud Rule Engine Service. The system consumes categorised transaction events from Kafka, evaluates them against a configurable set of fraud rules, persists the results, and routes outcomes to dedicated downstream topics for consumption elsewhere (alerting, reporting, model training).
 
-The system is asynchronous and **post-authorisation only** — see [§11](#11-known-drawbacks--production-considerations) for what that means in practice and what it would take to add a real-time, pre-authorisation decision path.
+The system is asynchronous and **post-authorisation only**. See [§11](#11-known-drawbacks--production-considerations) for what that means in practice and what it would take to add a real-time, pre-authorisation decision path.
 
 ---
 
@@ -56,7 +56,7 @@ The system is asynchronous and **post-authorisation only** — see [§11](#11-kn
 └───────────────────────────────┘   └─────────────────────────────┘
 ```
 
-There is no synchronous write path for transaction *ingestion* — Kafka is the only mechanism by which a transaction enters this service. The query API is almost entirely read-only, with one narrow exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record an assessment's real-world ground truth after the fact (§7) — it never accepts a transaction for evaluation, so the ingestion story above is unchanged. The read path (query API) is otherwise entirely separate from the write path (Kafka consumer → rule engine → persistence) and can be scaled, deployed, or queried independently, which is the practical benefit of the CQRS-style split even without a formal CQRS implementation.
+There is no synchronous write path for transaction *ingestion*: Kafka is the only mechanism by which a transaction enters this service. The query API is almost entirely read-only, with one narrow exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record an assessment's real-world ground truth after the fact (§7); it never accepts a transaction for evaluation, so the ingestion story above is unchanged. The read path (query API) is otherwise entirely separate from the write path (Kafka consumer → rule engine → persistence) and can be scaled, deployed, or queried independently, which is the practical benefit of the CQRS-style split even without a formal CQRS implementation.
 
 ---
 
@@ -64,23 +64,23 @@ There is no synchronous write path for transaction *ingestion* — Kafka is the 
 
 ### There is no HTTP submission endpoint
 
-Transactions enter the system exclusively via the `transactions.raw` Kafka topic. `/api/v1/**` exposes query endpoints only (§7) — nothing in it accepts a *transaction* for evaluation. The one exception to "read-only" is `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record an existing assessment's real-world ground truth; it operates on an assessment that already exists, not a new transaction, so it doesn't reopen an HTTP ingestion path.
+Transactions enter the system exclusively via the `transactions.raw` Kafka topic. `/api/v1/**` exposes query endpoints only (§7); nothing in it accepts a *transaction* for evaluation. The one exception to "read-only" is `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record an existing assessment's real-world ground truth; it operates on an assessment that already exists, not a new transaction, so it doesn't reopen an HTTP ingestion path.
 
 ### Decision: Kafka as the only ingress
 
 Whatever upstream system originates a transaction (an authorisation switch, a core banking platform, a payments gateway) publishes directly to `transactions.raw`. This service never sits in that system's request/response path:
 
-- **No coupling to producer throughput or availability** — the producer publishes and moves on; this service's uptime or backlog cannot slow it down.
-- **Durability by construction** — a transaction that reaches the topic is retained regardless of whether this service is up, deploying, or degraded.
+- **No coupling to producer throughput or availability**: the producer publishes and moves on; this service's uptime or backlog cannot slow it down.
+- **Durability by construction**: a transaction that reaches the topic is retained regardless of whether this service is up, deploying, or degraded.
 - **Backpressure absorbed by Kafka**, not by blocking producers.
 
 ### Trade-off
 
-Because ingestion is asynchronous and decoupled, this service cannot return a fraud verdict inline with the transaction — a verdict only exists once the consumer has processed the event and persisted an assessment (`GET /transactions/{id}/assessment`, or a downstream consumer of `transactions.flagged`/`transactions.passed`). This is the correct model for post-authorisation fraud analysis; it is **not** a model that can gate a card authorisation before it completes. See [§11](#11-known-drawbacks--production-considerations).
+Because ingestion is asynchronous and decoupled, this service cannot return a fraud verdict inline with the transaction: a verdict only exists once the consumer has processed the event and persisted an assessment (`GET /transactions/{id}/assessment`, or a downstream consumer of `transactions.flagged`/`transactions.passed`). This is the correct model for post-authorisation fraud analysis; it is **not** a model that can gate a card authorisation before it completes. See [§11](#11-known-drawbacks--production-considerations).
 
 ### `standalone` / `local` profiles: a demo/dev-only synchronous stub
 
-`StandaloneTransactionController` (`POST /api/v1/standalone/submit`, `/stream`) exists purely so the rule engine can be exercised without a full Kafka pipeline — useful for demos and local iteration. It is explicitly a stub: active only under the `standalone` (in-memory H2, no Kafka) and `local` (real Postgres + Kafka, JSON wire format) profiles, and is absent from every other environment. It calls `RuleEngine.evaluate()` synchronously and returns the assessment inline — the opposite of the production ingestion model — to prove the engine *can* run outside Kafka, not to represent how it runs in practice.
+`StandaloneTransactionController` (`POST /api/v1/standalone/submit`, `/stream`) exists purely so the rule engine can be exercised without a full Kafka pipeline, useful for demos and local iteration. It is explicitly a stub: active only under the `standalone` (in-memory H2, no Kafka) and `local` (real Postgres + Kafka, JSON wire format) profiles, and is absent from every other environment. It calls `RuleEngine.evaluate()` synchronously and returns the assessment inline (the opposite of the production ingestion model) to prove the engine *can* run outside Kafka, not to represent how it runs in practice.
 
 ---
 
@@ -402,5 +402,7 @@ Four scenarios against the `load-test` environment (`01-baseline`, `02-ramp`, `0
 | **No read replica** — a Postgres outage takes down both read and write paths. | Addressed at the application layer: `DataSourceConfig` routes every `@Transactional(readOnly = true)` call (all of `TransactionQueryService`, i.e. the entire query API) through a reader `DataSource` via `ReplicationRoutingDataSource` (`AbstractRoutingDataSource` keyed on `TransactionSynchronizationManager.isCurrentTransactionReadOnly()`), separate from the writer the Kafka consumer path uses. `docker-compose.yml`'s `postgres-replica` service stands up real Postgres streaming replication locally (`pg_basebackup`-based, not just a second empty database) for `make dev` to exercise. Still open: this doesn't yet solve the stated problem end-to-end — a *primary* outage still takes down the write path (unchanged, out of scope for a read replica), and prod (`values-prod.yaml`) doesn't yet have `DB_REPLICA_HOST` wired to a real RDS reader endpoint (same externally-supplied-value gap `DB_HOST` already has there). Unverified against a live replication stream in any sandbox here — no Docker daemon reachable — verified instead by `docker compose config` successfully merging/rendering the compose files (structurally correct) and a unit test on the routing logic itself (`ReplicationRoutingDataSourceTest`). |
 | **Single-writer consumer per partition** — Postgres write throughput is the eventual ceiling at very high volume. | Batch inserts / wider pool if it becomes the bottleneck; not yet needed. |
 | **Fail-fast startup on IDP unavailability** — the app refuses to start if it can't fetch JWKS from the configured issuer. | Intentional (fail fast over serving unauthenticated requests), but worth knowing before a deploy that depends on IDP reachability. |
-| **Self-signed CA for `prod`'s Kafka TLS** | `scripts/gen-kafka-certs.sh` issues each broker a cert with a SAN matching its advertised hostname, so `ssl.endpoint.identification.algorithm` is set to Kafka's default `https` and hostname verification is actually enforced — not disabled. The remaining gap is narrower than before: the CA itself is self-signed (script-generated), not issued by a real corporate/public CA; swap in certs from the Acme internal CA before production use, same trust-chain concern as any self-managed CA. |
+| **Self-signed CA for `prod`'s Kafka TLS** | `scripts/gen-kafka-certs.sh` issues each broker a cert with a SAN matching its advertised hostname, so `ssl.endpoint.identification.algorithm` is set to Kafka's default `https` and hostname verification is actually enforced — not disabled. The remaining gap is narrower than before: the CA itself is self-signed (script-generated), not issued by a real corporate/public CA; swap in certs from Acme Bank's internal CA before production use, same trust-chain concern as any self-managed CA. |
 | **No distributed schema-compatibility gate beyond Schema Registry's own enforcement** | Confluent Schema Registry enforces backward/forward compatibility on registration; no additional CI gate on top of it. |
+
+See [docs/future-prospects.md](./docs/future-prospects.md) for features and directions not yet built at all — this table is about gaps in what's already implemented, that document is the broader roadmap (including LLM integration ideas).

@@ -466,7 +466,7 @@ class TransactionQueryControllerTest {
 
     @Test
     void getPassed_withMinRiskScore_passesScoreToService() throws Exception {
-        // /passed is strictly CLEARED-only now — a "near miss" (elevated but not
+        // /passed is strictly CLEARED-only now: a "near miss" (elevated but not
         // flagged) transaction is PENDING_REVIEW, not passed; see the pending-review
         // section below for that scenario. This just exercises the minRiskScore filter
         // on genuinely cleared transactions.

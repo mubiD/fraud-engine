@@ -76,7 +76,7 @@ public class TransactionConsumer {
             containerFactory = "kafkaListenerContainerFactory"
     )
     // Bean name is "transactionManager" (KafkaConfig.chainedKafkaTransactionManager()'s
-    // @Bean("transactionManager")) — not just the method name — see that bean's javadoc for why.
+    // @Bean("transactionManager")), not just the method name. See that bean's javadoc for why.
     @Transactional(transactionManager = "transactionManager")
     public void consume(TransactionEventProto.TransactionEvent event,
                         @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
@@ -102,7 +102,7 @@ public class TransactionConsumer {
                 return;
             }
 
-            // Timing/disposition metrics are recorded inside RuleEngine.evaluate() itself, not here —
+            // Timing/disposition metrics are recorded inside RuleEngine.evaluate() itself, not here:
             // see its javadoc: that keeps this consumer and StandaloneTransactionController reporting
             // the same counters instead of only the Kafka path doing so.
             FraudAssessment assessment = ruleEngine.evaluate(transaction);

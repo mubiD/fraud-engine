@@ -1,6 +1,6 @@
 version: "3.9"
 
-# Base service definitions — overridden per environment via docker-compose.<env>.yml
+# Base service definitions, overridden per environment via docker-compose.<env>.yml
 # Never run this file directly; use the deploy script or:
 #   docker compose -f docker-compose.yml -f docker-compose.<env>.yml up -d
 
@@ -36,10 +36,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # Read replica — DataSourceConfig routes every read-only transaction here instead of the
+  # Read replica: DataSourceConfig routes every read-only transaction here instead of the
   # primary above, once fraud-engine's DB_REPLICA_HOST points at it (see below). Real
-  # streaming replication via pg_basebackup, not just a second empty database — see
-  # postgres-replica-entrypoint.sh. Unverified end-to-end in any sandbox without Docker;
+  # streaming replication via pg_basebackup, not just a second empty database (see
+  # postgres-replica-entrypoint.sh). Unverified end-to-end in any sandbox without Docker;
   # this is standard-pattern scripting, not something that's been run against a live
   # cluster here.
   postgres-replica:

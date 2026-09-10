@@ -12,16 +12,16 @@ import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * LOCAL STUB — active when SPRING_PROFILES_ACTIVE=local.
+ * LOCAL STUB: active when SPRING_PROFILES_ACTIVE=local.
  *
  * Provides two things that the full KafkaConfig.java normally owns but cannot be
  * activated in local builds (Confluent JARs not on classpath):
  *
- * 1. Topic declarations — replication-factor 1 for single-node dev Kafka.
+ * 1. Topic declarations: replication-factor 1 for single-node dev Kafka.
  *    Production (KafkaConfig.java): 6 partitions + 2 replicas for transactions.raw,
  *    sized for throughput and fault tolerance.
  *
- * 2. @Primary JpaTransactionManager — Spring Boot auto-configures a
+ * 2. @Primary JpaTransactionManager: Spring Boot auto-configures a
  *    KafkaTransactionManager alongside the transactional producer factory
  *    (fraud-engine-tx- prefix from application.yml). Marking the JPA manager @Primary
  *    ensures @Transactional in StandaloneTransactionController uses JPA, not Kafka.

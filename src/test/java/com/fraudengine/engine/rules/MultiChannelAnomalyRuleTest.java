@@ -93,7 +93,7 @@ class MultiChannelAnomalyRuleTest {
     @Test
     void channelSwitch_outsideWindow_passes() {
         Instant now = Instant.now();
-        // Prior physical transaction is 10 minutes ago — outside the 5-minute window
+        // Prior physical transaction is 10 minutes ago, outside the 5-minute window
         assertThat(rule.evaluate(
                 tx(TransactionType.CARD_NOT_PRESENT, now),
                 ctx(List.of(tx(TransactionType.CARD_PRESENT, now.minus(10, ChronoUnit.MINUTES)))))

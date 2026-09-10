@@ -16,7 +16,7 @@ import java.time.temporal.ChronoUnit;
 /**
  * Flags rapid channel-switching between physical (CARD_PRESENT, CONTACTLESS, ATM)
  * and card-not-present transactions within a short window. A legitimate customer
- * cannot tap in-store and simultaneously transact online from a different location —
+ * cannot tap in-store and simultaneously transact online from a different location;
  * this pattern suggests a second actor has obtained the card details.
  */
 @Component

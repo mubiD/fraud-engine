@@ -1,5 +1,7 @@
 # Fraud Rule Engine
 
+> New here? [TLDR.md](./TLDR.md) is the 2-minute version: what this is, how to run it, and what it deliberately is/isn't.
+
 A production-grade backend service that consumes transaction events from Kafka, evaluates them against a configurable set of fraud detection rules, persists assessments to PostgreSQL, and routes outcomes to dedicated downstream topics.
 
 **Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · OpenTelemetry · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers · k6
@@ -8,7 +10,7 @@ A production-grade backend service that consumes transaction events from Kafka, 
 
 ## Architecture
 
-See [DESIGN.md](./DESIGN.md) for the full system design document covering all architectural decisions, trade-offs, and extensibility considerations.
+See [DESIGN.md](./DESIGN.md) for the full system design document covering all architectural decisions, trade-offs, and extensibility considerations. See [docs/future-prospects.md](./docs/future-prospects.md) for features and directions not yet built.
 
 ```
 External System
@@ -82,7 +84,7 @@ Query API (read-only, with one write exception — see below)
 
 ## Running Locally
 
-Prerequisites: **Docker**, plus a local **JDK 21** and **Maven** (`mvn` on `PATH`). No Kafka installation required — that runs inside containers. The JAR is built on the host, not inside the image (`scripts/deploy.sh`) — see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
+Prerequisites: **Docker**, plus a local **JDK 21** and **Maven** (`mvn` on `PATH`). No Kafka installation required, since that runs inside containers. The JAR is built on the host, not inside the image (`scripts/deploy.sh`); see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
 
 Each environment is fully self-contained: its own app instance, Postgres database, Kafka cluster, and observability stack, all on separate host ports so multiple environments can run simultaneously.
 
@@ -98,7 +100,7 @@ Each environment is fully self-contained: its own app instance, Postgres databas
 | Instana agent | — | — | — |
 | Prometheus | 9090 | — | — |
 
-> Schema Registry, Vault, and Prometheus host-port mappings are only exposed in the `dev` environment; in other environments they're accessible within the Docker network. The Instana agent row is intentionally all dashes — tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only; none of the `docker-compose*.yml` files run one, so locally (any environment, including `dev`) the app finds no tracing backend and drops spans gracefully.
+> Schema Registry, Vault, and Prometheus host-port mappings are only exposed in the `dev` environment; in other environments they're accessible within the Docker network. The Instana agent row is intentionally all dashes: tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only, and none of the `docker-compose*.yml` files run one, so locally (any environment, including `dev`) the app finds no tracing backend and drops spans gracefully.
 
 ### Start an environment
 
@@ -113,7 +115,7 @@ Each command:
 2. Starts Postgres and waits until healthy
 3. Starts the 3-broker Kafka cluster and waits until healthy
 4. Starts Schema Registry and waits until healthy
-5. Starts Vault — dev mode, pre-unsealed, for `dev`/`load-test`; `prod`'s compose override replaces this with a server-mode Vault + one-shot `vault-init` AppRole flow (`VAULT_ROLE_ID`/`VAULT_SECRET_ID` printed on first run) instead
+5. Starts Vault in dev mode, pre-unsealed, for `dev`/`load-test`; `prod`'s compose override replaces this with a server-mode Vault + one-shot `vault-init` AppRole flow (`VAULT_ROLE_ID`/`VAULT_SECRET_ID` printed on first run) instead
 6. Starts the fraud-engine (Flyway runs migrations on boot)
 7. Polls `/actuator/health` until the app is ready
 
@@ -121,7 +123,7 @@ Postgres data volumes are named per environment and persist across restarts.
 
 ### Try it out (`dev` only)
 
-`make dev` runs the app under the `local` Spring profile, which disables the Kafka consumer and activates a synchronous HTTP stub instead (`StandaloneTransactionController`) — it's the only way to feed transactions into a locally-run environment without producing raw Protobuf to Kafka yourself. Not present in `load-test`/`prod`, where the real Kafka pipeline is the only ingress (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
+`make dev` runs the app under the `local` Spring profile, which disables the Kafka consumer and activates a synchronous HTTP stub instead (`StandaloneTransactionController`). It's the only way to feed transactions into a locally-run environment without producing raw Protobuf to Kafka yourself. Not present in `load-test`/`prod`, where the real Kafka pipeline is the only ingress (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
 
 ```bash
 # Submit one transaction and see the assessment inline
@@ -155,7 +157,7 @@ make ps
 
 ## API Reference
 
-> In `load-test`/`prod` there is no HTTP submission endpoint — transactions enter exclusively via the `transactions.raw` Kafka topic, and the API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `dev`/`standalone` are the exception to that: `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under those two profiles — see "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
+> In `load-test`/`prod` there is no HTTP submission endpoint: transactions enter exclusively via the `transactions.raw` Kafka topic, and the API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `dev`/`standalone` are the exception to that: `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under those two profiles. See "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
 
 All paginated endpoints return a consistent envelope:
 
@@ -246,12 +248,12 @@ PATCH /api/v1/transactions/{transactionId}/outcome
 
 Lets a fraud analyst record whether a flagged (or cleared) transaction turned out to
 actually be fraud or a false positive, once reviewed. This is the ground-truth feedback
-the scoring model's likelihood ratios will eventually be calibrated against — see
+the scoring model's likelihood ratios will eventually be calibrated against, see
 `ScoringProperties` and `DESIGN.md` §5.
 
 Outcomes are a **one-time disposition**: an assessment starts as `UNRESOLVED` and can be
 set to `CONFIRMED_FRAUD` or `FALSE_POSITIVE` exactly once. A second attempt to update an
-already-resolved assessment is rejected — outcomes aren't correctable through this
+already-resolved assessment is rejected: outcomes aren't correctable through this
 endpoint once set.
 
 Request body:
@@ -268,7 +270,7 @@ curl -X PATCH http://localhost:8081/api/v1/transactions/550e8400-e29b-41d4-a716-
 | Status | Meaning |
 |---|---|
 | `200 OK` | Outcome recorded; returns the updated assessment |
-| `400 Bad Request` | Missing/invalid `outcome` value (must be `CONFIRMED_FRAUD` or `FALSE_POSITIVE` — `UNRESOLVED` cannot be set manually) |
+| `400 Bad Request` | Missing/invalid `outcome` value (must be `CONFIRMED_FRAUD` or `FALSE_POSITIVE`; `UNRESOLVED` cannot be set manually) |
 | `404 Not Found` | No assessment exists for this transaction |
 | `409 Conflict` | The assessment already has a resolved outcome |
 
@@ -286,7 +288,7 @@ GET /api/v1/transactions/flagged
 | `customerId` | string | no | Narrow to a specific customer |
 | `ruleViolated` | string | no | Narrow to assessments where this rule fired (e.g. `VelocityRule`) |
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
-| `maxRiskScore` | int | no | Upper bound on risk score (inclusive). Combine with `minRiskScore` to query a band — e.g. `50–65` isolates low-confidence fraud for false-positive review |
+| `maxRiskScore` | int | no | Upper bound on risk score (inclusive). Combine with `minRiskScore` to query a band, e.g. `50–65` isolates low-confidence fraud for false-positive review |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
 | `cursor` | ISO-8601 | no | Pagination cursor |
 | `pageSize` | int 1–1000 | no | Default 20 |
@@ -308,7 +310,7 @@ curl "http://localhost:8081/api/v1/transactions/flagged?customerId=CUST-001&rule
 GET /api/v1/transactions/pending-review
 ```
 
-The elevated-but-not-confident band — corroborating weak signals (e.g. an off-hours
+The elevated-but-not-confident band: corroborating weak signals (e.g. an off-hours
 transaction that also fired a second weak rule) that don't cross the `FLAGGED`
 threshold on their own, but are no longer silently treated the same as a clean
 transaction either. Same filter set as `/flagged`; work this queue via
@@ -338,7 +340,7 @@ GET /api/v1/transactions/passed
 | Param | Type | Required | Description |
 |---|---|---|---|
 | `customerId` | string | no | Narrow to a specific customer |
-| `minRiskScore` | int | no | Lower bound on risk score (inclusive) — cleared transactions are always low-scoring by construction, but this still lets you sort within that band |
+| `minRiskScore` | int | no | Lower bound on risk score (inclusive); cleared transactions are always low-scoring by construction, but this still lets you sort within that band |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
 | `cursor` | ISO-8601 | no | Pagination cursor |
 | `pageSize` | int 1–1000 | no | Default 20 |
@@ -358,7 +360,7 @@ curl "http://localhost:8081/api/v1/transactions/passed?customerId=CUST-001&from=
 GET /api/v1/rules
 ```
 
-Returns all rules ordered by priority, each with its name, version, enabled status, priority, and **live configuration parameters**. Config reflects the values currently active in the running instance — useful for verifying deployments and debugging why a transaction was or was not flagged.
+Returns all rules ordered by priority, each with its name, version, enabled status, priority, and **live configuration parameters**. Config reflects the values currently active in the running instance, useful for verifying deployments and debugging why a transaction was or was not flagged.
 
 ```bash
 curl http://localhost:8081/api/v1/rules
@@ -387,7 +389,7 @@ Response `200 OK` (excerpt):
 ]
 ```
 
-Rule configuration changes require redeployment — there is no runtime PATCH endpoint.
+Rule configuration changes require redeployment; there is no runtime PATCH endpoint.
 
 ---
 
@@ -535,22 +537,22 @@ Response `200 OK`:
 
 | Rule | Trigger | Severity | Priority |
 |---|---|---|---|
-| `AMOUNT_THRESHOLD` | Amount exceeds threshold — default R5,000, with configurable per-category overrides (e.g. RETAIL R15,000, GROCERY R3,000) | HIGH | 1 |
+| `AMOUNT_THRESHOLD` | Amount exceeds threshold (default R5,000, with configurable per-category overrides, e.g. RETAIL R15,000, GROCERY R3,000) | HIGH | 1 |
 | `VELOCITY` | > 5 transactions in 10 minutes for same customer. Boosted to CRITICAL when the merchant category is high-risk (crypto, money-transfer, wire-transfer). | HIGH → CRITICAL | 2 |
-| `DUPLICATE_TRANSACTION` | Same merchant + same amount + same currency within window — **120 s** for CARD_PRESENT / CONTACTLESS / ATM, **300 s** for CARD_NOT_PRESENT. | CRITICAL | 3 |
+| `DUPLICATE_TRANSACTION` | Same merchant + same amount + same currency within window: **120 s** for CARD_PRESENT / CONTACTLESS / ATM, **300 s** for CARD_NOT_PRESENT. | CRITICAL | 3 |
 | `GEOGRAPHIC_ANOMALY` | Implied travel speed between two consecutive physical locations exceeds 900 km/h. Skipped when transactions are < 1 minute apart (clock-skew guard). Falls back to merchant registered location when the transaction carries no coordinates. | CRITICAL | 5 |
-| `CARD_CLONING` | Same transaction amount charged to 2+ different merchants within 10 minutes — hallmark of automated card testing with a cloned card. | MEDIUM | 6 |
+| `CARD_CLONING` | Same transaction amount charged to 2+ different merchants within 10 minutes, a hallmark of automated card testing with a cloned card. | MEDIUM | 6 |
 | `TIME_OF_DAY_ANOMALY` | Transaction occurs in the off-hours window (default 23:00–05:00 UTC). | MEDIUM | 7 |
 | `HIGH_RISK_MERCHANT_CATEGORY` | Merchant category is crypto/money-transfer/wire-transfer (HIGH) or gambling/casino/payday-loan (MEDIUM). | HIGH / MEDIUM | 8 |
 | `DEVICE_FINGERPRINT` | Transaction arrives from a device fingerprint the customer has never used before (within the lookback window). Skipped when no fingerprint is supplied or the customer has no prior fingerprinted history. | HIGH | 9 |
 | `MULTI_CHANNEL_ANOMALY` | A physical-channel transaction (CARD_PRESENT, CONTACTLESS, ATM) and an online transaction (CARD_NOT_PRESENT) occur within 5 minutes of each other for the same customer. | MEDIUM | 10 |
-| `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes — provides an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
+| `CROSS_MERCHANT_VELOCITY` | ≥ 10 total transactions across any merchants within 10 minutes, providing an additional MEDIUM data point before the HIGH velocity rule threshold is reached. | MEDIUM | 11 |
 | `CUMULATIVE_SPENDING` | Rolling spend exceeds the hourly limit (default R10,000) or daily limit (default R25,000). Hourly is computed from in-context recent transactions; daily is a pre-aggregated DB query. | HIGH | 12 |
 | `CUSTOMER_AMOUNT_ANOMALY` | Amount exceeds `stddev-multiplier` (default 3.0) standard deviations above this specific customer's own historical mean, computed over a 90-day lookback (default `min-history-count` 5 prior transactions required). | MEDIUM | 13 |
 
-> Priority 4 (`BLACKLISTED_MERCHANT`) was removed entirely — see DESIGN.md §5 for why a strictly post-authorisation system gets limited value from a pure blacklist-match rule.
+> Priority 4 (`BLACKLISTED_MERCHANT`) was removed entirely. See DESIGN.md §5 for why a strictly post-authorisation system gets limited value from a pure blacklist-match rule.
 
-**Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points — each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100). The verdict is a **three-way disposition**, not a binary flag, driven by two thresholds: `fraud.scoring.fraud-probability-threshold` (default 0.5) and below it, `fraud.scoring.review-probability-threshold` (default 0.10).
+**Risk scoring:** Rules are combined with a log-odds (naive-Bayes) model rather than summed points. Each fired rule carries a calibrated likelihood ratio (how much more likely fraud is, given that rule fired, versus not), keyed by rule name **and** severity so rules whose severity varies at runtime (e.g. `VelocityRule`'s high-risk-category escalation) are calibrated per variant. The posterior fraud probability is the sigmoid of the prior log-odds plus the sum of each violation's log-likelihood-ratio; `riskScore` is that probability × 100 (0–100). The verdict is a **three-way disposition**, not a binary flag, driven by two thresholds: `fraud.scoring.fraud-probability-threshold` (default 0.5) and below it, `fraud.scoring.review-probability-threshold` (default 0.10).
 
 | `disposition` | When |
 |---|---|
@@ -558,9 +560,9 @@ Response `200 OK`:
 | `PENDING_REVIEW` | probability ≥ `review-probability-threshold`, below `fraud-probability-threshold` |
 | `CLEARED` | probability below `review-probability-threshold` |
 
-This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would — some rules (`GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be `FLAGGED` on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the `FLAGGED` threshold. Two transactions that fired only a weak rule each land in `PENDING_REVIEW` instead of being silently treated the same as a clean transaction — that band is exactly what `GET /transactions/pending-review` (§ API Reference) surfaces for an analyst to work.
+This deliberately does **not** treat "one strong signal" and "several weak, possibly-correlated signals" as equivalent the way a flat point sum would. Some rules (`GEOGRAPHIC_ANOMALY`, `DUPLICATE_TRANSACTION`, boosted `VELOCITY`, `DEVICE_FINGERPRINT`, `CUMULATIVE_SPENDING`, high-risk-category `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated to be `FLAGGED` on their own; others (`AMOUNT_THRESHOLD`, `CARD_CLONING`, `TIME_OF_DAY_ANOMALY`, `MULTI_CHANNEL_ANOMALY`, `CROSS_MERCHANT_VELOCITY`, `CUSTOMER_AMOUNT_ANOMALY`, gambling-tier `HIGH_RISK_MERCHANT_CATEGORY`) are calibrated as weak evidence that needs a second, independent corroborating signal to cross the `FLAGGED` threshold. Two transactions that fired only a weak rule each land in `PENDING_REVIEW` instead of being silently treated the same as a clean transaction; that band is exactly what `GET /transactions/pending-review` (§ API Reference) surfaces for an analyst to work.
 
-The likelihood ratios in `ScoringProperties` are domain-judgment starting points, not values derived from labelled outcome data — this system doesn't yet have a confirmed-fraud / false-positive feedback loop to calibrate against, so treat them as a reasoned first pass rather than ground truth.
+The likelihood ratios in `ScoringProperties` are domain-judgment starting points, not values derived from labelled outcome data. This system doesn't yet have a confirmed-fraud / false-positive feedback loop to calibrate against, so treat them as a reasoned first pass rather than ground truth.
 
 ---
 
@@ -589,7 +591,7 @@ The DB write and Kafka publish are atomic via `ChainedKafkaTransactionManager`:
 4. Outcome event published to `transactions.flagged`, `transactions.pending-review`, or `transactions.passed`
 5. DB TX commits; Kafka TX commits
 
-If the DB commit fails, the Kafka TX aborts — no message is published, and the consumer retries cleanly.
+If the DB commit fails, the Kafka TX aborts: no message is published, and the consumer retries cleanly.
 If the Kafka commit fails after the DB commit, the consumer retries; the idempotency guard (`findByIdOnly`) skips the re-save and re-publishes the event.
 
 Consumer uses `isolation.level=read_committed` so downstream readers only see committed messages.
@@ -604,11 +606,11 @@ Consumer uses `isolation.level=read_committed` so downstream readers only see co
 make test-unit
 ```
 
-Each rule is tested in isolation with zero Spring context — fast and deterministic. Covers category-tiered thresholds, type-aware duplicate windows, geographic speed edge cases, merchant-location fallback, off-hours wrap-around, device fingerprint unknown/known paths, multi-channel switching, cross-merchant velocity boundaries, and hourly/daily spend limits.
+Each rule is tested in isolation with zero Spring context, fast and deterministic. Covers category-tiered thresholds, type-aware duplicate windows, geographic speed edge cases, merchant-location fallback, off-hours wrap-around, device fingerprint unknown/known paths, multi-channel switching, cross-merchant velocity boundaries, and hourly/daily spend limits.
 
 ### REST controller tests
 
-`@WebMvcTest` slices — Spring MVC wiring with Mockito-backed service/mapper dependencies. No database or Kafka required. Each controller class has its own test class:
+`@WebMvcTest` slices: Spring MVC wiring with Mockito-backed service/mapper dependencies. No database or Kafka required. Each controller class has its own test class:
 
 | Test class | Controller | Tests |
 |---|---|---|
@@ -622,29 +624,29 @@ Each rule is tested in isolation with zero Spring context — fast and determini
 
 Coverage per controller:
 
-**`GET /transactions`** — paginated results, cursor passthrough, date range parsing, `pageSize` min/max validation, malformed timestamp → 400
+**`GET /transactions`**: paginated results, cursor passthrough, date range parsing, `pageSize` min/max validation, malformed timestamp → 400
 
-**`GET /transactions/{id}`** — found → 200 with DTO, not found → 404, invalid UUID → 400
+**`GET /transactions/{id}`**: found → 200 with DTO, not found → 404, invalid UUID → 400
 
-**`GET /transactions/{id}/assessment`** — found → 200, not found → 404, invalid UUID → 400
+**`GET /transactions/{id}/assessment`**: found → 200, not found → 404, invalid UUID → 400
 
-**`GET /transactions/flagged`** — no filters, per-filter isolation (customerId, ruleViolated, minRiskScore, maxRiskScore, date range), combined risk score band, `pageSize` validation
+**`GET /transactions/flagged`**: no filters, per-filter isolation (customerId, ruleViolated, minRiskScore, maxRiskScore, date range), combined risk score band, `pageSize` validation
 
-**`GET /transactions/pending-review`** — no filters, customerId passthrough, combined risk score band, date range, `pageSize`/sort validation
+**`GET /transactions/pending-review`**: no filters, customerId passthrough, combined risk score band, date range, `pageSize`/sort validation
 
-**`GET /transactions/passed`** — no filters, cursor passthrough, customerId + date range, `minRiskScore` filter
+**`GET /transactions/passed`**: no filters, cursor passthrough, customerId + date range, `minRiskScore` filter
 
-**`GET /merchants/{id}/flagged`** — no filters, date range, ruleViolated, minRiskScore, combined ruleViolated + minRiskScore, next-cursor set when `hasMore=true`, `pageSize` validation, malformed date → 400
+**`GET /merchants/{id}/flagged`**: no filters, date range, ruleViolated, minRiskScore, combined ruleViolated + minRiskScore, next-cursor set when `hasMore=true`, `pageSize` validation, malformed date → 400
 
-**`GET /merchants/{id}/risk-summary`** — no since, with since (verifies Instant passed to service), malformed since → 400
+**`GET /merchants/{id}/risk-summary`**: no since, with since (verifies Instant passed to service), malformed since → 400
 
-**`GET /customers/{id}/risk-summary`** — full response shape, with since, malformed since → 400, zeroed summary
+**`GET /customers/{id}/risk-summary`**: full response shape, with since, malformed since → 400, zeroed summary
 
-**`GET /stats/fraud-summary`** — no date range, with date range (verifies Instant passthrough), malformed from → 400, empty breakdown
+**`GET /stats/fraud-summary`**: no date range, with date range (verifies Instant passthrough), malformed from → 400, empty breakdown
 
-**`GET /rules`** — returns all rules, empty list, disabled rule included, `config` map populated
+**`GET /rules`**: returns all rules, empty list, disabled rule included, `config` map populated
 
-**`PATCH /transactions/{id}/outcome`** — 200 on first resolution, 409 on a second attempt, 404 for an unknown transaction, 400 for a missing/invalid `outcome` value
+**`PATCH /transactions/{id}/outcome`**: 200 on first resolution, 409 on a second attempt, 404 for an unknown transaction, 400 for a missing/invalid `outcome` value
 
 ### Integration tests (Testcontainers)
 
@@ -652,12 +654,12 @@ Coverage per controller:
 make test-integration
 ```
 
-Requires the `confluent` Maven profile (`make test-integration` already passes it) — this test
+Requires the `confluent` Maven profile (`make test-integration` already passes it): this test
 produces real Confluent Protobuf `TransactionEvent` messages, and `KafkaProtobufDeserializer`
 is only on the classpath under that opt-in profile (see the "Running Locally" prerequisites
 above for why it's opt-in). Running `mvn test -Dtest="**/integration/**"` directly without
 `-Pconfluent` fails with `ClassNotFoundException`, not a real bug. Also needs a real Docker
-daemon reachable from Maven — on Windows with a non-Docker-Desktop engine (e.g. Rancher Desktop
+daemon reachable from Maven. On Windows with a non-Docker-Desktop engine (e.g. Rancher Desktop
 on Docker Engine 29+), Testcontainers 1.x may fail with "Could not find a valid Docker
 environment" / "client version 1.32 is too old" unless `src/test/resources/docker-java.properties`
 pins a compatible API version (already committed).
@@ -666,7 +668,7 @@ Spins up real PostgreSQL and Kafka containers. Tests the full pipeline end-to-en
 
 - Transaction published to `transactions.raw` → consumed → rule engine → assessment persisted
 - Clean transaction published to `transactions.passed`
-- High-risk-category transaction (`WIRE_TRANSFER`) published to `transactions.flagged` — not a
+- High-risk-category transaction (`WIRE_TRANSFER`) published to `transactions.flagged`, not a
   high amount alone, which no longer flags by itself under the log-odds scoring model (see
   "Risk scoring" above); `HIGH_RISK_MERCHANT_CATEGORY` is calibrated as standalone-sufficient
 - Query API: customer transactions returning `PENDING` and `ASSESSED` statuses
@@ -699,7 +701,7 @@ make grafana
 # or open http://localhost:3000 manually
 ```
 
-The k6 dashboard is pre-provisioned — no login or setup required.
+The k6 dashboard is pre-provisioned, no login or setup required.
 
 ### 3. Run a scenario
 
@@ -809,7 +811,7 @@ fraud:
     default-likelihood-ratio-critical: 120.0
 ```
 
-Startup validation: every rule window measured against `recentCustomerTransactions` (currently `velocity`, `geographic`, `card-cloning`, `device-fingerprint`, `multi-channel`, `cross-merchant-velocity`, and `cumulative-spending`'s hourly window) is checked against `context-lookback-minutes` in one exhaustive map (`RuleProperties.validate()`) — if any exceeds it, the app fails to start with an `IllegalStateException` rather than silently under-counting.
+Startup validation: every rule window measured against `recentCustomerTransactions` (currently `velocity`, `geographic`, `card-cloning`, `device-fingerprint`, `multi-channel`, `cross-merchant-velocity`, and `cumulative-spending`'s hourly window) is checked against `context-lookback-minutes` in one exhaustive map (`RuleProperties.validate()`). If any exceeds it, the app fails to start with an `IllegalStateException` rather than silently under-counting.
 
 ### Environment variables
 
@@ -820,8 +822,8 @@ Startup validation: every rule window measured against `recentCustomerTransactio
 | `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost` / `5432` / `frauddb` | PostgreSQL connection |
 | `DB_USER` / `DB_PASSWORD` | `fraud` / `fraud` | PostgreSQL credentials |
 | `VAULT_HOST` / `VAULT_TOKEN` | `vault` / `dev-root-token` | HashiCorp Vault |
-| `FRAUD_IDP_URI` | `https://idp.acmebank.example/oauth2/default` | JWT issuer — JWKS fetched from `{issuer}/.well-known/openid-configuration` at startup |
-| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | `http://localhost:4317` | OTel GRPC endpoint (Instana agent in K8s, unset locally — spans dropped gracefully) |
+| `FRAUD_IDP_URI` | `https://idp.acmebank.example/oauth2/default` | JWT issuer; JWKS fetched from `{issuer}/.well-known/openid-configuration` at startup |
+| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | `http://localhost:4317` | OTel GRPC endpoint (Instana agent in K8s, unset locally, spans dropped gracefully) |
 
 ---
 
@@ -837,11 +839,11 @@ Security is profile-gated so local development and tests require no credentials.
 | `test` | All requests permitted. `@WebMvcTest` tests pass without auth headers. |
 | `load-test`, `prod` | JWT bearer token required on `/api/v1/**`. |
 
-> Note: the `dev` **environment** (`make dev`, `docker-compose.dev.yml`) activates the `local` Spring **profile** — not a profile named `dev` — so it falls in the open bucket above, with no auth required. The `load-test`/`prod` environments each activate their own like-named profile.
+> Note: the `dev` **environment** (`make dev`, `docker-compose.dev.yml`) activates the `local` Spring **profile**, not a profile named `dev`, so it falls in the open bucket above, with no auth required. The `load-test`/`prod` environments each activate their own like-named profile.
 
 ### Authentication
 
-The API uses OAuth2 JWT bearer tokens issued by the Acme IDP. Include the token as a standard `Authorization` header:
+The API uses OAuth2 JWT bearer tokens issued by Acme Bank's IDP. Include the token as a standard `Authorization` header:
 
 ```
 Authorization: Bearer <jwt>
@@ -849,7 +851,7 @@ Authorization: Bearer <jwt>
 
 The IDP base URI is read from `FRAUD_IDP_URI`. At startup the app fetches the JWKS from
 `{idpBaseUri}/.well-known/openid-configuration` and caches the public keys for signature
-validation. If the IDP is unreachable at startup, the app will fail to start — this is
+validation. If the IDP is unreachable at startup, the app will fail to start; this is
 intentional (fail-fast over serving unauthenticated requests).
 
 ### Authorisation
@@ -906,7 +908,7 @@ All Kafka listener invocations and HTTP requests are traced via the Micrometer O
 
 **In Kubernetes** the Instana agent runs as a DaemonSet. Each pod's Helm values file injects `HOST_IP` (the node IP) and sets `MANAGEMENT_OTLP_TRACING_ENDPOINT=http://$(HOST_IP):4317`, pointing the OTLP exporter at the local agent. Traces are visible in the Instana UI with full service dependency maps.
 
-**Locally** `MANAGEMENT_OTLP_TRACING_ENDPOINT` is not set. The app defaults to `http://localhost:4317`, finds nothing, and drops spans silently — all other functionality is unaffected.
+**Locally** `MANAGEMENT_OTLP_TRACING_ENDPOINT` is not set. The app defaults to `http://localhost:4317`, finds nothing, and drops spans silently. All other functionality is unaffected.
 
 ### Structured logging and MDC correlation
 

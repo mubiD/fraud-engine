@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  *
  * The rule is skipped when the current transaction has no device fingerprint,
  * keeping it backwards-compatible with producers that do not yet send the field.
- * It is also skipped when the customer has no prior fingerprinted transactions —
+ * It is also skipped when the customer has no prior fingerprinted transactions:
  * a first-ever transaction cannot be an anomaly.
  */
 @Component
@@ -53,7 +53,7 @@ public class DeviceFingerprintRule implements FraudRule {
                 .map(Transaction::getDeviceFingerprint)
                 .collect(Collectors.toSet());
 
-        // No prior fingerprinted transactions — can't determine anomaly yet
+        // No prior fingerprinted transactions, can't determine anomaly yet
         if (knownFingerprints.isEmpty()) {
             return RuleResult.pass(RULE_NAME);
         }

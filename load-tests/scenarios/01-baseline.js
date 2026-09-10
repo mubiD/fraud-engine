@@ -1,10 +1,10 @@
 /**
- * Scenario 1 — Baseline Throughput
+ * Scenario 1: Baseline Throughput
  *
- * Sustained ~230 TPS for 2 minutes — the daily-average load estimate for a 24M-customer
+ * Sustained ~230 TPS for 2 minutes, the daily-average load estimate for a 24M-customer
  * issuer (24M customers x ~60% active x ~1.5 txns/day / 86,400s ≈ 230 TPS; see
  * ../README.md's "Capacity numbers" section for the full derivation). Produces real
- * Confluent-Protobuf TransactionEvent messages to transactions.raw — the actual production
+ * Confluent-Protobuf TransactionEvent messages to transactions.raw, the actual production
  * ingestion path (TransactionConsumer), not the standalone/local HTTP stub, which isn't even
  * loaded under SPRING_PROFILES_ACTIVE=load-test (StandaloneTransactionController's @Profile).
  * Each iteration produces a transaction then polls for its assessment, establishing the
@@ -26,7 +26,7 @@ import { SCHEMA_TYPE_PROTOBUF } from 'k6/x/kafka';
 // unset falls back to the ~230 TPS daily-average estimate for a 24M-customer issuer.
 const TARGET_TPS = resolveRate(230);
 const DURATION_S = 120;
-// Every iteration here polls (sleep(2) + a real HTTP round-trip) — held for ~2.3s — so VU
+// Every iteration here polls (sleep(2) + a real HTTP round-trip), held for ~2.3s, so VU
 // capacity must scale with TARGET_TPS, not a number sized for one specific rate. Undersizing
 // this caused real "Insufficient VUs" warnings and dropped iterations when first run at 230.
 const VUS_PER_TPS = 2.3;

@@ -69,7 +69,7 @@ class GeographicAnomalyRuleTest {
     @Test
     void noCoordinates_merchantLocationInContext_usedAsFallback_isViolation() {
         Instant now = Instant.now();
-        // Transaction has no coordinates — builder would have resolved merchant location
+        // Transaction has no coordinates. Builder would have resolved merchant location
         Transaction current = Transaction.builder().id(UUID.randomUUID()).customerId("C").merchantId("MERCH_LON")
                 .amount(BigDecimal.TEN).currency("GBP").timestamp(now).build();
         // Prior transaction has explicit coordinates (Cape Town)
@@ -92,7 +92,7 @@ class GeographicAnomalyRuleTest {
                 .amount(BigDecimal.TEN).currency("GBP").timestamp(now).build();
         Transaction prior = tx(-33.9249, 18.4241, now.minus(30, ChronoUnit.MINUTES));
 
-        // No merchant location resolved — context carries nulls (CARD_NOT_PRESENT case)
+        // No merchant location resolved: context carries nulls (CARD_NOT_PRESENT case)
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of(prior))
                 .build();
@@ -107,7 +107,7 @@ class GeographicAnomalyRuleTest {
         Transaction current = tx(40.7128, -74.0060, now);
         Transaction prior = tx(51.5074, -0.1278, now.minus(30, ChronoUnit.MINUTES));
 
-        // Context also has merchant location (London) — transaction coords must win
+        // Context also has merchant location (London), but transaction coords must win
         EvaluationContext ctx = EvaluationContext.builder()
                 .recentCustomerTransactions(List.of(prior))
                 .merchantLatitude(51.5074)

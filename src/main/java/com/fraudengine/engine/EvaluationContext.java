@@ -8,7 +8,7 @@ public class EvaluationContext {
 
     private final List<Transaction> recentCustomerTransactions;
     // Resolved from merchant_locations for physical-channel transactions that carry no coordinates.
-    // Null for CARD_NOT_PRESENT transactions — see EvaluationContextBuilder.
+    // Null for CARD_NOT_PRESENT transactions. See EvaluationContextBuilder.
     private final Double merchantLatitude;
     private final Double merchantLongitude;
     // Pre-computed 24-hour spend total for the customer (excluding current transaction).
@@ -17,7 +17,7 @@ public class EvaluationContext {
     // CustomerAmountAnomalyRule to compute a personal baseline z-score. Bound by
     // fraud.rules.customer-amount-anomaly.lookback-days (default 90), a materially longer
     // and differently-shaped window than recentCustomerTransactions (contextLookbackMinutes,
-    // default 60 minutes) — see EvaluationContextBuilder. AmountBaselineStats.empty() when
+    // default 60 minutes). See EvaluationContextBuilder. AmountBaselineStats.empty() when
     // the rule is disabled.
     private final AmountBaselineStats customerAmountBaseline;
 

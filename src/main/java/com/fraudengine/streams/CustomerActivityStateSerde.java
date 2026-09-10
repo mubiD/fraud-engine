@@ -7,7 +7,7 @@ import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serializer;
 
-// Plain JSON Serde for the "customer-activity-store" value type — not Protobuf/Schema
+// Plain JSON Serde for the "customer-activity-store" value type, not Protobuf/Schema
 // Registry like the external-facing topics (transactions.raw/.flagged/.passed etc).
 // This state is purely internal to this one Kafka Streams app, backing only its own
 // auto-managed changelog topic; it's never a cross-service contract, so it doesn't need

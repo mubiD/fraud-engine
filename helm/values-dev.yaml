@@ -1,5 +1,5 @@
 ##################################################################################
-# fraud-rule-engine — dev
+# fraud-rule-engine: dev
 # NOTE: <ECR_ACCOUNT_ID>, <AWS_REGION>, and vault paths are placeholder values.
 #       Replace with actual coordinates before deploying to a real cluster.
 ##################################################################################
@@ -53,11 +53,11 @@ nodeAffinity:
 vault:
   paths:
     - name: shared
-      # PLACEHOLDER — replace with actual shared secrets path
+      # PLACEHOLDER: replace with actual shared secrets path
       path: fraud-engine/shared/dev
       rolloutTargetsEnabled: false
     - name: service
-      # PLACEHOLDER — replace with actual service secrets path
+      # PLACEHOLDER: replace with actual service secrets path
       path: fraud-engine/service/dev
       rolloutTargetsEnabled: false
   baseMountPath: /vault/secrets
@@ -99,6 +99,6 @@ serviceAccount:
 # Deployment Image
 #---------------------------------------------
 image:
-  # PLACEHOLDER — replace <ECR_ACCOUNT_ID> and <AWS_REGION> with real values
+  # PLACEHOLDER: replace <ECR_ACCOUNT_ID> and <AWS_REGION> with real values
   repository: <ECR_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/fraud-rule-engine
   tag: dev-1.0.0-00000000

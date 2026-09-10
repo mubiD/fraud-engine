@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Spring Kafka's retry-topic publisher preserves the original record's partition index across
  * every retry hop and the final DLT publish by default, and throws if the destination topic
  * doesn't have that many partitions. These tests guard against the partition counts drifting
- * back out of sync with each other — see TransactionConsumer's @RetryableTopic and
+ * back out of sync with each other; see TransactionConsumer's @RetryableTopic and
  * KafkaConfig.transactionsDltTopic() for the full explanation.
  */
 class KafkaConfigTest {

@@ -1,6 +1,6 @@
 # Container Diagram — Fraud Rule Engine
 
-C4 Model, Level 2 (Container). Ships as a single Spring Boot JAR / Docker image — there's no
+C4 Model, Level 2 (Container). Ships as a single Spring Boot JAR / Docker image; there's no
 microservice split. The boxes below are the major internal building blocks, not independently
 deployable units. See "Assumptions".
 
@@ -52,22 +52,22 @@ flowchart TB
   class db db
 ```
 
-Vault isn't shown here — it's a one-time startup config fetch, not owned by any single container
+Vault isn't shown here: it's a one-time startup config fetch, not owned by any single container
 (see `01-context.md`).
 
-- Exactly-once: DB write + Kafka publish share one `ChainedKafkaTransactionManager` transaction — both commit or both roll back.
-- Two idempotency guards, not one: `findByIdOnly` (transaction row) and `findByTransactionId` (assessment) — both must pass to skip a Kafka redelivery.
-- `ReferenceDataCache` is its own bean, not methods on `EvaluationContextBuilder` — Spring's `@Cacheable` proxy skips self-invoked calls.
-- Rule Engine Core is shared by two ingress paths (Kafka consumer in prod, HTTP stub in local/standalone) — same `RuleEngine.evaluate()` call, not duplicated.
-- Kafka Consumer/Producer are `@Profile("!standalone & !local")` — absent entirely outside production.
-- Listener concurrency (6) matches `transactions.raw`'s 6 partitions (customer-keyed) — preserves per-customer ordering while parallelising.
-- Kafka Streams is a second, independent consumer group on `transactions.raw` — not a downstream consumer of the fraud engine's own output. Rule Engine Core reads its state via Interactive Queries instead of live Postgres queries; a `StoreUnavailableException` (store not yet `RUNNING`, or restoring from its changelog) falls back to Postgres for that one evaluation. Absent under `local`/`standalone`, same as the Kafka Consumer/Producer.
+- Exactly-once: DB write + Kafka publish share one `ChainedKafkaTransactionManager` transaction, so both commit or both roll back.
+- Two idempotency guards, not one: `findByIdOnly` (transaction row) and `findByTransactionId` (assessment), and both must pass to skip a Kafka redelivery.
+- `ReferenceDataCache` is its own bean, not methods on `EvaluationContextBuilder`, because Spring's `@Cacheable` proxy skips self-invoked calls.
+- Rule Engine Core is shared by two ingress paths (Kafka consumer in prod, HTTP stub in local/standalone), using the same `RuleEngine.evaluate()` call, not duplicated.
+- Kafka Consumer/Producer are `@Profile("!standalone & !local")`, so they're absent entirely outside production.
+- Listener concurrency (6) matches `transactions.raw`'s 6 partitions (customer-keyed), preserving per-customer ordering while parallelising.
+- Kafka Streams is a second, independent consumer group on `transactions.raw`, not a downstream consumer of the fraud engine's own output. Rule Engine Core reads its state via Interactive Queries instead of live Postgres queries; a `StoreUnavailableException` (store not yet `RUNNING`, or restoring from its changelog) falls back to Postgres for that one evaluation. Absent under `local`/`standalone`, same as the Kafka Consumer/Producer.
 
 ## Assumptions / things to verify
 
-- **Logical containers inside one JAR**, not independently deployable services —
+- **Logical containers inside one JAR**, not independently deployable services:
   `docker-compose.yml` runs a single `fraud-engine` container per environment.
 - **"Query Services" groups three unrelated classes** (`TransactionQueryService`,
-  `AssessmentOutcomeService`, `RuleManagementService`) — same structural role, no shared code.
-- **Partition Maintenance Job talks to `db` via native DDL**, not JPA — kept in the same box as
+  `AssessmentOutcomeService`, `RuleManagementService`) that share a structural role but no code.
+- **Partition Maintenance Job talks to `db` via native DDL**, not JPA. It's kept in the same box as
   everything else for simplicity.

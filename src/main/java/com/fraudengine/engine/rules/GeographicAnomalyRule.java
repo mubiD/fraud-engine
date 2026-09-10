@@ -22,7 +22,7 @@ public class GeographicAnomalyRule implements FraudRule {
 
     private static final double EARTH_RADIUS_KM = 6371.0;
     // Minimum time gap required to perform a speed check.
-    // Transactions < 1 minute apart are ignored — clock skew and batched
+    // Transactions < 1 minute apart are ignored: clock skew and batched
     // submissions can produce identical or near-identical timestamps.
     private static final double MIN_TIME_DIFF_HOURS = 1.0 / 60.0;
 

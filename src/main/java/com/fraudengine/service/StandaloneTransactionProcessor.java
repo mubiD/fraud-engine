@@ -13,10 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 // Persists, evaluates, and marks a single transaction ASSESSED, one Postgres transaction per call.
 // A separate bean (not a private method on StandaloneTransactionController) so @Transactional
 // actually applies when called in a loop from stream(): Spring's proxy only intercepts calls that
-// cross a bean boundary, not same-class ("self-invocation") calls — the same reason
+// cross a bean boundary, not same-class ("self-invocation") calls. Same reason
 // ReferenceDataCache is a separate bean from EvaluationContextBuilder for its @Cacheable methods.
 // Without this, stream() wrapping its whole loop in one @Transactional held a single Postgres
-// transaction open for the entire batch — nothing committed until every iteration finished, and
+// transaction open for the entire batch: nothing committed until every iteration finished, and
 // any single failure (or just running long enough) lost the whole batch with zero partial progress.
 @Service
 @Profile("standalone | local")

@@ -32,7 +32,7 @@ public class CustomerAmountAnomalyRule implements FraudRule {
             return RuleResult.pass(RULE_NAME);
         }
 
-        // All prior amounts identical (e.g. a subscription-only customer) — no meaningful
+        // All prior amounts identical (e.g. a subscription-only customer), so no meaningful
         // z-score can be computed. Known limitation: skip rather than divide by zero.
         if (baseline.stdDev() == 0) {
             return RuleResult.pass(RULE_NAME);

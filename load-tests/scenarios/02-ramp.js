@@ -1,15 +1,15 @@
 /**
- * Scenario 2 — Ramp Load
+ * Scenario 2: Ramp Load
  *
  * Ramps ~100 -> ~1,200 TPS (override the peak with RATE=<n>, e.g.
  * `make k6-run SCENARIO=02-ramp RATE=2000`) over 5 minutes via real Kafka production to
  * transactions.raw. The ~1,200 TPS default is above the ~900-1,000 TPS "typical peak hour"
- * estimate for a 24M-customer issuer (see ../README.md's "Capacity numbers" section) —
+ * estimate for a 24M-customer issuer (see ../README.md's "Capacity numbers" section), and
  * deliberately overshoots the expected peak so the test finds the actual degradation point
  * (Kafka consumer lag growing, assessment latency climbing) relative to that target, not just
  * confirms it copes at exactly the estimated number.
  *
- * Only a sample of iterations poll for their assessment (see POLL_SAMPLE_RATE below) — at
+ * Only a sample of iterations poll for their assessment (see POLL_SAMPLE_RATE below). At
  * 1,200 TPS, holding every iteration open for a multi-second poll would make the load
  * generator itself the bottleneck rather than the system under test. The sample is large
  * enough to be a representative latency trend without that cost.
@@ -42,7 +42,7 @@ const EXPECTED_TOTAL_TRANSACTIONS = Math.round(
   ((STAGE1_TPS + STAGE2_TPS) / 2) * 120 +
   ((STAGE2_TPS + PEAK_TPS) / 2) * 120
 );
-// Only a sample of iterations poll — at peak rate, holding every iteration open for a
+// Only a sample of iterations poll: at peak rate, holding every iteration open for a
 // multi-second poll would make the load generator itself the bottleneck. VU capacity below
 // accounts for the sampled-poll fraction plus near-instant produce-only iterations.
 const VUS_PER_TPS = POLL_SAMPLE_RATE * 2.3 + (1 - POLL_SAMPLE_RATE) * 0.05;

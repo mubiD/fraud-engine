@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Local build settings — used by deploy.sh to bypass the Acme Artifactory mirror.
+  Local build settings, used by deploy.sh to bypass Acme Bank's Artifactory mirror.
 
   The project's standard ~/.m2/settings.xml redirects Maven Central to
   https://internal-artifactory.acmebank.example/artifactory/fraud-engine-maven, which returns 403
   from outside the corporate network. This file restores the real Maven Central
   so that a local build can resolve all dependencies directly.
 
-  Not wired into ./scripts/deploy.sh automatically — pass it explicitly if your
+  Not wired into ./scripts/deploy.sh automatically. Pass it explicitly if your
   ~/.m2/settings.xml redirects Maven Central: mvn -s settings-local.xml package ...
-  Not committed as the default settings — developers inside the Acme network
+  It's also not committed as the default settings, since developers inside Acme Bank's network
   should continue to use their ~/.m2/settings.xml.
 -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0
                               https://maven.apache.org/xsd/settings-1.2.0.xsd">
-  <!-- No active profiles — use the repositories declared in pom.xml directly. -->
+  <!-- No active profiles: use the repositories declared in pom.xml directly. -->
 </settings>

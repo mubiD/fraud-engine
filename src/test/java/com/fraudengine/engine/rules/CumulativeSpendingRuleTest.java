@@ -97,6 +97,35 @@ class CumulativeSpendingRuleTest {
     }
 
     @Test
+    void hourlyHistoryInDifferentCurrency_doesNotCountTowardsHourly() {
+        // A customer transacting in more than one currency must not have those amounts
+        // pooled as equivalent magnitude — found live 2026-09-09 as a real gap.
+        Instant now = Instant.now();
+        List<Transaction> history = buildHistory(9, "5000.00", 5, now).stream()
+                .map(t -> Transaction.builder()
+                        .id(t.getId()).customerId(t.getCustomerId()).merchantId(t.getMerchantId())
+                        .amount(t.getAmount()).currency("USD")
+                        .transactionType(t.getTransactionType()).timestamp(t.getTimestamp()).build())
+                .toList();
+        // 9 * 5000 USD would blow the hourly limit if pooled with a ZAR transaction — must not.
+        assertThat(rule.evaluate(tx("500.00", now), ctx(history, "0.00")).isViolation()).isFalse();
+    }
+
+    @Test
+    void violationMessage_usesTransactionsOwnCurrency_notHardcodedZar() {
+        Instant now = Instant.now();
+        Transaction usdTx = Transaction.builder()
+                .id(UUID.randomUUID()).customerId("CUST_CS").merchantId("MERCH_NEW")
+                .amount(new BigDecimal("200.00")).currency("USD")
+                .transactionType(TransactionType.CARD_PRESENT).timestamp(now).build();
+
+        RuleResult result = rule.evaluate(usdTx, ctx(List.of(), "24900.00"));
+
+        assertThat(result.isViolation()).isTrue();
+        assertThat(result.getDescription()).contains("USD").doesNotContain("ZAR");
+    }
+
+    @Test
     void disabledRule_isNotEnabled() {
         RuleProperties props = new RuleProperties();
         props.getCumulativeSpending().setEnabled(false);

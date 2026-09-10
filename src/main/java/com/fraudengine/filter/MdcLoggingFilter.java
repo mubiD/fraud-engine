@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  * present so read-path logs are traceable to a specific transaction without
  * additional instrumentation.
  *
- * MDC is always cleared in the finally block — downstream filters and
+ * MDC is always cleared in the finally block: downstream filters and
  * controllers must not rely on MDC surviving beyond the current request.
  */
 @Component

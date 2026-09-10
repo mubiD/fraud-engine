@@ -1,23 +1,23 @@
-# Vault server configuration — prod docker-compose environment.
+# Vault server configuration for the prod docker-compose environment.
 #
 # Storage: file backend at /vault/data (Docker volume vault_data_prod).
 # Secrets survive container restarts, unlike dev mode which is purely in-memory.
 #
-# TLS: disabled at the Vault listener level. In the Acme deployment topology,
+# TLS: disabled at the Vault listener level. In Acme Bank's deployment topology,
 # TLS is terminated at the internal load balancer / reverse proxy in front of
 # Vault, and all intra-cluster traffic stays on a private network segment.
 # To terminate TLS at Vault itself, add tls_cert_file and tls_key_file under the
 # listener block and remove tls_disable.
 #
-# Auto-unseal: not configured here (requires an external KMS — AWS KMS, Azure Key
+# Auto-unseal: not configured here (requires an external KMS, e.g. AWS KMS, Azure Key
 # Vault, or GCP CKMS). The vault-init service performs Shamir unseal on startup.
 # For a production deployment, wire in Vault's seal stanza pointing at the
-# Acme-managed KMS so the cluster unseals automatically after a restart.
+# Acme Bank-managed KMS so the cluster unseals automatically after a restart.
 
 storage "file" {
   # /vault/file, not /vault/data: the base hashicorp/vault image's entrypoint only
   # auto-chowns /vault/config, /vault/logs, and /vault/file to the non-root "vault" user it
-  # runs as — an arbitrary custom path like /vault/data is left root-owned on a fresh Docker
+  # runs as; an arbitrary custom path like /vault/data is left root-owned on a fresh Docker
   # volume mount, so Vault's own (unprivileged) process can't write to it
   # ("mkdir /vault/data/core: permission denied", found live 2026-09-08). Matching the
   # image's own convention sidesteps needing a chown step of our own.

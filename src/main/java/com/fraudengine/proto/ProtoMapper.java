@@ -25,7 +25,10 @@ public final class ProtoMapper {
                 // proto3 double defaults to 0.0; treat (0,0) as absent (Gulf of Guinea)
                 .latitude(proto.getLatitude() != 0.0 ? proto.getLatitude() : null)
                 .longitude(proto.getLongitude() != 0.0 ? proto.getLongitude() : null)
-                .timestamp(toInstant(proto.getTimestamp()))
+                // proto3 message fields track real presence (unlike scalars): hasTimestamp()
+                // is false only when the producer genuinely never set it, so this is the one
+                // fallback in this mapper that doesn't need a (0,0)-style value heuristic.
+                .timestamp(proto.hasTimestamp() ? toInstant(proto.getTimestamp()) : Instant.now())
                 .build();
     }
 
@@ -85,7 +88,6 @@ public final class ProtoMapper {
     }
 
     private static Instant toInstant(com.google.protobuf.Timestamp ts) {
-        if (ts == null) return Instant.now();
         return Instant.ofEpochSecond(ts.getSeconds(), ts.getNanos());
     }
 

@@ -55,7 +55,7 @@ class TransactionConsumerTest {
                 ruleEngine, assessmentProducer, metrics);
     }
 
-    // ── consume() — new transaction path ────────────────────────────────────
+    // ── consume(): new transaction path ────────────────────────────────────
 
     @Test
     void consume_newTransaction_persistsThenEvaluatesAndPublishes() {
@@ -122,7 +122,7 @@ class TransactionConsumerTest {
         order.verify(assessmentProducer).publish(tx, assessment);
     }
 
-    // ── consume() — duplicate delivery ──────────────────────────────────────
+    // ── consume(): duplicate delivery ──────────────────────────────────────
 
     @Test
     void consume_alreadyAssessedTransaction_skipsReEvaluationAndRepublish() {
@@ -142,7 +142,7 @@ class TransactionConsumerTest {
     }
 
     // Disposition-counter and evaluation-timer metrics are recorded inside
-    // RuleEngine.evaluate() itself now (see RuleEngineTest), not by this consumer —
+    // RuleEngine.evaluate() itself now (see RuleEngineTest), not by this consumer;
     // ruleEngine is mocked here, so those interactions can't be observed from this
     // test class any more. This keeps the metrics contract identical regardless of
     // which ingress path (this consumer, or StandaloneTransactionController) is active.

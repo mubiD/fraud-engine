@@ -54,14 +54,14 @@ class TimeOfDayAnomalyRuleTest {
 
     @Test
     void windowStartHour_isViolation() {
-        // 23:00 UTC — exactly at window start (inclusive)
+        // 23:00 UTC, exactly at window start (inclusive)
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T23:00:00Z")), emptyContext);
         assertThat(result.isViolation()).isTrue();
     }
 
     @Test
     void windowEndHour_passes() {
-        // 05:00 UTC — exactly at window end (exclusive)
+        // 05:00 UTC, exactly at window end (exclusive)
         RuleResult result = rule.evaluate(tx(Instant.parse("2026-07-15T05:00:00Z")), emptyContext);
         assertThat(result.isViolation()).isFalse();
     }
@@ -80,7 +80,7 @@ class TimeOfDayAnomalyRuleTest {
 
     @Test
     void nonMidnightWrappingWindow_worksCorrectly() {
-        // Window 08:00–12:00 — does NOT span midnight
+        // Window 08:00–12:00, does NOT span midnight
         RuleProperties props = new RuleProperties();
         props.getTimeOfDay().setOffHoursStartHour(8);
         props.getTimeOfDay().setOffHoursEndHour(12);

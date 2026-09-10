@@ -8,7 +8,7 @@
 # Set KAFKA_SSL_KEYSTORE_PASSWORD and KAFKA_SSL_TRUSTSTORE_PASSWORD in your .env or
 # shell before running, and never commit those values.
 #
-# In production: replace these self-signed certs with ones issued by the Acme
+# In production: replace these self-signed certs with ones issued by Acme Bank's
 # internal CA. Pass KAFKA_SSL_KEYSTORE_PASSWORD and KAFKA_SSL_TRUSTSTORE_PASSWORD
 # into containers via Vault (already wired in application.yml) rather than .env files.
 
@@ -27,7 +27,7 @@ mkdir -p "$CERTS_DIR"
 # MSYS's argv translation can't tell and mangles it into something openssl's DN parser can't
 # read. MSYS2_ARG_CONV_EXCL="/C=" tells MSYS to leave just that one argument (any value
 # starting with "/C=") untouched, while every genuine path argument in the same command
-# (-out/-in/-key/-CA/...) still gets translated normally — unlike MSYS_NO_PATHCONV=1, which
+# (-out/-in/-key/-CA/...) still gets translated normally. MSYS_NO_PATHCONV=1, by contrast,
 # disables translation for the whole command and broke every absolute path argument instead
 # (openssl.exe is a native, non-MSYS binary and can't resolve a raw untranslated POSIX path
 # like "/c/Users/.../ca.key"). Found and fixed live 2026-09-08.
@@ -54,7 +54,7 @@ for broker in "${BROKERS[@]}"; do
     -out "$CERTS_DIR/$broker.csr" \
     -subj "/C=ZA/O=Acme Bank/OU=Fraud Engine/CN=$broker"
 
-  # Sign with CA — add SANs so the cert covers the Docker hostname and localhost.
+  # Sign with CA, adding SANs so the cert covers the Docker hostname and localhost.
   # A real temp file, not <(process substitution): the latter passes openssl a
   # "/proc/<pid>/fd/<n>"-style path, which MSYS's normal path translation also mangles,
   # the same class of problem as the -subj value above but with no equivalent workaround
@@ -84,8 +84,8 @@ done
 
 # cp-kafka's own SSL setup ("dub ensure") requires KAFKA_SSL_KEYSTORE_FILENAME/
 # KAFKA_SSL_KEYSTORE_CREDENTIALS (a *file* containing the password, referenced by filename
-# relative to /etc/kafka/secrets) once SASL_SSL is in the listener security protocol map —
-# the KAFKA_SSL_KEYSTORE_LOCATION/_PASSWORD vars alone aren't enough to satisfy that
+# relative to /etc/kafka/secrets) once SASL_SSL is in the listener security protocol map.
+# The KAFKA_SSL_KEYSTORE_LOCATION/_PASSWORD vars alone aren't enough to satisfy that
 # pre-flight check ("KAFKA_SSL_KEYSTORE_FILENAME is required", found live 2026-09-08). Same
 # password for every broker's keystore and the shared truststore, so one file each suffices.
 printf '%s' "$KS_PASS" > "$CERTS_DIR/keystore_creds"
@@ -93,7 +93,7 @@ printf '%s' "$KS_PASS" > "$CERTS_DIR/key_creds"
 printf '%s' "$TS_PASS" > "$CERTS_DIR/truststore_creds"
 
 # ── 3. Client truststore ─────────────────────────────────────────────────────
-# Contains only the CA cert — enough for any client to verify broker identity.
+# Contains only the CA cert, which is enough for any client to verify broker identity.
 
 echo "==> Creating shared client truststore..."
 keytool -importcert -noprompt \
@@ -116,5 +116,5 @@ echo "  Files:"
 ls -1 "$CERTS_DIR"
 echo ""
 echo "  IMPORTANT: These are self-signed certs for showcase/dev purposes."
-echo "  For production, obtain certs from the Acme internal CA and"
+echo "  For production, obtain certs from Acme Bank's internal CA and"
 echo "  inject passwords via Vault. Never commit certs or passwords to git."

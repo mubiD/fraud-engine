@@ -1,6 +1,6 @@
-# Shell scripts must stay LF — CRLF silently corrupts commands when executed on Windows
+# Shell scripts must stay LF. CRLF silently corrupts commands when executed on Windows
 # (a trailing \r gets appended to the last argument on each line, or breaks backslash line
 # continuations). Found live 2026-09-08: gen-kafka-certs.sh and vault-init.sh had CRLF and
-# had genuinely never been run successfully as a result — this was masked until prod's
+# had genuinely never been run successfully as a result, which was masked until prod's
 # deploy automation actually exercised them for the first time.
 *.sh text eol=lf

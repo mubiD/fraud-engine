@@ -66,7 +66,7 @@ class RuleEngineTest {
     void noViolations_cleared_scoreMatchesPrior() {
         FraudAssessment result = new RuleEngine(List.of(passingRule), contextBuilder, scoringProperties, fraudMetrics).evaluate(tx());
         assertThat(result.getDisposition()).isEqualTo(Disposition.CLEARED);
-        // No evidence fired — the score should sit near the assumed base rate
+        // No evidence fired, so the score should sit near the assumed base rate
         // (ScoringProperties.priorFraudProbability, default 1%), not zero: a
         // clean transaction isn't proof of innocence, just the absence of signal.
         assertThat(result.getRiskScore()).isBetween(0, 5);
@@ -82,7 +82,7 @@ class RuleEngineTest {
 
     // ── metrics ──────────────────────────────────────────────────────────────
     // Recorded inside RuleEngine.evaluate() itself (not by callers) so every ingress
-    // path — Kafka consumer, or the synchronous standalone/local demo stub — reports
+    // path (Kafka consumer, or the synchronous standalone/local demo stub) reports
     // the same fraud.assessments.total / fraud.rule.evaluation.duration.seconds.
 
     @Test
@@ -131,7 +131,7 @@ class RuleEngineTest {
     @Test
     void threeWeakViolations_combinedCrossesReviewThreshold_pendingReview() {
         // Three independent MEDIUM-fallback violations (ratio 3.0 each) combine to
-        // ~21% posterior probability — above reviewProbabilityThreshold (10%) but
+        // ~21% posterior probability, above reviewProbabilityThreshold (10%) but
         // well below fraudProbabilityThreshold (50%). Mirrors the effectiveness
         // suite's "combined weak signals" scenarios at the RuleEngine level.
         FraudRule m1 = mediumRule(1), m2 = mediumRule(2), m3 = mediumRule(3);

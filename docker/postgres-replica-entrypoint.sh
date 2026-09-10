@@ -2,12 +2,12 @@
 # Wraps the stock postgres image's entrypoint: on an empty data volume, clones the primary
 # via pg_basebackup (in standby mode, -R) before handing off, instead of letting the
 # image's normal entrypoint run initdb and bootstrap a fresh, empty, unrelated cluster.
-# docker-entrypoint-initdb.d doesn't cover this case — those scripts only run *after*
-# initdb, not instead of it — hence a custom entrypoint rather than an init script.
+# docker-entrypoint-initdb.d doesn't cover this case: those scripts only run *after*
+# initdb, not instead of it, hence a custom entrypoint rather than an init script.
 #
 # On every later restart the data directory already exists (with standby.signal, written
 # by pg_basebackup's -R flag), so the stock entrypoint starts it directly in standby/
-# streaming-replication mode — this script only does anything on the very first start.
+# streaming-replication mode. This script only does anything on the very first start.
 set -euo pipefail
 
 PGDATA="${PGDATA:-/var/lib/postgresql/data}"

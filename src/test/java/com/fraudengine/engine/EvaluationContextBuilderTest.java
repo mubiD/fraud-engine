@@ -47,15 +47,15 @@ class EvaluationContextBuilderTest {
         properties = new RuleProperties();
         properties.setContextLookbackMinutes(60);
         // Optional.empty() here mirrors standalone/local, where no RecentActivityStore
-        // bean is registered at all (see KafkaStreamsRecentActivityStore's @Profile) —
-        // every pre-existing test in this class exercises the Postgres path unchanged.
+        // bean is registered at all (see KafkaStreamsRecentActivityStore's @Profile).
+        // Every pre-existing test in this class exercises the Postgres path unchanged.
         // The streaming path is covered separately below, with its own builder instance.
         builder = new EvaluationContextBuilder(
                 transactionRepository, referenceDataCache, properties, Optional.empty(), metrics);
 
         lenient().when(referenceDataCache.getMerchantLocation(any())).thenReturn(Optional.empty());
         // lenient: unused by the streaming-path tests below, which never reach Postgres.
-        lenient().when(transactionRepository.sumAmountByCustomerSince(any(), any(), any())).thenReturn(BigDecimal.ZERO);
+        lenient().when(transactionRepository.sumAmountByCustomerSince(any(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
     }
 
     @Test
@@ -80,7 +80,7 @@ class EvaluationContextBuilderTest {
         Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
         Transaction other = tx("CUST_1", "M2", null, TransactionType.CARD_NOT_PRESENT);
 
-        // repo returns the current tx plus another — current must be filtered out
+        // repo returns the current tx plus another: current must be filtered out
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of(tx, other));
 
         EvaluationContext ctx = builder.build(tx);
@@ -92,13 +92,13 @@ class EvaluationContextBuilderTest {
     void dailySpend_queriedWithCorrectCustomerAnd24hWindow() {
         Transaction tx = tx("CUST_2", "M1", null, TransactionType.CARD_NOT_PRESENT);
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
-        when(transactionRepository.sumAmountByCustomerSince(eq("CUST_2"), any(), any()))
+        when(transactionRepository.sumAmountByCustomerSince(eq("CUST_2"), any(), any(), any()))
                 .thenReturn(new BigDecimal("1500.00"));
 
         EvaluationContext ctx = builder.build(tx);
 
         ArgumentCaptor<Instant> cutoffCaptor = ArgumentCaptor.forClass(Instant.class);
-        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_2"), cutoffCaptor.capture(), any());
+        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_2"), cutoffCaptor.capture(), any(), any());
 
         Instant expected24hCutoff = tx.getTimestamp().minus(24, ChronoUnit.HOURS);
         assertThat(cutoffCaptor.getValue()).isCloseTo(expected24hCutoff, org.assertj.core.api.Assertions.within(1, ChronoUnit.SECONDS));
@@ -114,12 +114,28 @@ class EvaluationContextBuilderTest {
         // includes it, then the rule adds currentAmount again on top).
         Transaction tx = tx("CUST_3", "M1", null, TransactionType.CARD_NOT_PRESENT);
         when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
-        when(transactionRepository.sumAmountByCustomerSince(any(), any(), any()))
+        when(transactionRepository.sumAmountByCustomerSince(any(), any(), any(), any()))
                 .thenReturn(BigDecimal.ZERO);
 
         builder.build(tx);
 
-        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_3"), any(), eq(tx.getId()));
+        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_3"), any(), eq(tx.getId()), eq(tx.getCurrency()));
+    }
+
+    @Test
+    void dailySpend_scopedToTransactionCurrency() {
+        // A customer transacting in more than one currency must not have those amounts
+        // pooled as equivalent magnitude (found live 2026-09-09 as a real gap).
+        Transaction tx = Transaction.builder()
+                .id(UUID.randomUUID()).customerId("CUST_4").merchantId("M1")
+                .amount(BigDecimal.TEN).currency("USD")
+                .transactionType(TransactionType.CARD_NOT_PRESENT).timestamp(Instant.now())
+                .build();
+        when(transactionRepository.findRecentByCustomer(any(), any())).thenReturn(List.of());
+
+        builder.build(tx);
+
+        verify(transactionRepository).sumAmountByCustomerSince(eq("CUST_4"), any(), any(), eq("USD"));
     }
 
     @Test
@@ -213,8 +229,29 @@ class EvaluationContextBuilderTest {
         EvaluationContext ctx = builder.build(tx);
 
         // Both tx and other carry the same amount (see the tx() helper), so a baseline built
-        // from [other] alone (tx excluded) has exactly one entry — proof tx was filtered out.
+        // from [other] alone (tx excluded) has exactly one entry: proof tx was filtered out.
         assertThat(ctx.getCustomerAmountBaseline().count()).isEqualTo(1);
+    }
+
+    @Test
+    void baselineHistory_excludesDifferentCurrencyTransactions() {
+        properties.getCustomerAmountAnomaly().setEnabled(true);
+        Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
+        Transaction sameCurrency = tx("CUST_1", "M2", null, TransactionType.CARD_NOT_PRESENT);
+        Transaction otherCurrency = Transaction.builder()
+                .id(UUID.randomUUID()).customerId("CUST_1").merchantId("M3")
+                .amount(new BigDecimal("999.00")).currency("USD")
+                .transactionType(TransactionType.CARD_NOT_PRESENT).timestamp(Instant.now())
+                .build();
+
+        when(transactionRepository.findRecentByCustomer(any(), any()))
+                .thenReturn(List.of(tx, sameCurrency, otherCurrency));
+
+        EvaluationContext ctx = builder.build(tx);
+
+        // tx (self) and otherCurrency (USD, tx is ZAR) both excluded. Only sameCurrency remains.
+        assertThat(ctx.getCustomerAmountBaseline().count()).isEqualTo(1);
+        assertThat(ctx.getCustomerAmountBaseline().mean()).isEqualTo(sameCurrency.getAmount().doubleValue());
     }
 
     @Test
@@ -288,7 +325,7 @@ class EvaluationContextBuilderTest {
     @Test
     void streamingStore_selfAlreadyIngested_excludedFromListAndDailySpend() {
         // The Kafka Streams app is an independent consumer of the same topic (see
-        // CustomerActivityProcessor) — it can ingest the current transaction before this
+        // CustomerActivityProcessor). It can ingest the current transaction before this
         // read happens. Regression coverage for the same double-count risk the Postgres
         // path already guards against (see dailySpend_excludesCurrentTransactionFromSum).
         properties.getCustomerAmountAnomaly().setEnabled(false);
@@ -298,7 +335,7 @@ class EvaluationContextBuilderTest {
                 tx.getTransactionType(), tx.getTimestamp(), null, null);
         long bucket = tx.getTimestamp().getEpochSecond() / 3600;
         CustomerActivityState state = new CustomerActivityState(
-                List.of(self), Map.of(bucket, tx.getAmount()), Map.of());
+                List.of(self), Map.of(bucket, Map.of(tx.getCurrency(), tx.getAmount())), Map.of());
         when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
 
         EvaluationContext ctx = streamingBuilder().build(tx);
@@ -316,7 +353,7 @@ class EvaluationContextBuilderTest {
         DailyAmountStats bucketStats = DailyAmountStats.empty()
                 .plus(100.0).plus(100.0).plus(100.0).plus(100.0).plus(100.0);
         CustomerActivityState state = new CustomerActivityState(
-                List.of(), Map.of(), Map.of(dayBucket, bucketStats));
+                List.of(), Map.of(), Map.of(dayBucket, Map.of(tx.getCurrency(), bucketStats)));
         when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
 
         EvaluationContext ctx = streamingBuilder().build(tx);
@@ -336,12 +373,12 @@ class EvaluationContextBuilderTest {
                 tx.getTransactionType(), tx.getTimestamp(), null, null);
         long dayBucket = tx.getTimestamp().getEpochSecond() / 86400;
         // Four prior 100.00 amounts plus tx itself (already ingested) folded into the same
-        // day bucket — the correction must back tx's own amount back out before deriving stats.
+        // day bucket: the correction must back tx's own amount back out before deriving stats.
         DailyAmountStats bucketStats = DailyAmountStats.empty()
                 .plus(100.0).plus(100.0).plus(100.0).plus(100.0)
                 .plus(tx.getAmount().doubleValue());
         CustomerActivityState state = new CustomerActivityState(
-                List.of(self), Map.of(), Map.of(dayBucket, bucketStats));
+                List.of(self), Map.of(), Map.of(dayBucket, Map.of(tx.getCurrency(), bucketStats)));
         when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
 
         EvaluationContext ctx = streamingBuilder().build(tx);

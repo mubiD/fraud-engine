@@ -49,11 +49,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-// "test" profile activates SecurityConfig.noSecurityFilterChain (no JWT decoder — real IDP
+// "test" profile activates SecurityConfig.noSecurityFilterChain (no JWT decoder, since real IDP
 // resolution is unreachable in a test sandbox) while still keeping TransactionConsumer,
 // AssessmentProducer, and the Kafka Streams topology active (their @Profile guards are
-// "!standalone & !local" — "test" satisfies both), unlike "local"/"standalone" which would
-// disable the very Kafka consumer path this test exercises. Missing before 2026-09-09 — this
+// "!standalone & !local"; "test" satisfies both), unlike "local"/"standalone" which would
+// disable the very Kafka consumer path this test exercises. Missing before 2026-09-09: this
 // test had never actually reached Spring context startup until that session's Docker-API-
 // version fix let Testcontainers find a daemon at all, so this gap went unnoticed.
 @ActiveProfiles("test")
@@ -84,7 +84,7 @@ class TransactionIntegrationTest {
     @Value("${fraud.kafka.topics.transactions-raw}")
     String rawTopic;
 
-    // mock:// schema registry is an in-process singleton — same URL = same registry instance
+    // mock:// schema registry is an in-process singleton, so same URL = same registry instance
     private static final String MOCK_SCHEMA_REGISTRY = "mock://fraud-engine-test";
 
     KafkaTemplate<String, TransactionEventProto.TransactionEvent> testTemplate;
@@ -127,7 +127,7 @@ class TransactionIntegrationTest {
             FraudAssessment assessment = assessmentRepository.findByTransactionId(txId).orElseThrow();
             assertThat(assessment.getDisposition()).isEqualTo(Disposition.CLEARED);
             // Not zero: RuleEngine.probabilityToRiskScore rounds ScoringProperties'
-            // priorFraudProbability (0.01) itself when no rule fires — round(0.01 * 100) = 1,
+            // priorFraudProbability (0.01) itself when no rule fires: round(0.01 * 100) = 1,
             // not 0. Stale from before the flat-point-sum -> log-odds scoring rewrite
             // (ScoringProperties javadoc); never caught because this test never reached this
             // assertion until the Docker-API-version/profile fixes above, 2026-09-09.
@@ -145,13 +145,13 @@ class TransactionIntegrationTest {
     @Test
     void highRiskCategoryTransaction_isFlaggedAndPublishedToFlaggedTopic() {
         // A large amount alone (the old scenario here) no longer flags under the log-odds
-        // model — ScoringProperties.likelihoodRatios rates AMOUNT_THRESHOLD:HIGH at only 2.0
+        // model: ScoringProperties.likelihoodRatios rates AMOUNT_THRESHOLD:HIGH at only 2.0
         // ("weak alone by design", see its own comment), which keeps posterior probability
         // under 3% for a single hit. HIGH_RISK_MERCHANT_CATEGORY:HIGH (ratio 130.0) is
         // explicitly "calibrated as standalone-sufficient evidence of fraud"
         // (HighRiskMerchantCategoryRule javadoc) and needs no transaction history to fire, so
         // it's the deterministic single-transaction choice for this smoke test. Stale from
-        // before the same scoring rewrite as the test above — never caught for the same reason.
+        // before the same scoring rewrite as the test above, never caught for the same reason.
         UUID txId = UUID.randomUUID();
         TransactionEventProto.TransactionEvent event = buildEvent(txId, "CUST_002", "SOME_MERCH",
                 new BigDecimal("10000.00"), "WIRE_TRANSFER", TransactionType.CARD_NOT_PRESENT);

@@ -1,4 +1,4 @@
-# TesterInfo — Fraud Rule Engine
+# TesterInfo: Fraud Rule Engine
 
 **Audience:** QA/Tester preparing a test plan, test cases, and test scenarios.
 
@@ -6,9 +6,9 @@
 
 ## 1. What This Service Is
 
-This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank — it evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
+This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank. It evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
 
-In production-like environments (`load-test`, `prod`), transactions enter **exclusively** via Kafka — there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint — §4.14 — which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
+In production-like environments (`load-test`, `prod`), transactions enter **exclusively** via Kafka; there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint (§4.14), which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
 
 ---
 
@@ -16,10 +16,10 @@ In production-like environments (`load-test`, `prod`), transactions enter **excl
 
 | Path | Active When |
 |---|---|
-| **Kafka topic** `transactions.raw` (Protobuf) | `load-test`, `prod` — the real production path |
-| **HTTP POST** `/api/v1/standalone/submit` or `/api/v1/standalone/stream` | `standalone` and `local` Spring profiles only — an explicit demo/dev stub, not a production feature |
+| **Kafka topic** `transactions.raw` (Protobuf) | `load-test`, `prod` (the real production path) |
+| **HTTP POST** `/api/v1/standalone/submit` or `/api/v1/standalone/stream` | `standalone` and `local` Spring profiles only (an explicit demo/dev stub, not a production feature) |
 
-**Verified directly from the docker-compose files** (this matters — don't infer it from environment names):
+**Verified directly from the docker-compose files** (this matters, so don't infer it from environment names):
 
 | `make` target | Environment name | `SPRING_PROFILES_ACTIVE` |
 |---|---|---|
@@ -27,9 +27,9 @@ In production-like environments (`load-test`, `prod`), transactions enter **excl
 | `make load-test` | load-test | `load-test` |
 | `make prod` | prod | `prod` |
 
-So **`make dev` is the one environment where the standalone HTTP endpoints are reachable** — its Spring profile is `local`, not a profile literally named `dev`. `load-test`/`prod` each run their own matching profile name, neither of which is `local`/`standalone`/`test`, so the real Kafka consumer pipeline is active there and the standalone controller is not wired in at all (`@Profile("standalone | local")` on `StandaloneTransactionController`).
+So **`make dev` is the one environment where the standalone HTTP endpoints are reachable**: its Spring profile is `local`, not a profile literally named `dev`. `load-test`/`prod` each run their own matching profile name, neither of which is `local`/`standalone`/`test`, so the real Kafka consumer pipeline is active there and the standalone controller is not wired in at all (`@Profile("standalone | local")` on `StandaloneTransactionController`).
 
-The `standalone` profile (not tied to any `make` target — run manually with `--spring.profiles.active=standalone`) uses an **H2 in-memory database** (no PostgreSQL, no Kafka, no Vault) — the quickest way to exercise the rule engine with zero infrastructure. `local` (i.e. `make dev`) uses real PostgreSQL + Kafka with JSON wire format (no Confluent Schema Registry needed).
+The `standalone` profile (not tied to any `make` target — run manually with `--spring.profiles.active=standalone`) uses an **H2 in-memory database** (no PostgreSQL, no Kafka, no Vault), which is the quickest way to exercise the rule engine with zero infrastructure. `local` (i.e. `make dev`) uses real PostgreSQL + Kafka with JSON wire format (no Confluent Schema Registry needed).
 
 ---
 
@@ -53,13 +53,13 @@ Swagger UI: `http://localhost:<host-port>/swagger-ui.html` (root `/` redirects t
 
 **`POST /api/v1/standalone/submit`**
 
-Persists the transaction, runs it through the rule engine, and returns the assessment inline. **This does not represent the production flow** — see §2.
+Persists the transaction, runs it through the rule engine, and returns the assessment inline. **This does not represent the production flow** (see §2).
 
 **Request body:**
 
 | Field | Type | Required | Constraints |
 |---|---|---|---|
-| `transactionId` | UUID | No | Idempotency key — if already processed, the existing assessment is returned without re-evaluation. Omit to let the server assign one (no idempotency guarantee). |
+| `transactionId` | UUID | No | Idempotency key: if already processed, the existing assessment is returned without re-evaluation. Omit to let the server assign one (no idempotency guarantee). |
 | `customerId` | string | Yes | Not blank |
 | `merchantId` | string | Yes | Not blank |
 | `amount` | decimal | Yes | Must be positive |
@@ -67,9 +67,9 @@ Persists the transaction, runs it through the rule engine, and returns the asses
 | `category` | string | No | Drives category-tiered amount thresholds and high-risk-category detection — see §5.1, §5.8 |
 | `transactionType` | string | No | `CARD_PRESENT`, `CARD_NOT_PRESENT`, `CONTACTLESS`, `ATM`; defaults to `CARD_NOT_PRESENT` |
 | `location` | string | No | Human-readable, not used by any rule directly |
-| `latitude` | decimal | No | -90 to 90. Required (on this transaction or a prior one) for `GEOGRAPHIC_ANOMALY` to activate — see §5.5 for the merchant-location fallback |
+| `latitude` | decimal | No | -90 to 90. Required (on this transaction or a prior one) for `GEOGRAPHIC_ANOMALY` to activate; see §5.5 for the merchant-location fallback |
 | `longitude` | decimal | No | -180 to 180 |
-| `deviceFingerprint` | string | No | When present, exercises `DEVICE_FINGERPRINT` (§5.9) — omit it and that rule is a guaranteed no-op on this transaction |
+| `deviceFingerprint` | string | No | When present, exercises `DEVICE_FINGERPRINT` (§5.9); omit it and that rule is a guaranteed no-op on this transaction |
 
 **Responses:**
 
@@ -95,7 +95,7 @@ Generates `n` randomised transactions through the rule engine to populate the da
 { "total": 100, "passed": 75, "flagged": 25 }
 ```
 
-Approximately **15%** of generated transactions exceed the (flat, non-category-tiered) amount threshold — generated transactions don't carry a `category`, so category-tiered thresholds (§5.1) never apply here.
+Approximately **15%** of generated transactions exceed the (flat, non-category-tiered) amount threshold. Generated transactions don't carry a `category`, so category-tiered thresholds (§5.1) never apply here.
 
 | Status | Condition |
 |---|---|
@@ -153,7 +153,7 @@ Path variable: `transactionId` (UUID).
   "outcome": "UNRESOLVED"
 }
 ```
-`disposition` (`CLEARED`/`PENDING_REVIEW`/`FLAGGED`) is the system's real-time verdict at assessment time; `outcome` (`UNRESOLVED`/`CONFIRMED_FRAUD`/`FALSE_POSITIVE`) is the analyst's ground truth recorded afterward via §4.14 — the two are independent fields, not synonyms.
+`disposition` (`CLEARED`/`PENDING_REVIEW`/`FLAGGED`) is the system's real-time verdict at assessment time; `outcome` (`UNRESOLVED`/`CONFIRMED_FRAUD`/`FALSE_POSITIVE`) is the analyst's ground truth recorded afterward via §4.14. The two are independent fields, not synonyms.
 `riskScore` is no longer a simple point sum — see §6 before writing assertions against specific values.
 
 | Status | Condition |
@@ -173,14 +173,14 @@ Returns cursor-paginated assessments where `disposition = FLAGGED`.
 | Parameter | Required | Notes |
 |---|---|---|
 | `customerId` | No | Filter by customer |
-| `ruleViolated` | No | Filter by rule name (e.g. `AMOUNT_THRESHOLD`) — must be a real, currently-registered rule name or you get `400` |
+| `ruleViolated` | No | Filter by rule name (e.g. `AMOUNT_THRESHOLD`); must be a real, currently-registered rule name or you get `400` |
 | `minRiskScore` | No | Lower bound (inclusive) |
-| `maxRiskScore` | No | Upper bound (inclusive) — combine with `minRiskScore` for a band query, e.g. `minRiskScore=50&maxRiskScore=65` for low-confidence flags |
+| `maxRiskScore` | No | Upper bound (inclusive); combine with `minRiskScore` for a band query, e.g. `minRiskScore=50&maxRiskScore=65` for low-confidence flags |
 | `from` / `to` | No | Date range on `assessedAt` |
 | `cursor` | No | ISO-8601 cursor |
 | `pageSize` | No | 1–1000; default 20 |
 
-**All supplied filters combine with AND — they do not select a single "winning" filter.** Sending `customerId=X&ruleViolated=Y` returns only rows matching *both*, not just the customer filter. (An earlier version of this doc claimed a precedence/mutual-exclusion behaviour here — that was never how the underlying query works; `FraudAssessmentRepository.findFlagged()` ANDs every non-null parameter together. If you have test cases or automation built on the old "only one filter applies" assumption, they're testing the wrong thing.)
+**All supplied filters combine with AND: they do not select a single "winning" filter.** Sending `customerId=X&ruleViolated=Y` returns only rows matching *both*, not just the customer filter. (An earlier version of this doc claimed a precedence/mutual-exclusion behaviour here, but that was never how the underlying query works; `FraudAssessmentRepository.findFlagged()` ANDs every non-null parameter together. If you have test cases or automation built on the old "only one filter applies" assumption, they're testing the wrong thing.)
 
 | Status | Condition |
 |---|---|
@@ -193,7 +193,7 @@ Returns cursor-paginated assessments where `disposition = FLAGGED`.
 
 **`GET /api/v1/transactions/pending-review`**
 
-Returns cursor-paginated assessments where `disposition = PENDING_REVIEW` — the
+Returns cursor-paginated assessments where `disposition = PENDING_REVIEW`, the
 elevated-but-not-confident band (tier 4 of the scoring plan, §6). Two or more
 corroborating weak signals (e.g. off-hours + card cloning) land here instead of
 being silently treated the same as a clean, zero-violation transaction. Same
@@ -202,7 +202,7 @@ parameter set and AND-combining behaviour as §4.5.
 | Parameter | Required | Notes |
 |---|---|---|
 | `customerId` | No | Filter by customer |
-| `ruleViolated` | No | Filter by rule name — must be a real, currently-registered rule name or `400` |
+| `ruleViolated` | No | Filter by rule name; must be a real, currently-registered rule name or `400` |
 | `minRiskScore` | No | Lower bound (inclusive) |
 | `maxRiskScore` | No | Upper bound (inclusive) |
 | `from` / `to` | No | Date range on `assessedAt` |
@@ -225,7 +225,7 @@ Returns cursor-paginated assessments where `disposition = CLEARED`.
 | Parameter | Required | Notes |
 |---|---|---|
 | `customerId` | No | Filter by customer |
-| `minRiskScore` | No | Lower bound (inclusive). Cleared transactions score low by construction (below `review-probability-threshold`, default 0.10) — this filter sorts within that band rather than surfacing near-misses, which now belong to `disposition = PENDING_REVIEW` (§4.6) instead. |
+| `minRiskScore` | No | Lower bound (inclusive). Cleared transactions score low by construction (below `review-probability-threshold`, default 0.10), so this filter sorts within that band rather than surfacing near-misses, which now belong to `disposition = PENDING_REVIEW` (§4.6) instead. |
 | `from` / `to` | No | Date range on `assessedAt` |
 | `cursor` | No | ISO-8601 cursor |
 | `pageSize` | No | 1–1000; default 20 |
@@ -252,9 +252,9 @@ Returns all 13 registered fraud rules, ordered by priority, with live config.
     "config": { "windowMinutes": 10, "maxTransactions": 5 } }
 ]
 ```
-`config` reflects whatever is actually active in the running instance — useful for confirming a deployed environment's thresholds match what you expect before writing test expectations against them. Full rule list and their config keys: §5.
+`config` reflects whatever is actually active in the running instance, which is useful for confirming a deployed environment's thresholds match what you expect before writing test expectations against them. Full rule list and their config keys: §5.
 
-Rules cannot be enabled/disabled or have thresholds changed via this or any other endpoint — changes require a redeployment.
+Rules cannot be enabled/disabled or have thresholds changed via this or any other endpoint; changes require a redeployment.
 
 ---
 
@@ -273,7 +273,7 @@ Rules cannot be enabled/disabled or have thresholds changed via this or any othe
 
 **`GET /api/v1/customers/{customerId}/risk-summary?since={iso8601}`**
 
-Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `notFlaggedCount`, `fraudRate`, `highestRiskScore`, `mostTriggeredRules`, `firstTransactionAt`, `lastTransactionAt`. `since` (optional) scopes the counts/rates to that point onward; `firstTransactionAt`/`lastTransactionAt` are always all-time regardless. As with §4.13, `notFlaggedCount` is `totalTransactions - flaggedCount` and includes `PENDING_REVIEW` transactions, not just `CLEARED` ones — use §4.6 directly for an exact pending-review count.
+Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `notFlaggedCount`, `fraudRate`, `highestRiskScore`, `mostTriggeredRules`, `firstTransactionAt`, `lastTransactionAt`. `since` (optional) scopes the counts/rates to that point onward; `firstTransactionAt`/`lastTransactionAt` are always all-time regardless. As with §4.13, `notFlaggedCount` is `totalTransactions - flaggedCount` and includes `PENDING_REVIEW` transactions, not just `CLEARED` ones. Use §4.6 directly for an exact pending-review count.
 
 ---
 
@@ -305,9 +305,9 @@ Same shape as §4.10 plus `uniqueCustomers`. `uniqueCustomers`, `firstTransactio
 
 **`PATCH /api/v1/transactions/{transactionId}/outcome`**
 
-This is the **second exception** to "the query API is read-only" (the first being §4.1/§4.2, which are profile-gated demo stubs not present in production). This endpoint is a real, permanent, non-profile-gated part of the production API — it just doesn't accept a *new transaction*, only a disposition on an assessment that already exists.
+This is the **second exception** to "the query API is read-only" (the first being §4.1/§4.2, which are profile-gated demo stubs not present in production). This endpoint is a real, permanent, non-profile-gated part of the production API: it just doesn't accept a *new transaction*, only a disposition on an assessment that already exists.
 
-Lets a fraud analyst record whether a flagged (or cleared) transaction turned out to actually be fraud or a false positive, once reviewed. Keyed by `transactionId` (not the assessment's own internal `id`) — the same UUID that appears in Kafka's `transaction_id`, the `txn=` MDC/log correlation key, and every DTO that already returns `transactionId`, so an analyst can trace a case end-to-end with one identifier.
+Lets a fraud analyst record whether a flagged (or cleared) transaction turned out to actually be fraud or a false positive, once reviewed. Keyed by `transactionId` (not the assessment's own internal `id`), the same UUID that appears in Kafka's `transaction_id`, the `txn=` MDC/log correlation key, and every DTO that already returns `transactionId`, so an analyst can trace a case end-to-end with one identifier.
 
 **Request body:**
 
@@ -326,17 +326,17 @@ Lets a fraud analyst record whether a flagged (or cleared) transaction turned ou
 | `200 OK` | Outcome recorded; returns the updated assessment (including the new `outcome` field, added to `FraudAssessmentDto`) |
 | `400 Bad Request` | Missing/invalid `outcome`, or an attempt to set `UNRESOLVED` |
 | `404 Not Found` | No assessment exists for this transaction ID |
-| `409 Conflict` | **One-time disposition**: the assessment already has a resolved outcome (`CONFIRMED_FRAUD` or `FALSE_POSITIVE`). A second update attempt is always rejected — this endpoint has no "correction" path. |
+| `409 Conflict` | **One-time disposition**: the assessment already has a resolved outcome (`CONFIRMED_FRAUD` or `FALSE_POSITIVE`). A second update attempt is always rejected: this endpoint has no "correction" path. |
 
-Authorization is identical to every other `/api/v1/**` endpoint (§11) — same JWT, same `FRAUD_ANALYST`/`FRAUD_ENGINEER` roles, no separate write-scoped role exists.
+Authorization is identical to every other `/api/v1/**` endpoint (§11): same JWT, same `FRAUD_ANALYST`/`FRAUD_ENGINEER` roles, no separate write-scoped role exists.
 
-This field exists to eventually calibrate the log-odds scoring model's likelihood ratios (§6) against real confirmed-fraud/false-positive data — recording outcomes is implemented; automatically feeding them back into `ScoringProperties` is not (still open, tracked in `DESIGN.md` §11).
+This field exists to eventually calibrate the log-odds scoring model's likelihood ratios (§6) against real confirmed-fraud/false-positive data. Recording outcomes is implemented; automatically feeding them back into `ScoringProperties` is not (still open, tracked in `DESIGN.md` §11).
 
 ---
 
 ## 5. Fraud Detection Rules — Full Specification
 
-All 12 rules are evaluated in priority order (priorities 1–13, with 4 absent — see §5.4). All *enabled* rules are checked regardless of earlier violations — the engine does **not** short-circuit after the first violation. Whether a given violation, or combination of violations, actually produces a `FLAGGED` (or `PENDING_REVIEW`) disposition is governed separately by §6 — treat "does the rule fire" and "what disposition results" as two different questions when writing test cases.
+All 12 rules are evaluated in priority order (priorities 1–13, with 4 absent; see §5.4). All *enabled* rules are checked regardless of earlier violations: the engine does **not** short-circuit after the first violation. Whether a given violation, or combination of violations, actually produces a `FLAGGED` (or `PENDING_REVIEW`) disposition is governed separately by §6, so treat "does the rule fire" and "what disposition results" as two different questions when writing test cases.
 
 ### 5.1 AMOUNT_THRESHOLD (Priority 1)
 
@@ -344,15 +344,15 @@ All 12 rules are evaluated in priority order (priorities 1–13, with 4 absent �
 
 - **Category-tiered**: if `category` matches a configured override, that threshold applies instead of the flat default. Defaults: `RETAIL`/`ELECTRONICS` 15000.00, `TRAVEL` 20000.00, `GROCERY` 3000.00, `MONEY_TRANSFER`/`WIRE_TRANSFER` 2000.00. No category, or an unrecognised one, falls back to the flat default (5000.00).
 - Category matching is case-insensitive (`category.toUpperCase()` against the configured keys).
-- Currency-agnostic — the same numeric threshold applies regardless of ZAR/USD/EUR/etc.
+- Currency-agnostic: the same numeric threshold applies regardless of ZAR/USD/EUR/etc.
 
 | Category | Amount | Triggers? |
 |---|---|---|
 | (none) | 4999.99 | No |
-| (none) | 5000.00 | **No** (boundary — strictly-greater-than, does not trigger) |
+| (none) | 5000.00 | **No** (boundary, strictly-greater-than, does not trigger) |
 | (none) | 5000.01 | Yes |
-| `RETAIL` | 6500.00 | **No** — under the RETAIL-specific 15000 threshold |
-| `GROCERY` | 3500.00 | **Yes** — over the GROCERY-specific 3000 threshold |
+| `RETAIL` | 6500.00 | **No** (under the RETAIL-specific 15000 threshold) |
+| `GROCERY` | 3500.00 | **Yes** (over the GROCERY-specific 3000 threshold) |
 
 Config: `fraud.rules.amount-threshold.threshold`, `fraud.rules.amount-threshold.category-thresholds`.
 
@@ -363,8 +363,8 @@ Config: `fraud.rules.amount-threshold.threshold`, `fraud.rules.amount-threshold.
 **Trigger:** The same customer has made **5 or more prior** transactions within the last 10 minutes when the current transaction is submitted.
 
 - The current transaction is **excluded** from the lookback count — 5 prior in-window transactions → the 6th (current) triggers.
-- **Escalates to CRITICAL severity** (from HIGH) when the current transaction's merchant category matches a high-risk keyword (crypto, money-transfer, wire-transfer — same keyword list as §5.8).
-- Window cannot exceed the global context lookback (default 60 minutes) — app fails to start if misconfigured (§12).
+- **Escalates to CRITICAL severity** (from HIGH) when the current transaction's merchant category matches a high-risk keyword (crypto, money-transfer, wire-transfer: same keyword list as §5.8).
+- Window cannot exceed the global context lookback (default 60 minutes); the app fails to start if misconfigured (§12).
 
 Config: `fraud.rules.velocity.max-transactions` (default 5), `fraud.rules.velocity.window-minutes` (default 10).
 
@@ -379,9 +379,9 @@ Config: `fraud.rules.velocity.max-transactions` (default 5), `fraud.rules.veloci
 | `CARD_PRESENT` | 120 seconds (2 minutes) |
 | `CONTACTLESS` | 120 seconds |
 | `ATM` | 120 seconds |
-| `CARD_NOT_PRESENT` | 300 seconds (5 minutes) — wider, to catch payment-processor retries |
+| `CARD_NOT_PRESENT` | 300 seconds (5 minutes), wider, to catch payment-processor retries |
 
-**Currency must match.** `100.00 ZAR` followed by `100.00 USD` at the same merchant is **not** a duplicate — this is deliberate (an international shop charging in two currencies isn't the same charge twice). If you find documentation elsewhere claiming currency is ignored, that's describing behaviour the rule no longer has.
+**Currency must match.** `100.00 ZAR` followed by `100.00 USD` at the same merchant is **not** a duplicate. This is deliberate (an international shop charging in two currencies isn't the same charge twice). If you find documentation elsewhere claiming currency is ignored, that's describing behaviour the rule no longer has.
 
 Config: `fraud.rules.duplicate.card-present-window-seconds`, `fraud.rules.duplicate.card-not-present-window-seconds`.
 
@@ -391,9 +391,9 @@ Config: `fraud.rules.duplicate.card-present-window-seconds`, `fraud.rules.duplic
 
 This rule, and every piece of infrastructure that supported it, no longer exist. Submitting a
 transaction against `MERCHANT_FRAUD_001`/`002`/`003` will **not** produce a `FLAGGED` verdict from
-this — if you see older documentation or a cached test plan claiming otherwise, that's stale.
+this. If you see older documentation or a cached test plan claiming otherwise, that's stale.
 Rationale (DESIGN.md §5): this is a strictly post-authorisation system, so a pure blacklist-match
-rule can only report after the fact, not prevent anything — its `CRITICAL` severity accurately
+rule can only report after the fact, not prevent anything. Its `CRITICAL` severity accurately
 captured "how certain is this evidence" but oversold "what can this system do about it."
 
 Removed in full, not just unwired: the `blacklisted_merchants` table and its Flyway seed migration,
@@ -409,11 +409,11 @@ to point at in this codebase.
 
 **Trigger:** Implied travel speed between two consecutive geolocated transactions for the same customer exceeds **900 km/h**.
 
-**Coordinates don't have to be supplied on the transaction itself.** For `CARD_PRESENT`/`CONTACTLESS`/`ATM` transactions with no `latitude`/`longitude`, the engine falls back to the merchant's *registered* location (the `merchant_locations` table, §9) if one exists. This fallback is **not** applied to `CARD_NOT_PRESENT` transactions — an online purchase's merchant address isn't a proxy for where the customer physically is. So: a `CARD_PRESENT` transaction with no coordinates can still trigger this rule if the merchant has a registered location and a prior transaction puts the customer somewhere implausibly far away in time.
+**Coordinates don't have to be supplied on the transaction itself.** For `CARD_PRESENT`/`CONTACTLESS`/`ATM` transactions with no `latitude`/`longitude`, the engine falls back to the merchant's *registered* location (the `merchant_locations` table, §9) if one exists. This fallback is **not** applied to `CARD_NOT_PRESENT` transactions, since an online purchase's merchant address isn't a proxy for where the customer physically is. So: a `CARD_PRESENT` transaction with no coordinates can still trigger this rule if the merchant has a registered location and a prior transaction puts the customer somewhere implausibly far away in time.
 
 **Other conditions:**
 1. A prior transaction for the same customer within the last 60 minutes must also resolve to coordinates (explicit or merchant-fallback).
-2. The two transactions must be **more than 1 minute apart** (pairs within 1 minute are skipped — clock skew / batched submissions).
+2. The two transactions must be **more than 1 minute apart** (pairs within 1 minute are skipped: clock skew / batched submissions).
 
 Algorithm: Haversine formula, Earth radius 6371 km, speed = distance(km) / time-diff(hours).
 
@@ -423,7 +423,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 ### 5.6 CARD_CLONING (Priority 6)
 
-**Trigger:** The same amount charged to **2 or more distinct other merchants** within a short window — automated card-testing signature.
+**Trigger:** The same amount charged to **2 or more distinct other merchants** within a short window: an automated card-testing signature.
 
 - Window default 10 minutes, minimum 2 *other* distinct merchants (so 3 total distinct merchants including the current transaction, at the default config).
 - Config: `fraud.rules.card-cloning.window-minutes`, `fraud.rules.card-cloning.min-different-merchants`.
@@ -435,7 +435,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 **Trigger:** Transaction falls inside the configured off-hours window, default **23:00–05:00 UTC** (wraps midnight — `hour >= 23 OR hour < 5`).
 
 - Config: `fraud.rules.time-of-day.off-hours-start-hour`, `fraud.rules.time-of-day.off-hours-end-hour`.
-- Doesn't use `EvaluationContext` at all — it's a pure function of the transaction's own timestamp, so it's the cheapest rule to reason about in isolation.
+- Doesn't use `EvaluationContext` at all. It's a pure function of the transaction's own timestamp, so it's the cheapest rule to reason about in isolation.
 
 ---
 
@@ -454,15 +454,15 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 **Trigger:** Transaction carries a `deviceFingerprint` that hasn't been seen for this customer within the lookback window (default 60 minutes).
 
-- **Skipped** (no violation) if the current transaction has no `deviceFingerprint` — backwards-compatible with producers that don't send it.
-- **Also skipped** if the customer has *no* prior fingerprinted transactions in the window — a customer's first-ever fingerprinted transaction can't be judged anomalous against nothing. This means: to actually trigger this rule in a test, you need at least one prior transaction with a *different* fingerprint, not just a fresh customer submitting one with a fingerprint for the first time.
+- **Skipped** (no violation) if the current transaction has no `deviceFingerprint`, for backwards compatibility with producers that don't send it.
+- **Also skipped** if the customer has *no* prior fingerprinted transactions in the window, since a customer's first-ever fingerprinted transaction can't be judged anomalous against nothing. This means: to actually trigger this rule in a test, you need at least one prior transaction with a *different* fingerprint, not just a fresh customer submitting one with a fingerprint for the first time.
 - Config: `fraud.rules.device-fingerprint.window-minutes`.
 
 ---
 
 ### 5.10 MULTI_CHANNEL_ANOMALY (Priority 10)
 
-**Trigger:** A physical-channel transaction (`CARD_PRESENT`, `CONTACTLESS`, `ATM`) and a `CARD_NOT_PRESENT` transaction for the same customer within a short window (default 5 minutes) — a legitimate customer can't tap in-store and transact online simultaneously.
+**Trigger:** A physical-channel transaction (`CARD_PRESENT`, `CONTACTLESS`, `ATM`) and a `CARD_NOT_PRESENT` transaction for the same customer within a short window (default 5 minutes): a legitimate customer can't tap in-store and transact online simultaneously.
 
 - Config: `fraud.rules.multi-channel.window-minutes`.
 
@@ -470,9 +470,9 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 ### 5.11 CROSS_MERCHANT_VELOCITY (Priority 11)
 
-**Trigger:** ≥10 total transactions across *any* merchants within a window (default 10 minutes) — a broader, lower-severity companion to VELOCITY (§5.2).
+**Trigger:** ≥10 total transactions across *any* merchants within a window (default 10 minutes): a broader, lower-severity companion to VELOCITY (§5.2).
 
-- **Note for testers:** this rule's default window and threshold overlap heavily with VELOCITY's (>=5 in the same 10-minute window). In practice, any transaction set that trips CROSS_MERCHANT_VELOCITY (needing 10 in the window) will almost always have already tripped VELOCITY (needing only 5). Don't expect to isolate this rule's effect on the fraud verdict from VELOCITY's — see §6.
+- **Note for testers:** this rule's default window and threshold overlap heavily with VELOCITY's (>=5 in the same 10-minute window). In practice, any transaction set that trips CROSS_MERCHANT_VELOCITY (needing 10 in the window) will almost always have already tripped VELOCITY (needing only 5). Don't expect to isolate this rule's effect on the fraud verdict from VELOCITY's; see §6.
 - Config: `fraud.rules.cross-merchant-velocity.max-transactions`, `fraud.rules.cross-merchant-velocity.window-minutes`.
 
 ---
@@ -482,7 +482,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 **Trigger:** Rolling spend exceeds an hourly or daily limit.
 
 - **Hourly**: sum of the customer's transactions within the hourly window (default 60 minutes, from in-context recent-transaction data) plus the current amount, compared against `hourly-limit` (default 10000.00).
-- **Daily**: a separate, pre-aggregated 24-hour DB query (independent of the context lookback window, and excluding the transaction currently being evaluated — fixed 2026-09-03, see below), plus the current amount, compared against `daily-limit` (default 25000.00).
+- **Daily**: a separate, pre-aggregated 24-hour DB query (independent of the context lookback window, and excluding the transaction currently being evaluated; fixed 2026-09-03, see below), plus the current amount, compared against `daily-limit` (default 25000.00).
 - Either limit being exceeded triggers the rule (checked as two independent conditions, not summed together).
 - Config: `fraud.rules.cumulative-spending.hourly-limit`, `.daily-limit`, `.hourly-window-minutes`.
 
@@ -490,13 +490,13 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 ### 5.13 CUSTOMER_AMOUNT_ANOMALY (Priority 13)
 
-**Trigger:** Transaction amount is more than `stddev-multiplier` (default 3.0) standard deviations above *this specific customer's* own historical mean amount — a personal-baseline complement to the global `AMOUNT_THRESHOLD` (§5.1).
+**Trigger:** Transaction amount is more than `stddev-multiplier` (default 3.0) standard deviations above *this specific customer's* own historical mean amount, a personal-baseline complement to the global `AMOUNT_THRESHOLD` (§5.1).
 
-- Uses a separate, longer-window transaction history (`fraud.rules.customer-amount-anomaly.lookback-days`, default 90 days) — independent of `context-lookback-minutes` and the primary `recentCustomerTransactions` window other rules share.
+- Uses a separate, longer-window transaction history (`fraud.rules.customer-amount-anomaly.lookback-days`, default 90 days), independent of `context-lookback-minutes` and the primary `recentCustomerTransactions` window other rules share.
 - **Cold-start guard**: fewer than `min-history-count` (default 5) prior transactions in that window → the rule passes unconditionally. Not enough history to say what's "normal" for this customer yet.
-- **Degenerate-variance guard**: if every prior amount is identical (stdDev = 0 — e.g. a subscription-only customer), the rule passes rather than dividing by zero. Known limitation, not a bug.
+- **Degenerate-variance guard**: if every prior amount is identical (stdDev = 0, e.g. a subscription-only customer), the rule passes rather than dividing by zero. Known limitation, not a bug.
 - Mean/stdDev are computed as population statistics (divide by `n`, not `n-1`) over that window, excluding the transaction currently being evaluated.
-- A R4,999 purchase from a customer whose typical transaction is ~R80 is exactly the kind of case this rule catches that `AMOUNT_THRESHOLD` (fixed at 5000, or up to 20000 for some categories) is blind to — and conversely, a customer with genuinely variable habits (e.g. spend ranging 2000–3000) making a 3500 purchase is *not* flagged, since that's within their own normal variation.
+- A R4,999 purchase from a customer whose typical transaction is ~R80 is exactly the kind of case this rule catches that `AMOUNT_THRESHOLD` (fixed at 5000, or up to 20000 for some categories) is blind to. Conversely, a customer with genuinely variable habits (e.g. spend ranging 2000–3000) making a 3500 purchase is *not* flagged, since that's within their own normal variation.
 - Config: `fraud.rules.customer-amount-anomaly.enabled`, `.lookback-days`, `.min-history-count`, `.stddev-multiplier`.
 
 ---
@@ -654,7 +654,7 @@ All error responses use `Content-Type: application/problem+json`.
 | standalone (manual run) | `standalone` | **No** |
 | `load-test`, `prod` | `load-test` / `prod` | **Yes** — OAuth2 JWT bearer token |
 
-Where auth is required: `Authorization: Bearer <jwt>`, issued by the Acme IDP configured via `FRAUD_IDP_URI`. The token's `roles` claim must contain `FRAUD_ANALYST` or `FRAUD_ENGINEER` (mapped to `ROLE_*` Spring Security authorities). `/actuator/health`, `/actuator/info`, `/actuator/prometheus`, and the Swagger/OpenAPI paths are open in every profile. If the configured IDP is unreachable at startup, the app **fails to start** — this is intentional, not a bug, if you see it in a secured environment.
+Where auth is required: `Authorization: Bearer <jwt>`, issued by Acme Bank's IDP configured via `FRAUD_IDP_URI`. The token's `roles` claim must contain `FRAUD_ANALYST` or `FRAUD_ENGINEER` (mapped to `ROLE_*` Spring Security authorities). `/actuator/health`, `/actuator/info`, `/actuator/prometheus`, and the Swagger/OpenAPI paths are open in every profile. If the configured IDP is unreachable at startup, the app **fails to start** — this is intentional, not a bug, if you see it in a secured environment.
 
 If you're only ever testing against `make dev`, you won't hit any of this — which is exactly why it's worth confirming which environment a given test run actually targets before writing "no auth needed" into a test plan.
 

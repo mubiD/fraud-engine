@@ -1,11 +1,11 @@
 version: "3.9"
 
-# LOAD-TEST environment — port range 8084 / 5436 / 9492
+# LOAD-TEST environment: port range 8084 / 5436 / 9492
 # docker compose -f docker-compose.yml -f docker-compose.load-test.yml up -d
 #
 # Sole purpose: a real target for k6 load tests (load-tests/), producing real
-# Confluent-Protobuf messages to transactions.raw via TransactionConsumer — the
-# actual production ingestion path, not the standalone/local HTTP stub.
+# Confluent-Protobuf messages to transactions.raw via TransactionConsumer (the
+# actual production ingestion path), not the standalone/local HTTP stub.
 
 services:
   postgres:
@@ -36,13 +36,13 @@ services:
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9494,INTERNAL://kafka3:29094
 
-  # Mock OIDC/JWKS issuer — verification-only. This environment normally validates JWTs
-  # against Acme's real IdP (application.yml's FRAUD_IDP_URI default), unreachable
+  # Mock OIDC/JWKS issuer: verification-only. This environment normally validates JWTs
+  # against Acme Bank's real IdP (application.yml's FRAUD_IDP_URI default), unreachable
   # outside the corporate network, which fails the app's fail-fast JWT-decoder startup
   # check (SecurityConfig.jwtDecoder, DESIGN.md §11 "Fail-fast startup on IDP
   # unavailability"). This lets load-test boot and be exercised offline. If it's ever run
-  # somewhere with real IdP reachability, override FRAUD_IDP_URI back to the real issuer —
-  # testing against a near-zero-latency mock isn't representative of the real IDP's own
+  # somewhere with real IdP reachability, override FRAUD_IDP_URI back to the real issuer.
+  # Testing against a near-zero-latency mock isn't representative of the real IDP's own
   # latency contribution.
   mock-oidc:
     container_name: fraud-mock-oidc-load-test
@@ -95,14 +95,14 @@ services:
     depends_on:
       - influxdb
 
-  # k6 is only active under the "k6" profile — it is NOT started by `make load-test`.
+  # k6 is only active under the "k6" profile. It is NOT started by `make load-test`.
   # Trigger it explicitly with:  make k6-run  or  make k6-run SCENARIO=02-ramp RATE=500
   # K6_OUT streams metrics to InfluxDB in real time so Grafana shows live results.
   #
   # Uses the xk6-kafka build (github.com/mostafa/xk6-kafka, k6/x/kafka module) instead of
-  # stock grafana/k6 — scenarios produce real Confluent-Protobuf TransactionEvent messages
+  # stock grafana/k6: scenarios produce real Confluent-Protobuf TransactionEvent messages
   # to transactions.raw, the actual production ingestion path, not the standalone HTTP stub
-  # (which isn't even loaded under this profile — see StandaloneTransactionController's
+  # (which isn't even loaded under this profile, see StandaloneTransactionController's
   # @Profile). Protobuf + Schema Registry support has been fully implemented since xk6-kafka v2.1.0.
   k6:
     profiles: ["k6"]
@@ -114,7 +114,7 @@ services:
       BASE_URL: http://fraud-engine:8080
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093,kafka3:29094
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
-      # Same mock IdP fraud-engine validates against (see its own comment above) — /api/v1/**
+      # Same mock IdP fraud-engine validates against (see its own comment above). /api/v1/**
       # requires a real Bearer JWT with a FRAUD_ANALYST/FRAUD_ENGINEER role claim
       # (SecurityConfig, application.yml's resource-server.allowed-roles) even for GETs.
       OIDC_TOKEN_URL: http://mock-oidc:8080/default/token

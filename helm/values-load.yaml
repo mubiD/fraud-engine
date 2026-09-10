@@ -1,5 +1,5 @@
 ##################################################################################
-# fraud-rule-engine — load
+# fraud-rule-engine: load
 # Load environment runs on qa nodes. Replica count and resources are elevated to
 # reflect realistic throughput during k6 load scenarios.
 # NOTE: <ECR_ACCOUNT_ID>, <AWS_REGION>, and vault paths are placeholder values.

@@ -149,7 +149,7 @@ class StandaloneTransactionControllerTest {
 
     @Test
     void submit_customerIdOverColumnLimit_returns400() throws Exception {
-        // customer_id is VARCHAR(64) — without this @Size bound, an oversized value used to
+        // customer_id is VARCHAR(64). Without this @Size bound, an oversized value used to
         // sail past validation and crash the INSERT with an unhandled
         // DataIntegrityViolationException (500) instead of a clean 400.
         mockMvc.perform(post("/api/v1/standalone/submit")
@@ -230,7 +230,7 @@ class StandaloneTransactionControllerTest {
 
     @Test
     void submit_amountExceedsColumnPrecision_returns400() throws Exception {
-        // amount is NUMERIC(19,4) — 15 integer digits max. 16 used to sail past validation
+        // amount is NUMERIC(19,4): 15 integer digits max. 16 used to sail past validation
         // and crash the INSERT with an unhandled DataIntegrityViolationException (500).
         mockMvc.perform(post("/api/v1/standalone/submit")
                         .contentType(APPLICATION_JSON)
@@ -248,7 +248,7 @@ class StandaloneTransactionControllerTest {
     @Test
     void submit_racesAgainstConcurrentSubmit_returnsWinnersAssessmentInsteadOf500() throws Exception {
         // Simulates losing the check-then-insert race: the pre-check (findByIdOnly) sees
-        // nothing, so submit() proceeds to process() — which fails because a concurrent
+        // nothing, so submit() proceeds to process(), which fails because a concurrent
         // request for the same transactionId committed in the meantime. Recovery re-queries
         // and must find the winner's row this time.
         UUID sharedId = UUID.randomUUID();

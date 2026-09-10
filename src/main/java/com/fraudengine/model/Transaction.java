@@ -14,7 +14,7 @@ import java.util.UUID;
 public class Transaction {
 
     // Not @GeneratedValue: Hibernate's generator strategies overwrite ANY pre-set value at
-    // persist time, including one the caller explicitly assigned — that silently discarded
+    // persist time, including one the caller explicitly assigned. That silently discarded
     // both the standalone endpoint's client-supplied idempotency key and, far more
     // seriously, ProtoMapper.toTransactionEntity's id (sourced from the Kafka event's own
     // transactionId), which TransactionConsumer's redelivery dedup guard (findByIdOnly)

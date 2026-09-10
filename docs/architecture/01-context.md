@@ -37,18 +37,18 @@ flowchart TB
   class postgres db
 ```
 
-- Kafka is the only ingestion path in `load-test`/`prod` — no HTTP submission endpoint exists there.
+- Kafka is the only ingestion path in `load-test`/`prod`; no HTTP submission endpoint exists there.
 - The Analyst's only write action is `PATCH .../outcome`; everything else is read-only.
-- Schema Registry and Vault are production-only — `local`/`standalone` skip both.
+- Schema Registry and Vault are production-only: `local`/`standalone` skip both.
 - The IDP is bypassed entirely in `local`/`standalone`/`test` (`SecurityConfig`'s `noSecurityFilterChain`).
 
 ## Assumptions / things to verify
 
 - **Production topology only.** `local`/`standalone` swap in a synchronous HTTP stub
-  (`StandaloneTransactionController`) that bypasses Kafka, Schema Registry, and JWT entirely — a
+  (`StandaloneTransactionController`) that bypasses Kafka, Schema Registry, and JWT entirely. It's a
   genuinely different diagram, not a subset of this one.
 - **"Downstream Consumers" and "Transaction Source" are inferred**, not concrete systems in this
-  repo — based on topic names and `DESIGN.md`'s stated intent ("alerting, reporting, model
+  repo, based on topic names and `DESIGN.md`'s stated intent ("alerting, reporting, model
   training"). Verify against your actual upstream/downstream systems.
-- **Vault access is a startup-time concern** (Spring Cloud Vault Config), not per-request — shown as
+- **Vault access is a startup-time concern** (Spring Cloud Vault Config), not per-request. It's shown as
   one relationship, not a hot-path dependency.

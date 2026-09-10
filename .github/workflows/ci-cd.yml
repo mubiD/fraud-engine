@@ -27,7 +27,7 @@ permissions:
   contents: read
   pull-requests: write
 
-# One run per target branch — never cancel an in-flight deploy
+# One run per target branch, never cancel an in-flight deploy
 concurrency:
   group: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
   cancel-in-progress: false
@@ -48,7 +48,7 @@ env:
 jobs:
 
 # ---------------------------------------------------------------------------
-# Job 1 — Build & Test
+# Job 1: Build & Test
 # Runs on every PR open/update. Uses a GitHub-hosted runner (no local deps).
 # ---------------------------------------------------------------------------
   build:
@@ -92,7 +92,7 @@ jobs:
       - name: Build Docker image for scanning
         run: docker build -t fraud-rule-engine:scan .
 
-      - name: Trivy — vulnerability scan
+      - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: fraud-rule-engine:scan
@@ -109,7 +109,7 @@ jobs:
           retention-days: 1
 
 # ---------------------------------------------------------------------------
-# Job 2 — Deploy
+# Job 2: Deploy
 # Runs ONLY on merge (PR closed + merged).
 #
 # STUB NOTICE: Deployment steps are stubbed for portfolio/showcase purposes.
@@ -118,7 +118,7 @@ jobs:
 #
 # In a real environment this job would run on a self-hosted runner registered
 # against the target environment, with Docker and k6 available locally.
-# The full implementation is preserved below — only the `run:` bodies are stubbed.
+# The full implementation is preserved below, only the `run:` bodies are stubbed.
 # ---------------------------------------------------------------------------
   deploy:
     name: Deploy to ${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.environment || github.ref_name }}
@@ -145,7 +145,7 @@ jobs:
           name: app-jar-${{ env.TARGET_ENV }}
           path: target/
 
-      # STUB — in a live environment this runs: bash scripts/deploy.sh ${{ env.TARGET_ENV }}
+      # STUB: in a live environment this runs bash scripts/deploy.sh ${{ env.TARGET_ENV }},
       # which tears down the existing containers, rebuilds the image, starts fresh containers,
       # and polls /actuator/health until the app is ready.
       - name: Deploy ${{ env.TARGET_ENV }} [STUB]
@@ -154,25 +154,25 @@ jobs:
           echo "[STUB] Steps: docker compose down → build image → docker compose up → health poll"
 
       # ---- load-test branch only: run the full k6 suite after deploy ------
-      # STUB — in a live environment k6 is installed on the runner and executed against
+      # STUB: in a live environment k6 is installed on the runner and executed against
       # the running app. Thresholds are defined in load-tests/config.js.
       - name: Install k6 [STUB]
         if: env.TARGET_ENV == 'load-test'
         run: echo "[STUB] Would run: brew install k6 (if not already present)"
 
-      - name: k6 — baseline [STUB]
+      - name: k6 baseline [STUB]
         if: env.TARGET_ENV == 'load-test'
         run: echo "[STUB] Would run: k6 run load-tests/scenarios/01-baseline.js (100 VUs, 2 min)"
 
-      - name: k6 — ramp [STUB]
+      - name: k6 ramp [STUB]
         if: env.TARGET_ENV == 'load-test'
         run: echo "[STUB] Would run: k6 run load-tests/scenarios/02-ramp.js (10 → 500 VUs, 5 min)"
 
-      - name: k6 — spike [STUB]
+      - name: k6 spike [STUB]
         if: env.TARGET_ENV == 'load-test'
         run: echo "[STUB] Would run: k6 run load-tests/scenarios/03-spike.js (50 → 500 → 50 VUs)"
 
-      - name: k6 — fraud-rules mix [STUB]
+      - name: k6 fraud-rules mix [STUB]
         if: env.TARGET_ENV == 'load-test'
         run: echo "[STUB] Would run: k6 run load-tests/scenarios/04-fraud-rules.js (mixed read/write)"
 

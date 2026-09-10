@@ -28,11 +28,20 @@ public class AssessmentOutcomeService {
         FraudAssessment assessment = fraudAssessmentRepository.findByTransactionIdWithDetails(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("FraudAssessment for transaction", transactionId));
 
-        if (assessment.getOutcome() != AssessmentOutcome.UNRESOLVED) {
-            throw new AssessmentAlreadyResolvedException(transactionId, assessment.getOutcome());
+        // Atomic conditional UPDATE, not check-then-act: outcome is a one-time, audit-grade
+        // disposition that feeds the model's ground truth, so two concurrent PATCHes racing
+        // past an in-memory check and silently last-write-winning would be a real integrity
+        // gap. resolveOutcomeIfUnresolved's own WHERE clause re-verifies UNRESOLVED at the
+        // database; 0 rows updated means someone else resolved it since the read above.
+        int rowsUpdated = fraudAssessmentRepository.resolveOutcomeIfUnresolved(assessment.getId(), newOutcome);
+        if (rowsUpdated == 0) {
+            AssessmentOutcome actual = fraudAssessmentRepository.findByTransactionIdWithDetails(transactionId)
+                    .map(FraudAssessment::getOutcome)
+                    .orElse(assessment.getOutcome());
+            throw new AssessmentAlreadyResolvedException(transactionId, actual);
         }
 
         assessment.setOutcome(newOutcome);
-        return fraudAssessmentRepository.save(assessment);
+        return assessment;
     }
 }

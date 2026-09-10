@@ -28,12 +28,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Effectiveness test suite — validates not just that rules work in isolation,
+ * Effectiveness test suite: validates not just that rules work in isolation,
  * but that the fraud engine as a whole detects real fraud patterns while
  * minimising false positives on legitimate transactions.
  *
  * Runs through the real RuleEngine (with a stubbed EvaluationContextBuilder,
- * so no database is needed) rather than reimplementing scoring locally — a
+ * so no database is needed) rather than reimplementing scoring locally. A
  * second copy of the scoring formula here would silently drift from
  * RuleEngine's actual behaviour the next time either one changed.
  *
@@ -55,7 +55,7 @@ class FraudEngineEffectivenessTest {
     void buildRuleEngine() {
         RuleProperties props = new RuleProperties();
 
-        // Use production defaults — no test shortcuts
+        // Use production defaults, no test shortcuts
         props.getAmountThreshold().setThreshold(new BigDecimal("5000.00"));
         props.getVelocity().setMaxTransactions(5);
         props.getVelocity().setWindowMinutes(10);
@@ -101,7 +101,7 @@ class FraudEngineEffectivenessTest {
     }
 
     // =========================================================================
-    // 0. META — guards against this suite silently falling behind the rule set
+    // 0. META: guards against this suite silently falling behind the rule set
     // =========================================================================
 
     @Test @Order(0)
@@ -176,7 +176,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "AMOUNT_THRESHOLD"))
                 .as("AMOUNT_THRESHOLD rule must fire for amounts above 5000 ZAR")
                 .isTrue();
-        // AMOUNT_THRESHOLD is deliberately calibrated as weak evidence on its own —
+        // AMOUNT_THRESHOLD is deliberately calibrated as weak evidence on its own:
         // a large legitimate purchase (a flight, an appliance) is common enough that
         // amount alone shouldn't auto-flag it. See ScoringProperties for rationale.
         // This was previously a hard "must be fraudulent alone" assertion; changing
@@ -220,7 +220,7 @@ class FraudEngineEffectivenessTest {
         assertThat(hasViolation(result, "CARD_CLONING"))
                 .as("CARD_CLONING rule must fire when the same amount appears at 2+ different merchants in the window")
                 .isTrue();
-        // CARD_CLONING is calibrated as weak evidence alone — below the fraud
+        // CARD_CLONING is calibrated as weak evidence alone, below the fraud
         // threshold on its own. Combine with another signal to cross it.
         System.out.printf(
                 "  [GAP NOTE] CARD_CLONING fired alone — disposition: %s, riskScore: %d. "
@@ -341,7 +341,7 @@ class FraudEngineEffectivenessTest {
     @DisplayName("Pattern: Customer Amount Anomaly — large deviation from personal baseline")
     void pattern_customerAmountAnomaly() {
         Instant now = BUSINESS_HOURS;
-        // 10 prior transactions around 80 ZAR — this customer's normal spend
+        // 10 prior transactions around 80 ZAR, this customer's normal spend
         List<Transaction> baseline = new ArrayList<>();
         for (int i = 1; i <= 10; i++) {
             baseline.add(tx("CUST_BASELINE", "SHOP_" + i, new BigDecimal(75 + (i % 6) + ".00"), "ZAR",
@@ -370,10 +370,10 @@ class FraudEngineEffectivenessTest {
     // 2. COMBINED-SIGNAL PATTERNS
     //    Two independently-weak signals raise the score, but a log-odds model
     //    doesn't treat "two weak coincidences" as equivalent to "one certain
-    //    signal" — that conflation was the problem the old additive model had.
+    //    signal": that conflation was the problem the old additive model had.
     //    These scenarios land in the PENDING_REVIEW band (tier 4) rather than
-    //    being silently treated the same as a clean, zero-violation transaction —
-    //    this is the three-way disposition feature actually working, not just a
+    //    being silently treated the same as a clean, zero-violation transaction.
+    //    This is the three-way disposition feature actually working, not just a
     //    non-regression check.
     // =========================================================================
 
@@ -465,7 +465,7 @@ class FraudEngineEffectivenessTest {
     @DisplayName("Legitimate: Purchase within normal personal variation despite exceeding it slightly")
     void legitimate_withinPersonalVariation() {
         Instant now = BUSINESS_HOURS;
-        // History: mean 2500, population stdDev exactly 400 — a customer with genuinely
+        // History: mean 2500, population stdDev exactly 400. A customer with genuinely
         // variable spending habits, not a flat/uniform pattern. New amount (3500) is
         // 2.5 stdDev away, under the 3.0 multiplier.
         List<Transaction> baseline = List.of(
@@ -609,7 +609,7 @@ class FraudEngineEffectivenessTest {
         // Only scenarios calibrated as standalone-sufficient belong here. Weak
         // signals (AMOUNT_THRESHOLD alone) and correlated-weak combos (card
         // cloning + off-hours) are covered above as GAP NOTE / elevated-band
-        // demonstrations instead — asserting fraudulent=true for them would
+        // demonstrations instead. Asserting fraudulent=true for them would
         // just be re-litigating the additive-scoring bug this suite now guards
         // against.
         record FraudScenario(String name, Transaction txn, List<Transaction> history) {}

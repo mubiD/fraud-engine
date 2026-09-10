@@ -38,7 +38,7 @@ class CardCloningRuleTest {
     @Test
     void sameAmountOneDifferentMerchant_passes() {
         Instant now = Instant.now();
-        // Only 1 other merchant — below the min-different-merchants threshold of 2
+        // Only 1 other merchant, below the min-different-merchants threshold of 2
         RuleResult result = rule.evaluate(
                 tx("MERCH_B", new BigDecimal("99.99"), now),
                 ctx(List.of(tx("MERCH_A", new BigDecimal("99.99"), now.minus(3, ChronoUnit.MINUTES)))));
@@ -61,7 +61,7 @@ class CardCloningRuleTest {
     @Test
     void sameAmountSameMerchantRepeated_passes() {
         Instant now = Instant.now();
-        // History has same merchant as current transaction — not cloning, could be duplicate
+        // History has same merchant as current transaction: not cloning, could be duplicate
         RuleResult result = rule.evaluate(
                 tx("MERCH_A", new BigDecimal("99.99"), now),
                 ctx(List.of(

@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
         type = SecuritySchemeType.HTTP,
         scheme = "bearer",
         bearerFormat = "JWT",
-        description = "JWT issued by the Acme IDP. Required for all /api/v1/** endpoints in non-local environments."
+        description = "JWT issued by Acme Bank's IDP. Required for all /api/v1/** endpoints in non-local environments."
 )
 public class OpenApiConfig {
 

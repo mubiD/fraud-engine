@@ -1,5 +1,5 @@
 ##################################################################################
-# fraud-rule-engine — prod
+# fraud-rule-engine: prod
 # Autoscaling enabled. Resources sized for sustained production throughput.
 # NOTE: <ECR_ACCOUNT_ID>, <AWS_REGION>, and vault paths are placeholder values.
 #       Replace with actual coordinates before deploying to a real cluster.
@@ -30,9 +30,9 @@ resources:
 #---------------------------------------------
 # Environment options
 #---------------------------------------------
-# NOTE: DB_HOST isn't set here — it's supplied by whatever mechanism provides the rest of
+# NOTE: DB_HOST isn't set here, it's supplied by whatever mechanism provides the rest of
 # the DB connection details for this environment (not present in this repo). DB_REPLICA_HOST
-# (DataSourceConfig's read-replica routing — see application.yml's fraud.datasource.reader
+# (DataSourceConfig's read-replica routing, see application.yml's fraud.datasource.reader
 # block) needs the same external wiring, pointed at the RDS reader endpoint rather than the
 # writer endpoint DB_HOST resolves to. Falls back to DB_HOST (i.e. no read/write split) if
 # left unset, so this is additive, not a hard dependency for this environment to function.

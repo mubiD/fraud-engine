@@ -1,21 +1,21 @@
-# PROD profile — active when SPRING_PROFILES_ACTIVE=prod (set in docker-compose.prod.yml).
+# PROD profile, active when SPRING_PROFILES_ACTIVE=prod (set in docker-compose.prod.yml).
 #
 # Overrides the base application.yml with:
 #   - Kafka SASL_SSL (PLAIN credentials over TLS)
 #
-# Vault AppRole authentication (method + role-id/secret-id) is NOT set here — it lives
+# Vault AppRole authentication (method + role-id/secret-id) is NOT set here. It lives
 # entirely in the base application.yml, env-var-driven (VAULT_AUTH_METHOD/VAULT_ROLE_ID/
 # VAULT_SECRET_ID, all set by docker-compose.prod.yml). spring.config.import:
 # "optional:vault://" in application.yml resolves the Vault connection during early
-# config-data loading, before this profile-specific file's properties are layered in — any
+# config-data loading, before this profile-specific file's properties are layered in, so any
 # spring.cloud.vault.* override placed here instead never takes effect in time (found live
 # 2026-09-08: first with `authentication: APPROLE` alone, "Cannot create authentication
 # mechanism for TOKEN"; then again with app-role.role-id/secret-id alone, "Cannot configure
-# RoleId" — both silently ignored at the point Vault's own client actually connects).
+# RoleId", both silently ignored at the point Vault's own client actually connects).
 
 spring:
   kafka:
-    # Bootstrap via the SASL_SSL listener — overrides the INTERNAL address used in dev/local.
+    # Bootstrap via the SASL_SSL listener, overrides the INTERNAL address used in dev/local.
     # Resolved from KAFKA_BOOTSTRAP_SERVERS env var set in docker-compose.prod.yml.
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka1:9092,kafka2:9092,kafka3:9092}
 
@@ -33,7 +33,7 @@ spring:
       ssl.truststore.location: ${KAFKA_SSL_TRUSTSTORE_LOCATION:/etc/ssl/kafka/truststore.p12}
       ssl.truststore.type: PKCS12
       ssl.truststore.password: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
-      # Hostname verification against the broker cert's SAN — scripts/gen-kafka-certs.sh
+      # Hostname verification against the broker cert's SAN: scripts/gen-kafka-certs.sh
       # already issues each broker a cert with a SAN matching its advertised listener
       # hostname (kafka1/kafka2/kafka3), so verification passes without special-casing.
       # Kafka's client default is "https"; set explicitly so this isn't silently reverted

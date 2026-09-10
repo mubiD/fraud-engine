@@ -104,7 +104,7 @@ class TransactionQueryServiceTest {
     void getByCustomerId_equalFromAndTo_isAccepted() {
         when(transactionRepository.findByCustomerInRange(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SliceImpl<>(List.of()));
-        // same instant for both — should not throw
+        // same instant for both, should not throw
         service.getByCustomerId(CUSTOMER, FROM, FROM, null, null, 20, "desc");
     }
 

@@ -112,7 +112,7 @@
             <artifactId>spring-boot-starter-cache</artifactId>
         </dependency>
 
-        <!-- Spring Cloud Vault — secrets management -->
+        <!-- Spring Cloud Vault: secrets management -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-vault-config</artifactId>
@@ -124,7 +124,7 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- Distributed tracing — Micrometer OTel bridge + Zipkin exporter -->
+        <!-- Distributed tracing: Micrometer OTel bridge + Zipkin exporter -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-otel</artifactId>
@@ -134,14 +134,14 @@
             <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
 
-        <!-- Protobuf runtime — pin to match generated sources from protoc 3.25.3 -->
+        <!-- Protobuf runtime, pinned to match generated sources from protoc 3.25.3 -->
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
             <version>${protobuf.version}</version>
         </dependency>
 
-        <!-- H2 — in-memory database used by the standalone profile only.
+        <!-- H2: in-memory database used by the standalone profile only.
              In production the app connects to PostgreSQL 16 (see application.yml). -->
         <dependency>
             <groupId>com.h2database</groupId>
@@ -156,7 +156,7 @@
             <version>2.6.0</version>
         </dependency>
 
-        <!-- Security — OAuth2 resource server (JWT validation) -->
+        <!-- Security: OAuth2 resource server (JWT validation) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
@@ -200,7 +200,7 @@
             <artifactId>spring-kafka-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- TopologyTestDriver for CustomerActivityProcessor — pipes records through
+        <!-- TopologyTestDriver for CustomerActivityProcessor, pipes records through
              the topology without a running broker. -->
         <dependency>
             <groupId>org.apache.kafka</groupId>
@@ -308,8 +308,8 @@
                     <version>7.6.1</version>
                 </dependency>
                 <!-- Kafka Streams' Protobuf Serde (VelocityStreamsTopologyConfig /
-                     application.yml's spring.kafka.streams.properties.default.value.serde)
-                     — referenced only by class name in YAML, resolved reflectively at
+                     application.yml's spring.kafka.streams.properties.default.value.serde),
+                     referenced only by class name in YAML and resolved reflectively at
                      runtime, so this is needed here for -Pconfluent runtime classpath
                      only, never as a compile-time import. -->
                 <dependency>

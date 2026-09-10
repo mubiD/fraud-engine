@@ -12,8 +12,8 @@ class ReplicationRoutingDataSourceTest {
 
     @AfterEach
     void tearDown() {
-        // TransactionSynchronizationManager state is thread-bound, not instance-bound —
-        // clear it so a failed assertion here can't leak read-only status into another test.
+        // TransactionSynchronizationManager state is thread-bound, not instance-bound.
+        // Clear it so a failed assertion here can't leak read-only status into another test.
         TransactionSynchronizationManager.setCurrentTransactionReadOnly(false);
     }
 
@@ -33,7 +33,7 @@ class ReplicationRoutingDataSourceTest {
 
     @Test
     void noActiveTransaction_defaultsToWriter() {
-        // isCurrentTransactionReadOnly() is false outside any transaction — same as a
+        // isCurrentTransactionReadOnly() is false outside any transaction, same as a
         // plain write, which is the safer default when nothing has said otherwise.
         assertThat(routingDataSource.determineCurrentLookupKey()).isEqualTo(DataSourceType.WRITER);
     }

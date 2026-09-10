@@ -11,12 +11,12 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import java.time.Duration;
 
 // Sole writer of "customer-activity-store". Runs inside its own Kafka Streams
-// application (see VelocityStreamsTopologyConfig) — an independent consumer group on
+// application (see VelocityStreamsTopologyConfig), an independent consumer group on
 // transactions.raw, deliberately not wired into TransactionConsumer's exactly-once
 // transaction: this processor's only job is materialising read-side state for
 // EvaluationContextBuilder, not participating in assessment persistence. Per-customer
-// ordering is preserved the same way it is for TransactionConsumer — transactions.raw is
-// partitioned by customerId — but the two consumer groups are not coordinated with each
+// ordering is preserved the same way it is for TransactionConsumer: transactions.raw is
+// partitioned by customerId, but the two consumer groups are not coordinated with each
 // other, so this store can lag behind what TransactionConsumer has already processed
 // (see the plan's Known Limitations: an accepted, monitored staleness risk, not solved
 // here). Terminal processor: nothing is forwarded downstream, it only writes state.

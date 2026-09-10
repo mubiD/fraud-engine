@@ -79,16 +79,22 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
                                                 @Param("cursorId") UUID cursorId,
                                                 Pageable pageable);
 
+    // Scoped to a single currency so a customer transacting in more than one currency
+    // never has those amounts pooled as equivalent magnitude by CumulativeSpendingRule's
+    // daily-spend check, mirroring the Kafka Streams path's per-currency
+    // CustomerActivityState.dailySpendTotal(asOf, currency).
     @Query("""
             SELECT COALESCE(SUM(t.amount), 0)
             FROM Transaction t
             WHERE t.customerId = :customerId
               AND t.timestamp >= :since
               AND t.id != :transactionId
+              AND t.currency = :currency
             """)
     java.math.BigDecimal sumAmountByCustomerSince(@Param("customerId") String customerId,
                                                   @Param("since") Instant since,
-                                                  @Param("transactionId") UUID transactionId);
+                                                  @Param("transactionId") UUID transactionId,
+                                                  @Param("currency") String currency);
 
     @Query("""
             SELECT COUNT(t) FROM Transaction t

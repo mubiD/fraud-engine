@@ -14,7 +14,7 @@ import java.time.temporal.ChronoUnit;
 
 /**
  * Detects card cloning by finding the same amount charged to multiple distinct
- * merchants within a short window — a hallmark of automated card testing with
+ * merchants within a short window, a hallmark of automated card testing with
  * a cloned card.
  */
 @Component

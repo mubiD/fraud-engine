@@ -51,7 +51,18 @@ public class SecurityConfig {
             final HttpSecurity http,
             final JwtDecoder jwtDecoder)
             throws Exception {
+        return buildFilterChain(http, jwtDecoder);
+    }
 
+    // Extracted so SecurityConfigAuthorizationTest can exercise the exact same authorization
+    // rules (whitelist vs. protected-path role gate vs. default-authenticated) against a
+    // locally-supplied JwtDecoder, without needing a reachable IDP for the real jwtDecoder()
+    // bean above (JwtDecoders.fromIssuerLocation makes a real network call at bean-creation
+    // time). See that test class for why the filterChain() bean itself can't be exercised
+    // directly in a fast, offline test. Before this was split out, the production
+    // authorization rules had zero test coverage: every controller test runs under
+    // {local,test,standalone}, which activates noSecurityFilterChain (permitAll) instead.
+    SecurityFilterChain buildFilterChain(final HttpSecurity http, final JwtDecoder jwtDecoder) throws Exception {
         String[] allowedRoles =
                 resourceServerConfig.getAllowedRoles().stream()
                         .map(role -> "ROLE_" + role)

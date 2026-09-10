@@ -12,17 +12,17 @@ import java.util.Map;
 //
 // That model conflated two different things: "one strong signal fired" and
 // "several weak, possibly-correlated signals happened to coincide" produced an
-// identical verdict once the point total crossed 50 — see DESIGN.md §5 and §11.
+// identical verdict once the point total crossed 50. See DESIGN.md §5 and §11.
 //
 // This replaces it with a log-odds (naive-Bayes) combination: each rule carries
-// a likelihood ratio — how much more likely fraud is, given that rule fired,
-// versus not — keyed by "RULE_NAME:SEVERITY" so rules whose severity varies at
+// a likelihood ratio (how much more likely fraud is, given that rule fired,
+// versus not), keyed by "RULE_NAME:SEVERITY" so rules whose severity varies at
 // runtime (e.g. VelocityRule's high-risk-category escalation) are calibrated
 // per variant, not just per rule. Posterior probability of fraud is the sigmoid
 // of (prior log-odds + sum of each fired rule's log-likelihood-ratio).
 //
 // The likelihood ratios below are domain-judgment starting points, not values
-// derived from labelled outcome data — this system has no confirmed-fraud /
+// derived from labelled outcome data. This system has no confirmed-fraud /
 // false-positive feedback loop yet to calibrate against. They should be revised
 // once one exists, rather than treated as authoritative.
 @ConfigurationProperties(prefix = "fraud.scoring")
@@ -38,13 +38,13 @@ public class ScoringProperties {
     // instead of CLEARED (but below fraudProbabilityThreshold, which takes precedence).
     // Default 0.10 is chosen from the effectiveness suite's own measured behavior: a
     // single weak signal alone scores ~0.02-0.06, two corroborating weak signals
-    // combined score ~0.15 — this sits between them, so isolated weak signals stay
+    // combined score ~0.15. This sits between them, so isolated weak signals stay
     // CLEARED but corroborated combinations move to PENDING_REVIEW instead of being
     // silently treated the same as a clean transaction.
     private double reviewProbabilityThreshold = 0.10;
 
     // Fallback likelihood ratios used when a fired (ruleName:severity) combination
-    // has no specific entry below — keeps scoring functional (rather than throwing)
+    // has no specific entry below, keeps scoring functional (rather than throwing)
     // if a new rule or severity variant ships without an explicit calibration, while
     // still logging a warning so the gap gets noticed and closed.
     private double defaultLikelihoodRatioLow = 1.3;
@@ -57,7 +57,7 @@ public class ScoringProperties {
     private static Map<String, Double> defaultLikelihoodRatios() {
         Map<String, Double> m = new HashMap<>();
         // Weak alone: a large amount, by itself, is common among legitimate
-        // transactions (flights, electronics, once-off large purchases) — this
+        // transactions (flights, electronics, once-off large purchases). This
         // was the single biggest source of standalone false-positive risk under
         // the old additive model (AmountThresholdRule contributed the largest
         // share of all flags in the sample fraud-summary in README.md).
@@ -71,7 +71,7 @@ public class ScoringProperties {
         m.put("DUPLICATE_TRANSACTION:CRITICAL", 150.0);
         m.put("GEOGRAPHIC_ANOMALY:CRITICAL", 400.0);
 
-        // Weak alone by design — see CardCloningRule/TimeOfDayAnomalyRule javadoc
+        // Weak alone by design. See CardCloningRule/TimeOfDayAnomalyRule javadoc
         // for why these were always meant to need a second corroborating signal.
         m.put("CARD_CLONING:MEDIUM", 6.0);
         m.put("TIME_OF_DAY_ANOMALY:MEDIUM", 3.0);
@@ -84,13 +84,13 @@ public class ScoringProperties {
 
         // Deliberately modest: CrossMerchantVelocityRule and VelocityRule share
         // the same default 10-minute window, so any transaction set meeting this
-        // rule's >=10 threshold has almost certainly already tripped VELOCITY —
+        // rule's >=10 threshold has almost certainly already tripped VELOCITY;
         // a high ratio here would double-count what is substantively one pattern.
         m.put("CROSS_MERCHANT_VELOCITY:MEDIUM", 3.0);
 
         m.put("CUMULATIVE_SPENDING:HIGH", 140.0);
 
-        // Weak alone, like AMOUNT_THRESHOLD, but a more specific signal — this fires on
+        // Weak alone, like AMOUNT_THRESHOLD, but a more specific signal: this fires on
         // deviation from the customer's OWN history, not a global size cutoff, so it's
         // valued slightly above the generic weak-alone cluster. Still a domain-judgment
         // starting point: no confirmed-fraud/false-positive data exists yet to calibrate

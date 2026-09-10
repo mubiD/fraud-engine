@@ -50,7 +50,7 @@ public class EvaluationContextBuilder {
 
         // For physical-channel transactions with no coordinates, fall back to the
         // merchant's registered location so the geographic rule can still fire.
-        // CARD_NOT_PRESENT is excluded — the merchant's address is not a proxy
+        // CARD_NOT_PRESENT is excluded: the merchant's address is not a proxy
         // for where the customer physically is during an online transaction.
         Double merchantLat = null;
         Double merchantLon = null;
@@ -82,7 +82,7 @@ public class EvaluationContextBuilder {
     // recentCustomerTransactions + dailySpendTotal + the CustomerAmountAnomalyRule baseline:
     // the three pieces of context served by the Kafka Streams state store, each with its
     // own Postgres fallback below. Merchant location (Caffeine-cached reference data) is
-    // unaffected by this and stays exactly as it was — see the implementation plan's Scope
+    // unaffected by this and stays exactly as it was; see the implementation plan's Scope
     // section.
     private record RecentActivity(List<Transaction> recent, BigDecimal dailySpend,
                                    AmountBaselineStats amountBaseline) {}
@@ -111,11 +111,11 @@ public class EvaluationContextBuilder {
         List<RecentTransactionRecord> windowRecords = state.recentTransactionsSince(lookbackStart);
 
         // The streaming processor is an independent consumer of the same topic
-        // (CustomerActivityProcessor) — it may have already ingested this exact
+        // (CustomerActivityProcessor), so it may have already ingested this exact
         // transaction by the time this read happens. Excluded the same way the Postgres
-        // path excludes it below: filtered out of the list, and — since its amount would
+        // path excludes it below: filtered out of the list and, since its amount would
         // otherwise already be folded into the hourly bucket sum and the daily baseline
-        // bucket too — backed out of both aggregates as well. Safe to key this off the same
+        // bucket too, backed out of both aggregates as well. Safe to key this off the same
         // windowRecords lookup: if the current (just-published) transaction has been
         // ingested at all, it is by definition seconds old, so it is always still within
         // this window regardless of how far the two independent consumers have drifted
@@ -128,7 +128,10 @@ public class EvaluationContextBuilder {
                 .map(this::toTransaction)
                 .collect(Collectors.toList());
 
-        BigDecimal dailySpend = state.dailySpendTotal(transaction.getTimestamp());
+        // Scoped to this transaction's own currency: see CustomerActivityState's class
+        // comment for why (a customer transacting in more than one currency must not have
+        // those amounts pooled as equivalent magnitude by the daily-spend/baseline rules).
+        BigDecimal dailySpend = state.dailySpendTotal(transaction.getTimestamp(), transaction.getCurrency());
         if (selfAlreadyIngested) {
             dailySpend = dailySpend.subtract(transaction.getAmount());
         }
@@ -136,7 +139,8 @@ public class EvaluationContextBuilder {
         AmountBaselineStats amountBaseline = AmountBaselineStats.empty();
         if (properties.getCustomerAmountAnomaly().isEnabled()) {
             DailyAmountStats aggregate = state.baselineAggregate(
-                    transaction.getTimestamp(), properties.getCustomerAmountAnomaly().getLookbackDays());
+                    transaction.getTimestamp(), properties.getCustomerAmountAnomaly().getLookbackDays(),
+                    transaction.getCurrency());
             if (selfAlreadyIngested) {
                 aggregate = aggregate.minus(transaction.getAmount().doubleValue());
             }
@@ -156,12 +160,16 @@ public class EvaluationContextBuilder {
                 .filter(t -> !t.getId().equals(transaction.getId()))
                 .collect(Collectors.toList());
 
+        // Scoped to this transaction's own currency, see CustomerActivityState's class
+        // comment for why. sumAmountByCustomerSince mirrors the streaming path's per-
+        // currency dailySpendTotal(asOf, currency).
         BigDecimal dailySpend = transactionRepository.sumAmountByCustomerSince(
                 transaction.getCustomerId(),
                 transaction.getTimestamp().minus(24, ChronoUnit.HOURS),
-                transaction.getId());
+                transaction.getId(),
+                transaction.getCurrency());
 
-        // Longer, independent window for personal-baseline statistics — skipped entirely
+        // Longer, independent window for personal-baseline statistics, skipped entirely
         // when the rule is disabled to avoid an unnecessary query on the hot path.
         AmountBaselineStats amountBaseline = AmountBaselineStats.empty();
         if (properties.getCustomerAmountAnomaly().isEnabled()) {
@@ -171,6 +179,9 @@ public class EvaluationContextBuilder {
                     .findRecentByCustomer(transaction.getCustomerId(), baselineStart)
                     .stream()
                     .filter(t -> !t.getId().equals(transaction.getId()))
+                    // Same currency-scoping as dailySpend above: mixing currencies into
+                    // one mean/stdDev would make the z-score meaningless.
+                    .filter(t -> transaction.getCurrency().equals(t.getCurrency()))
                     .collect(Collectors.toList());
             amountBaseline = AmountBaselineStats.from(baselineHistory);
         }

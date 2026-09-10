@@ -36,8 +36,8 @@ public class RuleEngine {
     }
 
     // Metrics are recorded here, not by callers (TransactionConsumer / StandaloneTransactionController),
-    // so every ingress path — Kafka consumer in real environments, the synchronous standalone/local
-    // demo stub — reports the same fraud.assessments.total / fraud.rule.evaluation.duration.seconds
+    // so every ingress path (Kafka consumer in real environments, the synchronous standalone/local
+    // demo stub) reports the same fraud.assessments.total / fraud.rule.evaluation.duration.seconds
     // regardless of which one is active. A caller-side recording once left the local/standalone path
     // (make dev's only ingress) with zero counters no matter how much traffic it processed.
     public FraudAssessment evaluate(Transaction transaction) {
@@ -104,10 +104,10 @@ public class RuleEngine {
         return assessment;
     }
 
-    // Log-odds (naive-Bayes) combination — see ScoringProperties for rationale.
+    // Log-odds (naive-Bayes) combination: see ScoringProperties for rationale.
     // Treats each fired rule as evidence with a calibrated likelihood ratio and
     // combines them additively in log-space, which is the mathematically correct
-    // way to combine (assumed-independent) probabilistic evidence — as opposed to
+    // way to combine (assumed-independent) probabilistic evidence, as opposed to
     // summing arbitrary point values, which the likelihood-ratio approach replaces.
     private double calculateFraudProbability(List<RuleResult> violations) {
         double prior = scoringProperties.getPriorFraudProbability();

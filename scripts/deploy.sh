@@ -7,18 +7,18 @@
 # Postgres data volume is preserved across deploys.
 #
 # Prerequisite: a local JDK 21 + Maven on PATH (in addition to Docker). The
-# JAR is built on the host, not inside the image — see docker/Dockerfile's
+# JAR is built on the host, not inside the image (see docker/Dockerfile's
 # header comment for why (Confluent's Maven repo needs auth not available in
-# a plain build container). This resolves JAVA_HOME/mvn from your existing
+# a plain build container. This resolves JAVA_HOME/mvn from your existing
 # shell environment; it does not attempt to auto-detect a JDK 21 install.
 #
 # `make <env>` (and this script directly) is meant to be one command that just
-# starts the environment — including prod, which additionally bootstraps Kafka
+# starts the environment, including prod, which additionally bootstraps Kafka
 # TLS certs and Vault's AppRole identity on first run, below, rather than the
 # multi-step manual dance docker-compose.prod.yml's header comment used to
 # require (generate certs, start Vault, copy out role/secret IDs by hand,
 # restart fraud-engine). Real secrets (KAFKA_*_PASSWORD, DB_PASSWORD) still
-# default to local-only placeholder values if not already exported — override
+# default to local-only placeholder values if not already exported. Override
 # them yourself for anything beyond local verification.
 
 set -euo pipefail
@@ -44,10 +44,10 @@ PROJECT="fraud-${ENV}"
 
 echo "==> [$ENV] Building JAR..."
 # load-test/prod run the real Kafka Protobuf serializer/deserializer (application.yml),
-# which needs the opt-in `confluent` Maven profile (pom.xml) — only `dev` (SPRING_PROFILES_ACTIVE=local,
+# which needs the opt-in `confluent` Maven profile (pom.xml); only `dev` (SPRING_PROFILES_ACTIVE=local,
 # JSON serialisation) can build from Maven Central alone. Building load-test/prod without this flag
 # produces a jar that fails to start at all (ClassNotFoundException on
-# io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer) — found live 2026-09-08.
+# io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer, found live 2026-09-08).
 if [[ "$ENV" == "dev" ]]; then
   mvn package -DskipTests -q
 else
@@ -61,7 +61,7 @@ docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans
 # Runs before the image build so the app never starts against a half-configured
 # Kafka/Vault. Both steps are idempotent (gen-kafka-certs.sh skips existing certs
 # via its own check; scripts/vault-init.sh re-unseals rather than re-initialising
-# once Vault has already been set up) — safe to run on every deploy, not just the
+# once Vault has already been set up), so it's safe to run on every deploy, not just the
 # first one.
 if [[ "$ENV" == "prod" ]]; then
   export KAFKA_SSL_KEYSTORE_PASSWORD="${KAFKA_SSL_KEYSTORE_PASSWORD:-changeit}"
@@ -70,7 +70,7 @@ if [[ "$ENV" == "prod" ]]; then
   export KAFKA_CLIENT_PASSWORD="${KAFKA_CLIENT_PASSWORD:-changeit-client}"
   export DB_PASSWORD="${DB_PASSWORD:-fraud}"
   if [[ "${KAFKA_SSL_KEYSTORE_PASSWORD}" == "changeit" ]]; then
-    echo "==> [prod] No KAFKA_*_PASSWORD/DB_PASSWORD exported — using local-verification-only"
+    echo "==> [prod] No KAFKA_*_PASSWORD/DB_PASSWORD exported, using local-verification-only"
     echo "    defaults (changeit / changeit-admin / changeit-client / fraud). Export real"
     echo "    values yourself before this is anything other than a local dry run."
   fi
@@ -82,7 +82,7 @@ if [[ "$ENV" == "prod" ]]; then
     echo "==> [prod] Kafka TLS certs already present, skipping generation."
   fi
 
-  echo "==> [prod] Starting Postgres, Kafka, Vault and mock-oidc (not fraud-engine yet — it"
+  echo "==> [prod] Starting Postgres, Kafka, Vault and mock-oidc (not fraud-engine yet, it"
   echo "    needs VAULT_ROLE_ID/VAULT_SECRET_ID from vault-init, read below)..."
   docker compose $COMPOSE_FILES -p "$PROJECT" up -d postgres kafka1 kafka2 kafka3 vault vault-init mock-oidc
 
@@ -113,7 +113,7 @@ if [[ "$ENV" == "prod" ]]; then
   VOLUME_NAME="${PROJECT}_vault_init_prod"
   export VAULT_ROLE_ID
   export VAULT_SECRET_ID
-  # MSYS_NO_PATHCONV scoped to just these two calls — Git Bash/MSYS on Windows rewrites the
+  # MSYS_NO_PATHCONV scoped to just these two calls: Git Bash/MSYS on Windows rewrites the
   # in-container "/data/init-output.txt" path as a Windows path otherwise, corrupting it;
   # exporting it script-wide instead broke mvn's own path handling. Found live 2026-09-08.
   VAULT_ROLE_ID=$(MSYS_NO_PATHCONV=1 docker run --rm -v "${VOLUME_NAME}:/data:ro" alpine:3.20 \

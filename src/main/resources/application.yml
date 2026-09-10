@@ -50,19 +50,19 @@ spring:
       concurrency: 6
       shutdown-timeout: 30000
     # Second, independent consumer group on transactions.raw (see
-    # VelocityStreamsTopologyConfig) — materialises "customer-activity-store" for
+    # VelocityStreamsTopologyConfig). It materialises "customer-activity-store" for
     # EvaluationContextBuilder to read via Interactive Queries, replacing its live
     # Postgres queries for the rules listed in the implementation plan's Scope section.
     # Only active under !standalone & !local (see VelocityStreamsTopologyConfig's own
-    # @Profile — this block being unconditionally present in the base application.yml
-    # does not itself start any Kafka Streams machinery under those profiles).
+    # @Profile). This block is unconditionally present in the base application.yml but
+    # does not itself start any Kafka Streams machinery under those profiles.
     streams:
       application-id: fraud-engine-velocity-streams
       properties:
         num.stream.threads: 6
         default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
         # Same Confluent Protobuf class the producer/consumer serializers above use,
-        # referenced only as a string here too — kept out of the default (non
+        # referenced only as a string here too, kept out of the default (non
         # -Pconfluent) build's compile-time dependencies, resolved reflectively at
         # runtime exactly like spring.kafka.producer.value-serializer above.
         default.value.serde: io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde
@@ -86,7 +86,7 @@ spring:
       # Env-var-driven here, not overridden in application-prod.yml: spring.config.import:
       # "optional:vault://" below resolves the Vault connection during early config-data
       # loading, before profile-specific files are layered in, so an authentication: APPROLE
-      # override placed in application-prod.yml never took effect — found live 2026-09-08 (see
+      # override placed in application-prod.yml never took effect. Found live 2026-09-08 (see
       # that file's own comment). docker-compose.prod.yml sets VAULT_AUTH_METHOD=APPROLE.
       authentication: ${VAULT_AUTH_METHOD:TOKEN}
       # Same early-resolution reasoning as authentication above: app-role.role-id/secret-id
@@ -94,7 +94,7 @@ spring:
       # with "Cannot configure RoleId" before that file's properties are layered in (found
       # live 2026-09-08, same session as the authentication-method fix). Blank/unset in every
       # profile except prod, where docker-compose.prod.yml sets VAULT_ROLE_ID/VAULT_SECRET_ID
-      # — harmless no-op for TOKEN authentication, which ignores app-role entirely.
+      # (a harmless no-op for TOKEN authentication, which ignores app-role entirely).
       app-role:
         role-id: ${VAULT_ROLE_ID:}
         secret-id: ${VAULT_SECRET_ID:}
@@ -106,7 +106,7 @@ spring:
         # Matches spring.application.name (top of this file) and the one secret path
         # vault-init.sh actually seeds/grants (secret/fraud-rule-engine). Spring Cloud Vault
         # loads secret/{default-context} and secret/{spring.application.name} as two
-        # independent property sources — leaving this at a different name ("fraud-engine",
+        # independent property sources. Leaving this at a different name ("fraud-engine",
         # the shorter artifact/container name used elsewhere in this repo) meant the
         # default-context lookup kept 403ing even after vault-init.sh's policy was fixed to
         # cover the application-name path. Found live 2026-09-09 running `make prod`.
@@ -130,7 +130,7 @@ fraud:
       - /api/v1/**
 
   cache:
-    # ReferenceDataCache.warmMerchantLocationCache() — eager full-table warm-up so a
+    # ReferenceDataCache.warmMerchantLocationCache(): eager full-table warm-up so a
     # merchant-location lookup only falls through to a DB read for a merchant added since
     # the last warm-up, not on every TTL-expired or cold entry. Runs immediately at startup
     # regardless of this value (initialDelay=0), then on this interval thereafter.
@@ -139,11 +139,11 @@ fraud:
 
   datasource:
     # DataSourceConfig (!standalone only) routes every read-only transaction to a reader
-    # DataSource. Blank by default (not DB_HOST) — DataSourceConfig.readerDataSource()
+    # DataSource. Blank by default (not DB_HOST): DataSourceConfig.readerDataSource()
     # reuses the writer's own resolved spring.datasource.url verbatim when this is blank,
     # rather than reconstructing a URL from DB_HOST/DB_PORT/DB_NAME independently. That
     # reconstruction used to silently diverge from the real writer URL whenever
-    # spring.datasource.url was set directly instead of through those three env vars — e.g.
+    # spring.datasource.url was set directly instead of through those three env vars, e.g.
     # TransactionIntegrationTest's @DynamicPropertySource override (Testcontainers' ephemeral
     # host/port), which the old DB_HOST-based default never picked up, found live 2026-09-09.
     # docker-compose.yml's postgres-replica service is the only place DB_REPLICA_HOST is

@@ -15,21 +15,21 @@ import java.util.Map;
 
 // Every profile except standalone (local, test, load-test, prod): registers writer + reader
 // DataSources and routes every
-// connection checkout between them via ReplicationRoutingDataSource — no repository or
+// connection checkout between them via ReplicationRoutingDataSource. No repository or
 // service code needs to change, since every read-path query service method is already
 // @Transactional(readOnly = true) (see TransactionQueryService), and the only place that
 // writes outside a service's own transaction (StandaloneTransactionController) doesn't
 // apply under this profile anyway.
 //
-// @Profile("!standalone"): standalone runs H2 in-memory with no replica concept at all —
-// letting Spring Boot's normal auto-configured single DataSource apply there unchanged is
+// @Profile("!standalone"): standalone runs H2 in-memory with no replica concept at all.
+// Letting Spring Boot's normal auto-configured single DataSource apply there unchanged is
 // simpler than routing a single in-memory instance to itself. Spring Boot's
 // DataSourceAutoConfiguration backs off automatically once any DataSource bean exists in
-// the context, so this doesn't need to explicitly exclude anything — it just needs to not
+// the context, so this doesn't need to explicitly exclude anything; it just needs to not
 // register beans under a profile where the H2 stub's own spring.datasource.* shape applies.
 //
 // The reader defaults to the exact same host as the writer (fraud.datasource.reader.host
-// falls back to DB_HOST) — every environment without a real replica configured is a safe
+// falls back to DB_HOST): every environment without a real replica configured is a safe
 // no-op: reads and writes both land on the one Postgres instance, same as before this
 // existed. Only an environment that actually sets DB_REPLICA_HOST (see docker-compose.yml's
 // postgres-replica service) gets real read/write separation.
@@ -55,9 +55,9 @@ public class DataSourceConfig {
     @ConfigurationProperties("spring.datasource.hikari")
     public DataSource readerDataSource(DataSourceProperties dataSourceProperties,
                                        @Value("${fraud.datasource.reader.host:}") String replicaHost) {
-        // Blank replicaHost (the common case — no DB_REPLICA_HOST configured) means reuse the
+        // Blank replicaHost (the common case, no DB_REPLICA_HOST configured) means reuse the
         // writer's own resolved URL verbatim, whatever it actually is, instead of
-        // reconstructing one from DB_HOST/DB_PORT/DB_NAME — see fraud.datasource.reader.host's
+        // reconstructing one from DB_HOST/DB_PORT/DB_NAME. See fraud.datasource.reader.host's
         // comment in application.yml for why the two can diverge.
         String writerUrl = dataSourceProperties.getUrl();
         String readerUrl = replicaHost.isBlank()

@@ -45,7 +45,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * STUB — active under the standalone and local Spring profiles.
+ * STUB: active under the standalone and local Spring profiles.
  *
  * In production, transactions enter the system via the transactions.raw Kafka topic,
  * which TransactionConsumer.consume() processes asynchronously under a
@@ -54,8 +54,8 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * This endpoint replicates that flow synchronously so the rule engine can be exercised
  * without a full Kafka pipeline:
- *   standalone — in-memory H2, no Kafka, suitable for quick demos.
- *   local      — real PostgreSQL + Kafka (docker-compose), JSON wire format.
+ *   standalone: in-memory H2, no Kafka, suitable for quick demos.
+ *   local: real PostgreSQL + Kafka (docker-compose), JSON wire format.
  */
 @RestController
 @RequestMapping(value = "/api/v1/standalone", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -64,7 +64,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @Tag(
     name = "Standalone Demo",
     description = """
-        STUB — present when the standalone or local profile is active.
+        STUB: present when the standalone or local profile is active.
         Submits a transaction directly to the rule engine, bypassing the Kafka consumer.
         In production this flow is driven by the transactions.raw Kafka topic
         (TransactionConsumer → RuleEngine → AssessmentProducer).
@@ -106,7 +106,7 @@ public class StandaloneTransactionController {
     // Deliberately NOT @Transactional at this method's level, same reason as stream() below:
     // processor.process(tx) is its own transactional unit (StandaloneTransactionProcessor),
     // committing before control returns here. That's what makes the race-recovery catch below
-    // actually work — wrapping this whole method in @Transactional (as it used to be) made
+    // actually work. Wrapping this whole method in @Transactional (as it used to be) made
     // processor.process() join that outer transaction instead of committing independently, so
     // the unique-constraint violation only surfaced when THIS method's own transactional proxy
     // committed, after the method body (and any try/catch in it) had already finished running.
@@ -143,9 +143,9 @@ public class StandaloneTransactionController {
             // Lost a race against a concurrent submission of the same client-supplied
             // transactionId: both requests passed the existence check above before either had
             // committed. The winner's row is now committed (this request's own attempt failed
-            // on transactions' PK or fraud_assessments' unique constraint at commit) — return
+            // on transactions' PK or fraud_assessments' unique constraint at commit), so return
             // the winner's result instead of surfacing this as a 500. A null transactionId
-            // can never collide this way (each is freshly generated — see Transaction's
+            // can never collide this way (each is freshly generated, see Transaction's
             // assignIdIfMissing()), so treat that case as a genuine, unexpected failure.
             if (request.transactionId() == null) {
                 throw e;
@@ -180,7 +180,7 @@ public class StandaloneTransactionController {
         int pendingReview = 0;
         int flagged = 0;
 
-        // Deliberately NOT @Transactional at this method's level — each iteration commits
+        // Deliberately NOT @Transactional at this method's level: each iteration commits
         // independently via processor.process() (see StandaloneTransactionProcessor's javadoc).
         // A single @Transactional wrapping this whole loop used to hold one Postgres transaction
         // open for the entire batch: nothing committed until every iteration finished, and a

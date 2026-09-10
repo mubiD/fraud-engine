@@ -29,29 +29,38 @@ class AssessmentOutcomeServiceTest {
     AssessmentOutcomeService service;
 
     static final UUID TRANSACTION_ID = UUID.fromString("3fa85f64-5717-4562-b3fc-2c963f66afa6");
+    static final UUID ASSESSMENT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     @BeforeEach
     void setUp() {
         service = new AssessmentOutcomeService(fraudAssessmentRepository);
     }
 
-    @Test
-    void unresolvedAssessment_setToConfirmedFraud_isSavedAndReturned() {
+    private FraudAssessment unresolvedAssessment() {
         FraudAssessment assessment = new FraudAssessment();
+        assessment.setId(ASSESSMENT_ID);
+        return assessment;
+    }
+
+    @Test
+    void unresolvedAssessment_setToConfirmedFraud_updatesAtomicallyAndReturns() {
+        FraudAssessment assessment = unresolvedAssessment();
         when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
-        when(fraudAssessmentRepository.save(assessment)).thenReturn(assessment);
+        when(fraudAssessmentRepository.resolveOutcomeIfUnresolved(ASSESSMENT_ID, AssessmentOutcome.CONFIRMED_FRAUD))
+                .thenReturn(1);
 
         FraudAssessment result = service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.CONFIRMED_FRAUD);
 
         assertThat(result.getOutcome()).isEqualTo(AssessmentOutcome.CONFIRMED_FRAUD);
-        verify(fraudAssessmentRepository).save(assessment);
+        verify(fraudAssessmentRepository).resolveOutcomeIfUnresolved(ASSESSMENT_ID, AssessmentOutcome.CONFIRMED_FRAUD);
     }
 
     @Test
-    void unresolvedAssessment_setToFalsePositive_isSavedAndReturned() {
-        FraudAssessment assessment = new FraudAssessment();
+    void unresolvedAssessment_setToFalsePositive_updatesAtomicallyAndReturns() {
+        FraudAssessment assessment = unresolvedAssessment();
         when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
-        when(fraudAssessmentRepository.save(assessment)).thenReturn(assessment);
+        when(fraudAssessmentRepository.resolveOutcomeIfUnresolved(ASSESSMENT_ID, AssessmentOutcome.FALSE_POSITIVE))
+                .thenReturn(1);
 
         FraudAssessment result = service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.FALSE_POSITIVE);
 
@@ -65,20 +74,27 @@ class AssessmentOutcomeServiceTest {
         assertThatThrownBy(() -> service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.CONFIRMED_FRAUD))
                 .isInstanceOf(ResourceNotFoundException.class);
 
-        verify(fraudAssessmentRepository, never()).save(any());
+        verify(fraudAssessmentRepository, never()).resolveOutcomeIfUnresolved(any(), any());
     }
 
     @Test
-    void alreadyResolvedAssessment_throwsAlreadyResolved_andDoesNotOverwrite() {
-        FraudAssessment assessment = new FraudAssessment();
-        assessment.setOutcome(AssessmentOutcome.CONFIRMED_FRAUD);
-        when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID)).thenReturn(Optional.of(assessment));
+    void concurrentResolution_zeroRowsUpdated_throwsAlreadyResolved_reportingActualWinningOutcome() {
+        // Simulates the exact race the atomic UPDATE closes: this caller's read sees
+        // UNRESOLVED, but another request wins the conditional UPDATE first, so
+        // resolveOutcomeIfUnresolved affects 0 rows here. The exception must report the
+        // outcome that actually won (re-fetched), not the stale UNRESOLVED this caller read.
+        FraudAssessment staleRead = unresolvedAssessment();
+        FraudAssessment afterConcurrentWinner = unresolvedAssessment();
+        afterConcurrentWinner.setOutcome(AssessmentOutcome.CONFIRMED_FRAUD);
+
+        when(fraudAssessmentRepository.findByTransactionIdWithDetails(TRANSACTION_ID))
+                .thenReturn(Optional.of(staleRead), Optional.of(afterConcurrentWinner));
+        when(fraudAssessmentRepository.resolveOutcomeIfUnresolved(ASSESSMENT_ID, AssessmentOutcome.FALSE_POSITIVE))
+                .thenReturn(0);
 
         assertThatThrownBy(() -> service.updateOutcome(TRANSACTION_ID, AssessmentOutcome.FALSE_POSITIVE))
-                .isInstanceOf(AssessmentAlreadyResolvedException.class);
-
-        assertThat(assessment.getOutcome()).isEqualTo(AssessmentOutcome.CONFIRMED_FRAUD);
-        verify(fraudAssessmentRepository, never()).save(any());
+                .isInstanceOf(AssessmentAlreadyResolvedException.class)
+                .hasMessageContaining("CONFIRMED_FRAUD");
     }
 
     @Test
@@ -87,5 +103,6 @@ class AssessmentOutcomeServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(fraudAssessmentRepository, never()).findByTransactionIdWithDetails(any());
+        verify(fraudAssessmentRepository, never()).resolveOutcomeIfUnresolved(any(), any());
     }
 }

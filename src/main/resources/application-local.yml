@@ -12,8 +12,8 @@
 # classes fail to load under the default (non -Pconfluent) build.
 #
 # TransactionConsumer (@Profile("!standalone & !local")) doesn't run under this
-# profile anyway — transactions enter via StandaloneTransactionController's
-# synchronous HTTP stub instead (see DESIGN.md §3) — so these serialiser classes
+# profile anyway; transactions enter via StandaloneTransactionController's
+# synchronous HTTP stub instead (see DESIGN.md §3). So these serialiser classes
 # only need to be valid and loadable to satisfy Spring Boot's KafkaProperties
 # binding at startup, not to actually move real Kafka traffic.
 # =============================================================================

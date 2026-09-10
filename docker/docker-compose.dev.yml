@@ -1,6 +1,6 @@
 version: "3.9"
 
-# DEV environment — port range 8081 / 5433 / 9192
+# DEV environment: port range 8081 / 5433 / 9192
 # docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 services:
@@ -8,7 +8,7 @@ services:
     container_name: fraud-postgres-dev
     ports:
       - "5433:5432"
-    # Compose volume lists are replaced, not merged, across -f files — the base file's
+    # Compose volume lists are replaced, not merged, across -f files. The base file's
     # postgres-init mount must be repeated here or it silently stops applying under this
     # overlay (the one make dev actually uses).
     volumes:
