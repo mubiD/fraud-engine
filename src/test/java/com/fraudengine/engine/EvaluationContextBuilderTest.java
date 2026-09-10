@@ -293,7 +293,7 @@ class EvaluationContextBuilderTest {
         Transaction current = tx;
         RecentTransactionRecord other = new RecentTransactionRecord(
                 UUID.randomUUID(), "M2", new BigDecimal("42.00"), "ZAR", "RETAIL",
-                TransactionType.CARD_NOT_PRESENT, current.getTimestamp().minus(5, ChronoUnit.MINUTES), null, null);
+                TransactionType.CARD_NOT_PRESENT, current.getTimestamp().minus(5, ChronoUnit.MINUTES), null, null, null);
         CustomerActivityState state = new CustomerActivityState(
                 List.of(other), Map.of(), Map.of());
         when(recentActivityStore.lookup("CUST_1")).thenReturn(Optional.of(state));
@@ -332,7 +332,7 @@ class EvaluationContextBuilderTest {
         Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
         RecentTransactionRecord self = new RecentTransactionRecord(
                 tx.getId(), tx.getMerchantId(), tx.getAmount(), tx.getCurrency(), tx.getCategory(),
-                tx.getTransactionType(), tx.getTimestamp(), null, null);
+                tx.getTransactionType(), tx.getTimestamp(), null, null, null);
         long bucket = tx.getTimestamp().getEpochSecond() / 3600;
         CustomerActivityState state = new CustomerActivityState(
                 List.of(self), Map.of(bucket, Map.of(tx.getCurrency(), tx.getAmount())), Map.of());
@@ -370,7 +370,7 @@ class EvaluationContextBuilderTest {
         Transaction tx = tx("CUST_1", "M1", null, TransactionType.CARD_NOT_PRESENT);
         RecentTransactionRecord self = new RecentTransactionRecord(
                 tx.getId(), tx.getMerchantId(), tx.getAmount(), tx.getCurrency(), tx.getCategory(),
-                tx.getTransactionType(), tx.getTimestamp(), null, null);
+                tx.getTransactionType(), tx.getTimestamp(), null, null, null);
         long dayBucket = tx.getTimestamp().getEpochSecond() / 86400;
         // Four prior 100.00 amounts plus tx itself (already ingested) folded into the same
         // day bucket: the correction must back tx's own amount back out before deriving stats.

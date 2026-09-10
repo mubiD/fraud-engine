@@ -6,8 +6,9 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /**
  * Scores transactions based on the risk tier of the merchant category.
@@ -17,7 +18,6 @@ import org.springframework.stereotype.Component;
  * rule to cross the fraud threshold. See RuleEngine/ScoringProperties.
  */
 @Component
-@Order(8)
 public class HighRiskMerchantCategoryRule implements FraudRule {
 
     private static final String RULE_NAME = "HIGH_RISK_MERCHANT_CATEGORY";
@@ -63,5 +63,12 @@ public class HighRiskMerchantCategoryRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 8; }
     @Override public boolean isEnabled()     { return properties.getHighRiskCategory().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "highRiskKeywords", properties.getHighRiskCategory().getHighRiskKeywords(),
+                "mediumRiskKeywords", properties.getHighRiskCategory().getMediumRiskKeywords());
+    }
 
 }

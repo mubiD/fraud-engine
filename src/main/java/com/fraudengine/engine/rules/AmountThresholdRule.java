@@ -6,13 +6,12 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Component
-@Order(1)
 public class AmountThresholdRule implements FraudRule {
 
     private static final String RULE_NAME = "AMOUNT_THRESHOLD";
@@ -42,5 +41,12 @@ public class AmountThresholdRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 1; }
     @Override public boolean isEnabled()     { return properties.getAmountThreshold().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "threshold", properties.getAmountThreshold().getThreshold(),
+                "categoryThresholds", properties.getAmountThreshold().getCategoryThresholds());
+    }
 
 }

@@ -11,9 +11,9 @@ import java.util.UUID;
 // Lightweight projection of Transaction held inside CustomerActivityState: only the
 // fields the recentCustomerTransactions-consuming rules actually read (VelocityRule,
 // CrossMerchantVelocityRule, DuplicateTransactionRule, CardCloningRule,
-// MultiChannelAnomalyRule, GeographicAnomalyRule). Deliberately excludes
-// deviceFingerprint: transaction_event.proto (the production Kafka wire format) carries
-// no such field, so DeviceFingerprintRule never sees one on this path either way.
+// MultiChannelAnomalyRule, GeographicAnomalyRule, DeviceFingerprintRule). Carries
+// deviceFingerprint since 2026-09-10 (transaction_event.proto field 12) — null until
+// upstream producers actually start populating it, same as any other unset optional field.
 public record RecentTransactionRecord(
         UUID id,
         String merchantId,
@@ -23,7 +23,8 @@ public record RecentTransactionRecord(
         TransactionType transactionType,
         Instant timestamp,
         Double latitude,
-        Double longitude) {
+        Double longitude,
+        String deviceFingerprint) {
 
     @JsonCreator
     public RecentTransactionRecord(
@@ -35,7 +36,8 @@ public record RecentTransactionRecord(
             @JsonProperty("transactionType") TransactionType transactionType,
             @JsonProperty("timestamp") Instant timestamp,
             @JsonProperty("latitude") Double latitude,
-            @JsonProperty("longitude") Double longitude) {
+            @JsonProperty("longitude") Double longitude,
+            @JsonProperty("deviceFingerprint") String deviceFingerprint) {
         this.id = id;
         this.merchantId = merchantId;
         this.amount = amount;
@@ -45,5 +47,6 @@ public record RecentTransactionRecord(
         this.timestamp = timestamp;
         this.latitude = latitude;
         this.longitude = longitude;
+        this.deviceFingerprint = deviceFingerprint;
     }
 }

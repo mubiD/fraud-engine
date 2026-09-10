@@ -7,11 +7,11 @@ import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
 import com.fraudengine.model.enums.TransactionType;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 /**
  * Flags rapid channel-switching between physical (CARD_PRESENT, CONTACTLESS, ATM)
@@ -20,7 +20,6 @@ import java.time.temporal.ChronoUnit;
  * this pattern suggests a second actor has obtained the card details.
  */
 @Component
-@Order(10)
 public class MultiChannelAnomalyRule implements FraudRule {
 
     private static final String RULE_NAME = "MULTI_CHANNEL_ANOMALY";
@@ -66,5 +65,10 @@ public class MultiChannelAnomalyRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 10; }
     @Override public boolean isEnabled()     { return properties.getMultiChannel().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of("windowMinutes", properties.getMultiChannel().getWindowMinutes());
+    }
 
 }

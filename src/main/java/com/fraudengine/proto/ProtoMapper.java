@@ -22,6 +22,7 @@ public final class ProtoMapper {
                 .category(nullIfEmpty(proto.getCategory()))
                 .transactionType(toDomainType(proto.getTransactionType()))
                 .location(nullIfEmpty(proto.getLocation()))
+                .deviceFingerprint(nullIfEmpty(proto.getDeviceFingerprint()))
                 // proto3 double defaults to 0.0; treat (0,0) as absent (Gulf of Guinea)
                 .latitude(proto.getLatitude() != 0.0 ? proto.getLatitude() : null)
                 .longitude(proto.getLongitude() != 0.0 ? proto.getLongitude() : null)

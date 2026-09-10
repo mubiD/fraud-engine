@@ -7,14 +7,13 @@ import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
 import com.fraudengine.model.enums.TransactionType;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 @Component
-@Order(3)
 public class DuplicateTransactionRule implements FraudRule {
 
     private static final String RULE_NAME = "DUPLICATE_TRANSACTION";
@@ -58,5 +57,12 @@ public class DuplicateTransactionRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 3; }
     @Override public boolean isEnabled()     { return properties.getDuplicate().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "cardPresentWindowSeconds", properties.getDuplicate().getCardPresentWindowSeconds(),
+                "cardNotPresentWindowSeconds", properties.getDuplicate().getCardNotPresentWindowSeconds());
+    }
 
 }

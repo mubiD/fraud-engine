@@ -7,11 +7,11 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 @Component
-@Order(13)
 public class CustomerAmountAnomalyRule implements FraudRule {
 
     private static final String RULE_NAME = "CUSTOMER_AMOUNT_ANOMALY";
@@ -53,4 +53,12 @@ public class CustomerAmountAnomalyRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 13; }
     @Override public boolean isEnabled()     { return properties.getCustomerAmountAnomaly().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "lookbackDays", properties.getCustomerAmountAnomaly().getLookbackDays(),
+                "minHistoryCount", properties.getCustomerAmountAnomaly().getMinHistoryCount(),
+                "stddevMultiplier", properties.getCustomerAmountAnomaly().getStddevMultiplier());
+    }
 }

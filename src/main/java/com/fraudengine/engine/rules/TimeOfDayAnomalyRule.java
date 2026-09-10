@@ -6,10 +6,10 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.ZoneOffset;
+import java.util.Map;
 
 /**
  * Flags transactions that fall within a configurable off-hours window (UTC).
@@ -18,7 +18,6 @@ import java.time.ZoneOffset;
  * score without standalone-flagging ordinary night-shift purchases.
  */
 @Component
-@Order(7)
 public class TimeOfDayAnomalyRule implements FraudRule {
 
     private static final String RULE_NAME = "TIME_OF_DAY_ANOMALY";
@@ -56,5 +55,12 @@ public class TimeOfDayAnomalyRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 7; }
     @Override public boolean isEnabled()     { return properties.getTimeOfDay().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "offHoursStartHour", properties.getTimeOfDay().getOffHoursStartHour(),
+                "offHoursEndHour", properties.getTimeOfDay().getOffHoursEndHour());
+    }
 
 }

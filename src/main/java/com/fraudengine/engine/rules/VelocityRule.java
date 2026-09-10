@@ -6,14 +6,13 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 @Component
-@Order(2)
 public class VelocityRule implements FraudRule {
 
     private static final String RULE_NAME = "VELOCITY";
@@ -60,5 +59,12 @@ public class VelocityRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 2; }
     @Override public boolean isEnabled()     { return properties.getVelocity().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "windowMinutes", properties.getVelocity().getWindowMinutes(),
+                "maxTransactions", properties.getVelocity().getMaxTransactions());
+    }
 
 }

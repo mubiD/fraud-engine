@@ -6,11 +6,11 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 /**
  * Detects card cloning by finding the same amount charged to multiple distinct
@@ -18,7 +18,6 @@ import java.time.temporal.ChronoUnit;
  * a cloned card.
  */
 @Component
-@Order(6)
 public class CardCloningRule implements FraudRule {
 
     private static final String RULE_NAME = "CARD_CLONING";
@@ -39,6 +38,7 @@ public class CardCloningRule implements FraudRule {
         long distinctOtherMerchantsWithSameAmount = context.getRecentCustomerTransactions().stream()
                 .filter(t -> t.getTimestamp().isAfter(windowStart))
                 .filter(t -> t.getAmount().compareTo(transaction.getAmount()) == 0)
+                .filter(t -> t.getCurrency().equals(transaction.getCurrency()))
                 .filter(t -> !t.getMerchantId().equals(transaction.getMerchantId()))
                 .map(Transaction::getMerchantId)
                 .distinct()
@@ -60,5 +60,12 @@ public class CardCloningRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 6; }
     @Override public boolean isEnabled()     { return properties.getCardCloning().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "windowMinutes", properties.getCardCloning().getWindowMinutes(),
+                "minDifferentMerchants", properties.getCardCloning().getMinDifferentMerchants());
+    }
 
 }

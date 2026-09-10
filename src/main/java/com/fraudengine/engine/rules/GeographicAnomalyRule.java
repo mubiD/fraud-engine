@@ -6,15 +6,14 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 @Component
-@Order(5)
 public class GeographicAnomalyRule implements FraudRule {
 
     private static final String RULE_NAME = "GEOGRAPHIC_ANOMALY";
@@ -89,5 +88,12 @@ public class GeographicAnomalyRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 5; }
     @Override public boolean isEnabled()     { return properties.getGeographic().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "windowMinutes", properties.getGeographic().getWindowMinutes(),
+                "maxTravelSpeedKmh", properties.getGeographic().getMaxTravelSpeedKmh());
+    }
 
 }

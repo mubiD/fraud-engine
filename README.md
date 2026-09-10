@@ -162,10 +162,10 @@ make ps
 All paginated endpoints return a consistent envelope:
 
 ```json
-{ "data": [...], "hasMore": true, "nextCursor": "2026-07-23T09:00:00Z" }
+{ "data": [...], "hasMore": true, "nextCursor": "MjAyNi0wNy0yM1QwOTowMDowMFp8M2YyYTFiNGMtNDU2Ny00ODlhLWJjZGUtMTIzNDU2Nzg5YWJj" }
 ```
 
-Pass `nextCursor` as the `cursor` parameter on the next request to advance the page. All timestamps are ISO-8601 UTC.
+`nextCursor` is an opaque, base64-encoded token (internally a timestamp + row id, used for keyset pagination with a stable tie-break) — treat it as an opaque string, not a timestamp you construct yourself. Pass it verbatim as the `cursor` parameter on the next request to advance the page; `null` means there are no more pages. All timestamps elsewhere in responses (and in `from`/`to`/`since` request parameters) are ISO-8601 UTC.
 
 > Replace `8081` with the port for the environment you started (`8084` = load-test, `8085` = prod).
 
@@ -184,7 +184,7 @@ GET /api/v1/transactions
 | `customerId` | string | yes | Customer identifier |
 | `from` | ISO-8601 | no | Include transactions at or after this timestamp |
 | `to` | ISO-8601 | no | Include transactions at or before this timestamp |
-| `cursor` | ISO-8601 | no | Pagination cursor from previous response |
+| `cursor` | opaque string | no | Pagination cursor — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
@@ -290,7 +290,7 @@ GET /api/v1/transactions/flagged
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
 | `maxRiskScore` | int | no | Upper bound on risk score (inclusive). Combine with `minRiskScore` to query a band, e.g. `50–65` isolates low-confidence fraud for false-positive review |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
-| `cursor` | ISO-8601 | no | Pagination cursor |
+| `cursor` | opaque string | no | Pagination cursor — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
@@ -323,7 +323,7 @@ transaction either. Same filter set as `/flagged`; work this queue via
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
 | `maxRiskScore` | int | no | Upper bound on risk score (inclusive) |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
-| `cursor` | ISO-8601 | no | Pagination cursor |
+| `cursor` | opaque string | no | Pagination cursor — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
@@ -342,7 +342,7 @@ GET /api/v1/transactions/passed
 | `customerId` | string | no | Narrow to a specific customer |
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive); cleared transactions are always low-scoring by construction, but this still lets you sort within that band |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
-| `cursor` | ISO-8601 | no | Pagination cursor |
+| `cursor` | opaque string | no | Pagination cursor — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
@@ -368,25 +368,27 @@ curl http://localhost:8081/api/v1/rules
 
 Response `200 OK` (excerpt):
 ```json
-[
-  {
-    "ruleName": "AmountThresholdRule",
-    "ruleVersion": "1.0",
-    "priority": 1,
-    "enabled": true,
-    "config": {
-      "threshold": 5000.00,
-      "categoryThresholds": { "RETAIL": 15000.00, "GROCERY": 3000.00 }
+{
+  "data": [
+    {
+      "ruleName": "AmountThresholdRule",
+      "ruleVersion": "1.0",
+      "priority": 1,
+      "enabled": true,
+      "config": {
+        "threshold": 5000.00,
+        "categoryThresholds": { "RETAIL": 15000.00, "GROCERY": 3000.00 }
+      }
+    },
+    {
+      "ruleName": "VelocityRule",
+      "ruleVersion": "1.0",
+      "priority": 2,
+      "enabled": true,
+      "config": { "windowMinutes": 10, "maxTransactions": 5 }
     }
-  },
-  {
-    "ruleName": "VelocityRule",
-    "ruleVersion": "1.0",
-    "priority": 2,
-    "enabled": true,
-    "config": { "windowMinutes": 10, "maxTransactions": 5 }
-  }
-]
+  ]
+}
 ```
 
 Rule configuration changes require redeployment; there is no runtime PATCH endpoint.
@@ -418,15 +420,17 @@ curl "http://localhost:8081/api/v1/customers/CUST-001/risk-summary?since=2026-07
 Response `200 OK`:
 ```json
 {
-  "customerId": "CUST-001",
-  "totalTransactions": 342,
-  "flaggedCount": 4,
-  "notFlaggedCount": 338,
-  "fraudRate": 1.17,
-  "highestRiskScore": 75,
-  "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule", "TimeOfDayAnomalyRule"],
-  "firstTransactionAt": "2025-01-15T08:00:00Z",
-  "lastTransactionAt": "2026-07-23T09:00:00Z"
+  "data": {
+    "customerId": "CUST-001",
+    "totalTransactions": 342,
+    "flaggedCount": 4,
+    "notFlaggedCount": 338,
+    "fraudRate": 1.17,
+    "highestRiskScore": 75,
+    "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule", "TimeOfDayAnomalyRule"],
+    "firstTransactionAt": "2025-01-15T08:00:00Z",
+    "lastTransactionAt": "2026-07-23T09:00:00Z"
+  }
 }
 ```
 
@@ -445,7 +449,7 @@ GET /api/v1/merchants/{merchantId}/flagged
 | `ruleViolated` | string | no | Narrow to assessments where this rule fired |
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
-| `cursor` | ISO-8601 | no | Pagination cursor |
+| `cursor` | opaque string | no | Pagination cursor — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | int 1–1000 | no | Default 20 |
 
 ```bash
@@ -478,16 +482,18 @@ curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/risk-summary?since=20
 Response `200 OK`:
 ```json
 {
-  "merchantId": "MERCH-NIKE-ZA",
-  "totalTransactions": 1842,
-  "flaggedCount": 12,
-  "notFlaggedCount": 1830,
-  "fraudRate": 0.65,
-  "highestRiskScore": 85,
-  "uniqueCustomers": 534,
-  "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule"],
-  "firstTransactionAt": "2024-01-01T00:00:00Z",
-  "lastTransactionAt": "2026-07-23T09:00:00Z"
+  "data": {
+    "merchantId": "MERCH-NIKE-ZA",
+    "totalTransactions": 1842,
+    "flaggedCount": 12,
+    "notFlaggedCount": 1830,
+    "fraudRate": 0.65,
+    "highestRiskScore": 85,
+    "uniqueCustomers": 534,
+    "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule"],
+    "firstTransactionAt": "2024-01-01T00:00:00Z",
+    "lastTransactionAt": "2026-07-23T09:00:00Z"
+  }
 }
 ```
 
@@ -515,17 +521,19 @@ curl "http://localhost:8081/api/v1/stats/fraud-summary?from=2026-07-01T00:00:00Z
 Response `200 OK`:
 ```json
 {
-  "from": "2026-07-01T00:00:00Z",
-  "to": "2026-07-31T23:59:59Z",
-  "totalAssessed": 48320,
-  "totalFlagged": 241,
-  "totalNotFlagged": 48079,
-  "fraudRate": 0.50,
-  "ruleBreakdown": [
-    { "ruleName": "AmountThresholdRule", "count": 98,  "percentage": 40.66 },
-    { "ruleName": "VelocityRule",        "count": 72,  "percentage": 29.88 },
-    { "ruleName": "GeographicAnomalyRule", "count": 45, "percentage": 18.67 }
-  ]
+  "data": {
+    "from": "2026-07-01T00:00:00Z",
+    "to": "2026-07-31T23:59:59Z",
+    "totalAssessed": 48320,
+    "totalFlagged": 241,
+    "totalNotFlagged": 48079,
+    "fraudRate": 0.50,
+    "ruleBreakdown": [
+      { "ruleName": "AmountThresholdRule", "count": 98,  "percentage": 40.66 },
+      { "ruleName": "VelocityRule",        "count": 72,  "percentage": 29.88 },
+      { "ruleName": "GeographicAnomalyRule", "count": 45, "percentage": 18.67 }
+    ]
+  }
 }
 ```
 

@@ -100,10 +100,40 @@ class CardCloningRuleTest {
         assertThat(new CardCloningRule(props).isEnabled()).isFalse();
     }
 
+    @Test
+    void sameAmountDifferentCurrencyAtDifferentMerchants_passes() {
+        Instant now = Instant.now();
+        // Same numeric amount at two other merchants, but neither shares the current
+        // transaction's currency — must not be pooled as equivalent magnitude.
+        RuleResult result = rule.evaluate(
+                tx("ALIEXPRESS", new BigDecimal("99.99"), "ZAR", now),
+                ctx(List.of(
+                        tx("AMAZON", new BigDecimal("99.99"), "USD", now.minus(5, ChronoUnit.MINUTES)),
+                        tx("EBAY",   new BigDecimal("99.99"), "USD", now.minus(3, ChronoUnit.MINUTES)))));
+        assertThat(result.isViolation()).isFalse();
+    }
+
+    @Test
+    void sameAmountMixedCurrencies_onlyMatchingCurrencyCounts() {
+        Instant now = Instant.now();
+        // One other-currency match (doesn't count) plus one same-currency match: still only
+        // 1 same-currency distinct merchant, below the min-different-merchants threshold of 2.
+        RuleResult result = rule.evaluate(
+                tx("ALIEXPRESS", new BigDecimal("99.99"), "ZAR", now),
+                ctx(List.of(
+                        tx("AMAZON", new BigDecimal("99.99"), "USD", now.minus(5, ChronoUnit.MINUTES)),
+                        tx("EBAY",   new BigDecimal("99.99"), "ZAR", now.minus(3, ChronoUnit.MINUTES)))));
+        assertThat(result.isViolation()).isFalse();
+    }
+
     private Transaction tx(String merchantId, BigDecimal amount, Instant ts) {
+        return tx(merchantId, amount, "ZAR", ts);
+    }
+
+    private Transaction tx(String merchantId, BigDecimal amount, String currency, Instant ts) {
         return Transaction.builder()
                 .id(UUID.randomUUID()).customerId("CUST_001")
-                .merchantId(merchantId).amount(amount).currency("ZAR")
+                .merchantId(merchantId).amount(amount).currency(currency)
                 .timestamp(ts).build();
     }
 

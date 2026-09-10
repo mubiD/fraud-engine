@@ -46,13 +46,10 @@ public class StatsController {
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public DataResponse<FraudSummaryDto> getFraudSummary(
             @Parameter(description = "ISO-8601 start of the window (inclusive)")
-            @RequestParam(required = false) String from,
+            @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of the window (inclusive)")
-            @RequestParam(required = false) String to) {
+            @RequestParam(required = false) Instant to) {
 
-        Instant fromInstant = from != null ? Instant.parse(from) : null;
-        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
-
-        return DataResponse.of(queryService.getFraudSummary(fromInstant, toInstant));
+        return DataResponse.of(queryService.getFraudSummary(from, to));
     }
 }

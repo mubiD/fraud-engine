@@ -200,6 +200,7 @@ public class EvaluationContextBuilder {
                 .timestamp(r.timestamp())
                 .latitude(r.latitude())
                 .longitude(r.longitude())
+                .deviceFingerprint(r.deviceFingerprint())
                 .build();
     }
 }

@@ -6,11 +6,11 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
  * a first-ever transaction cannot be an anomaly.
  */
 @Component
-@Order(9)
 public class DeviceFingerprintRule implements FraudRule {
 
     private static final String RULE_NAME = "DEVICE_FINGERPRINT";
@@ -72,5 +71,10 @@ public class DeviceFingerprintRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 9; }
     @Override public boolean isEnabled()     { return properties.getDeviceFingerprint().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of("windowMinutes", properties.getDeviceFingerprint().getWindowMinutes());
+    }
 
 }

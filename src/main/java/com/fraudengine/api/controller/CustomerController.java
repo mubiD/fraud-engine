@@ -44,8 +44,7 @@ public class CustomerController {
             @Parameter(description = "Customer identifier", required = true)
             @PathVariable String customerId,
             @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards")
-            @RequestParam(required = false) String since) {
-        Instant sinceInstant = since != null ? Instant.parse(since) : null;
-        return DataResponse.of(queryService.getCustomerRiskSummary(customerId, sinceInstant));
+            @RequestParam(required = false) Instant since) {
+        return DataResponse.of(queryService.getCustomerRiskSummary(customerId, since));
     }
 }

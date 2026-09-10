@@ -3,6 +3,7 @@ package com.fraudengine.api.controller;
 import com.fraudengine.api.dto.DataResponse;
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.dto.PagedResponse;
+import com.fraudengine.api.dto.SortDirection;
 import com.fraudengine.api.dto.TransactionSummaryDto;
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.model.FraudAssessment;
@@ -20,7 +21,6 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import org.springframework.data.domain.Slice;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
@@ -57,25 +57,23 @@ public class TransactionQueryController {
             @Parameter(description = "Customer identifier", required = true)
             @RequestParam @NotBlank String customerId,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
-            @RequestParam(required = false) String from,
+            @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
-            @RequestParam(required = false) String to,
-            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
+            @RequestParam(required = false) Instant to,
+            @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
-            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
+            @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        Instant fromInstant = from != null ? Instant.parse(from) : null;
-        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
         CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<Transaction> slice = queryService.getByCustomerId(
-                customerId, fromInstant, toInstant,
+                customerId, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort);
+                pageSize, sort.name());
 
         List<TransactionSummaryDto> data = slice.getContent().stream()
                 .map(mapper::toSummaryDto)
@@ -144,25 +142,23 @@ public class TransactionQueryController {
             @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100). Combine with minRiskScore to query a band, e.g. 50–65 for low-confidence fraud review.")
             @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
-            @RequestParam(required = false) String from,
+            @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
-            @RequestParam(required = false) String to,
-            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
+            @RequestParam(required = false) Instant to,
+            @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
-            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
+            @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        Instant fromInstant = from != null ? Instant.parse(from) : null;
-        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
         CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<FraudAssessment> slice = queryService.getFlagged(
-                customerId, ruleViolated, minRiskScore, maxRiskScore, fromInstant, toInstant,
+                customerId, ruleViolated, minRiskScore, maxRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort);
+                pageSize, sort.name());
 
         return toAssessmentPage(slice);
     }
@@ -185,25 +181,23 @@ public class TransactionQueryController {
             @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100)")
             @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
-            @RequestParam(required = false) String from,
+            @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
-            @RequestParam(required = false) String to,
-            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
+            @RequestParam(required = false) Instant to,
+            @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
-            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
+            @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        Instant fromInstant = from != null ? Instant.parse(from) : null;
-        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
         CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<FraudAssessment> slice = queryService.getPendingReview(
-                customerId, ruleViolated, minRiskScore, maxRiskScore, fromInstant, toInstant,
+                customerId, ruleViolated, minRiskScore, maxRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort);
+                pageSize, sort.name());
 
         return toAssessmentPage(slice);
     }
@@ -222,25 +216,23 @@ public class TransactionQueryController {
             @Parameter(description = "Filter to assessments with a risk score at or above this value (0–100). Use to surface near-misses: transactions that almost triggered a fraud flag.")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
-            @RequestParam(required = false) String from,
+            @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
-            @RequestParam(required = false) String to,
-            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
+            @RequestParam(required = false) Instant to,
+            @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
-            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
+            @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        Instant fromInstant = from != null ? Instant.parse(from) : null;
-        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
         CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<FraudAssessment> slice = queryService.getPassed(
-                customerId, minRiskScore, fromInstant, toInstant,
+                customerId, minRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort);
+                pageSize, sort.name());
 
         return toAssessmentPage(slice);
     }

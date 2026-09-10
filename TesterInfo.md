@@ -106,7 +106,7 @@ Approximately **15%** of generated transactions exceed the (flat, non-category-t
 
 ### 4.3 List Transactions for a Customer
 
-**`GET /api/v1/transactions?customerId={id}&from={iso8601}&to={iso8601}&cursor={iso8601}&pageSize={n}`**
+**`GET /api/v1/transactions?customerId={id}&from={iso8601}&to={iso8601}&cursor={opaque}&pageSize={n}`**
 
 Returns a cursor-paginated list of transactions (with embedded assessments) for a specific customer, ordered by timestamp descending.
 
@@ -114,14 +114,14 @@ Returns a cursor-paginated list of transactions (with embedded assessments) for 
 |---|---|---|
 | `customerId` | Yes | — |
 | `from` / `to` | No | ISO-8601 instant; inclusive range on `timestamp` |
-| `cursor` | No | ISO-8601 instant (e.g. `2026-07-23T10:00:00Z`); queries `timestamp < cursor` (ties broken by id) |
+| `cursor` | No | Opaque token — copy verbatim from the previous response's `nextCursor`; internally decodes to a timestamp + id tie-break, do not construct it yourself |
 | `pageSize` | No | 1–1000; default 20 |
 
 **Response 200 OK shape:**
 ```json
 {
   "data": [ { "transactionId": "...", "customerId": "...", "amount": 1250.00, ... , "assessment": { ... } } ],
-  "nextCursor": "2026-07-23T09:14:00Z",
+  "nextCursor": "MjAyNi0wNy0yM1QwOTowMDowMFp8M2YyYTFiNGMtNDU2Ny00ODlhLWJjZGUtMTIzNDU2Nzg5YWJj",
   "hasMore": true
 }
 ```
@@ -129,7 +129,7 @@ Returns a cursor-paginated list of transactions (with embedded assessments) for 
 | Status | Condition |
 |---|---|
 | `200 OK` | Results returned (empty `data` array if none found) |
-| `400 Bad Request` | `pageSize` out of range, or `from`/`to`/`cursor` not valid ISO-8601 |
+| `400 Bad Request` | `pageSize` out of range, `from`/`to` not valid ISO-8601, or `cursor` malformed |
 
 ---
 
@@ -177,7 +177,7 @@ Returns cursor-paginated assessments where `disposition = FLAGGED`.
 | `minRiskScore` | No | Lower bound (inclusive) |
 | `maxRiskScore` | No | Upper bound (inclusive); combine with `minRiskScore` for a band query, e.g. `minRiskScore=50&maxRiskScore=65` for low-confidence flags |
 | `from` / `to` | No | Date range on `assessedAt` |
-| `cursor` | No | ISO-8601 cursor |
+| `cursor` | No | Opaque token — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | No | 1–1000; default 20 |
 
 **All supplied filters combine with AND: they do not select a single "winning" filter.** Sending `customerId=X&ruleViolated=Y` returns only rows matching *both*, not just the customer filter. (An earlier version of this doc claimed a precedence/mutual-exclusion behaviour here, but that was never how the underlying query works; `FraudAssessmentRepository.findFlagged()` ANDs every non-null parameter together. If you have test cases or automation built on the old "only one filter applies" assumption, they're testing the wrong thing.)
@@ -206,7 +206,7 @@ parameter set and AND-combining behaviour as §4.5.
 | `minRiskScore` | No | Lower bound (inclusive) |
 | `maxRiskScore` | No | Upper bound (inclusive) |
 | `from` / `to` | No | Date range on `assessedAt` |
-| `cursor` | No | ISO-8601 cursor |
+| `cursor` | No | Opaque token — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | No | 1–1000; default 20 |
 
 | Status | Condition |
@@ -227,7 +227,7 @@ Returns cursor-paginated assessments where `disposition = CLEARED`.
 | `customerId` | No | Filter by customer |
 | `minRiskScore` | No | Lower bound (inclusive). Cleared transactions score low by construction (below `review-probability-threshold`, default 0.10), so this filter sorts within that band rather than surfacing near-misses, which now belong to `disposition = PENDING_REVIEW` (§4.6) instead. |
 | `from` / `to` | No | Date range on `assessedAt` |
-| `cursor` | No | ISO-8601 cursor |
+| `cursor` | No | Opaque token — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | No | 1–1000; default 20 |
 
 | Status | Condition |
@@ -634,8 +634,8 @@ All error responses use `Content-Type: application/problem+json`.
 |---|---|---|
 | `400` | `@Valid` field constraint failure | `{ "detail": "Validation failed", "errors": { "fieldName": "message" } }` |
 | `400` | Query param constraint failure | `{ "detail": "Invalid request parameters", "errors": { "paramName": "message" } }` |
-| `400` | `IllegalArgumentException` (e.g. unknown `ruleViolated` value, `to` before `from`) | `{ "detail": "<exception message>" }` |
-| `400` | Malformed ISO-8601 date/cursor | `{ "detail": "Invalid date-time value: '<value>'. Expected ISO-8601 format, e.g. 2026-07-23T10:00:00Z" }` |
+| `400` | `IllegalArgumentException` (e.g. unknown `ruleViolated` value, `to` before `from`, malformed `cursor`) | `{ "detail": "<exception message>" }` |
+| `400` | Malformed `from`/`to`/`since` (not valid ISO-8601) | `{ "detail": "Invalid value '<value>' for parameter '<name>'" }` |
 | `400` | Malformed/missing request body | `{ "detail": "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present." }` |
 | `404` | No assessment for transaction ID | `{ "detail": "<message>" }` |
 | `409` | Outcome already resolved (§4.14) | `{ "detail": "<message>" }` |
@@ -678,7 +678,7 @@ If you're only ever testing against `make dev`, you won't hit any of this — wh
 
 8. **Filters on `/flagged` (and the merchant equivalent) combine with AND — they do not select one "winning" filter.** `customerId=X&ruleViolated=Y` returns rows matching both (§4.5). Don't write test cases assuming otherwise.
 
-9. **Pagination cursor is strictly less-than, with an id tie-break:** a cursor of `T` returns records with `timestamp < T`, or `timestamp = T AND id < cursorId` for same-timestamp rows. The cursor row itself is not repeated.
+9. **Pagination cursor is strictly less-than, with an id tie-break:** the opaque `cursor` token decodes to a timestamp `T` and row id; matching records are `timestamp < T`, or `timestamp = T AND id < cursorId` for same-timestamp rows. The cursor row itself is not repeated.
 
 10. **Risk score cap:** score cannot exceed 100 (explicitly clamped) or go below 0.
 

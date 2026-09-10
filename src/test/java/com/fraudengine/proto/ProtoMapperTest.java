@@ -35,6 +35,7 @@ class ProtoMapperTest {
                 .setLatitude(-33.9249)
                 .setLongitude(18.4241)
                 .setTimestamp(ts)
+                .setDeviceFingerprint("a3f1c2e9b7d04562")
                 .build();
 
         Transaction tx = ProtoMapper.toTransactionEntity(proto);
@@ -50,6 +51,19 @@ class ProtoMapperTest {
         assertThat(tx.getLatitude()).isEqualTo(-33.9249);
         assertThat(tx.getLongitude()).isEqualTo(18.4241);
         assertThat(tx.getTimestamp()).isEqualTo(Instant.ofEpochSecond(now.getEpochSecond(), now.getNano()));
+        assertThat(tx.getDeviceFingerprint()).isEqualTo("a3f1c2e9b7d04562");
+    }
+
+    @Test
+    void toTransactionEntity_emptyDeviceFingerprint_mappedToNull() {
+        // proto3 scalar default: absent on the wire (old/upstream producers not yet sending
+        // it) is indistinguishable from explicitly set to "" — both must map to null, the
+        // same "not present" signal DeviceFingerprintRule already treats as no-fingerprint.
+        TransactionEventProto.TransactionEvent proto = baseProto().setDeviceFingerprint("").build();
+
+        Transaction tx = ProtoMapper.toTransactionEntity(proto);
+
+        assertThat(tx.getDeviceFingerprint()).isNull();
     }
 
     @Test

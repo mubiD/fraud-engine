@@ -68,8 +68,31 @@ public record CustomerActivityState(
     // anchor-on-event-time semantics). baselineLookbackDays governs dailyAmountBuckets'
     // retention window, independent of recentWindow, which is typically much shorter
     // (contextLookbackMinutes, default 60 minutes vs. this, default 90 days).
+    //
+    // Idempotency guard: this Kafka Streams app runs at-least-once (no processing.guarantee
+    // override), so a rebalance, restart, or a redelivered offset can hand the same record to
+    // CustomerActivityProcessor twice. Unlike TransactionConsumer's primary path — which has
+    // an explicit, documented idempotency guard (findByIdOnly + a unique constraint backstop)
+    // for exactly this class of problem — this store had none until 2026-09-10: a duplicate
+    // delivery silently double-appended to recentTransactions (inflating VELOCITY/
+    // CROSS_MERCHANT_VELOCITY counts and manufacturing a false DUPLICATE_TRANSACTION, since
+    // two identical entries at the same timestamp/amount/merchant look exactly like that
+    // rule's target pattern) and double-merged into both bucket aggregates (skewing
+    // CUMULATIVE_SPENDING for up to an hour, and CUSTOMER_AMOUNT_ANOMALY's baseline for up to
+    // the full lookback window — the quietest, longest-lived form of this bug). Bounded fix:
+    // if this id is already present in recentTransactions, it was already folded into every
+    // structure here, so no-op. Only protects against redelivery while the original is still
+    // within recentWindow — a redelivery arriving after it has aged out of that list would
+    // still double-count in the bucket aggregates, but that requires a redelivery lag far
+    // longer than any realistic rebalance/restart, not the failure mode this guards against.
     public CustomerActivityState withAppended(RecentTransactionRecord record, Duration recentWindow,
                                                int baselineLookbackDays) {
+        boolean alreadyRecorded = recentTransactions.stream()
+                .anyMatch(r -> r.id().equals(record.id()));
+        if (alreadyRecorded) {
+            return this;
+        }
+
         Instant anchor = record.timestamp();
         Instant listCutoff = anchor.minus(recentWindow);
 

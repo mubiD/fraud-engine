@@ -68,6 +68,17 @@ spring:
         default.value.serde: io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde
         specific.protobuf.value.type: "com.fraudengine.proto.TransactionEventProto$TransactionEvent"
         schema.registry.url: ${SCHEMA_REGISTRY_URL:http://schema-registry:8081}
+        # Without this, Kafka Streams' default (LogAndFailExceptionHandler) treats a single
+        # malformed/schema-incompatible record on transactions.raw as fatal: the stream
+        # thread dies, gets auto-replaced (Kafka's default uncaught-exception behaviour since
+        # 2.8), and the replacement immediately re-reads the same offset and dies again —
+        # an infinite crash loop on that one partition with no automatic way past it. This
+        # topic's *other* consumer (TransactionConsumer) already has a real retry-topic/DLT
+        # story for exactly this failure mode (see KafkaConfig); this one had none. Skip and
+        # log instead: a customer-activity-store gap for one bad record is far cheaper than
+        # a permanently wedged partition, and EvaluationContextBuilder's Postgres fallback
+        # already covers the customers whose evaluations land while this is happening.
+        default.deserialization.exception.handler: org.apache.kafka.streams.errors.LogAndContinueExceptionHandler
 
   cache:
     type: caffeine

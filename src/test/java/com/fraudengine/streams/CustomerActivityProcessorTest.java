@@ -205,16 +205,58 @@ class CustomerActivityProcessorTest {
         assertThat(usdBaseline.sum()).isEqualTo(80.0);
     }
 
+    @Test
+    void redeliveredTransaction_notDoubleCounted() {
+        // At-least-once redelivery (rebalance/restart/retry) can hand the same record to
+        // this processor twice. Simulated here by piping an event with the same
+        // transactionId twice; see CustomerActivityState.withAppended's idempotency guard.
+        Instant now = Instant.now();
+        String transactionId = UUID.randomUUID().toString();
+
+        inputTopic.pipeInput("CUST_1", eventWithId(transactionId, "M1", "100.00", now));
+        inputTopic.pipeInput("CUST_1", eventWithId(transactionId, "M1", "100.00", now));
+
+        CustomerActivityState state = stateFor("CUST_1");
+        assertThat(state.recentTransactions()).hasSize(1);
+        assertThat(state.dailySpendTotal(now, "ZAR")).isEqualByComparingTo("100.00");
+        assertThat(state.baselineAggregate(now, BASELINE_LOOKBACK_DAYS, "ZAR").count()).isEqualTo(1);
+    }
+
+    @Test
+    void malformedRecord_skippedWithoutCrashingProcessor_subsequentValidRecordStillProcessed() {
+        // ProtoMapper.toTransactionEntity throws NumberFormatException on an unparsable
+        // amount — a record that deserialized fine (proto-valid) but is semantically bad.
+        // Must not crash the stream thread; the next valid record for the same customer
+        // must still be processed normally. See CustomerActivityProcessor.process's catch.
+        Instant now = Instant.now();
+        inputTopic.pipeInput("CUST_1", event("M1", "not-a-number", now));
+        inputTopic.pipeInput("CUST_1", event("M2", "50.00", now));
+
+        CustomerActivityState state = stateFor("CUST_1");
+        assertThat(state.recentTransactions()).hasSize(1);
+        assertThat(state.recentTransactions().get(0).merchantId()).isEqualTo("M2");
+    }
+
     private TransactionEventProto.TransactionEvent event(String merchantId, String amount, Instant timestamp) {
         return event(merchantId, amount, "ZAR", timestamp);
     }
 
     private TransactionEventProto.TransactionEvent event(String merchantId, String amount, String currency,
                                                            Instant timestamp) {
+        return eventWithId(UUID.randomUUID().toString(), merchantId, amount, currency, timestamp);
+    }
+
+    private TransactionEventProto.TransactionEvent eventWithId(String transactionId, String merchantId,
+                                                                 String amount, Instant timestamp) {
+        return eventWithId(transactionId, merchantId, amount, "ZAR", timestamp);
+    }
+
+    private TransactionEventProto.TransactionEvent eventWithId(String transactionId, String merchantId,
+                                                                 String amount, String currency, Instant timestamp) {
         Timestamp ts = Timestamp.newBuilder()
                 .setSeconds(timestamp.getEpochSecond()).setNanos(timestamp.getNano()).build();
         return TransactionEventProto.TransactionEvent.newBuilder()
-                .setTransactionId(UUID.randomUUID().toString())
+                .setTransactionId(transactionId)
                 .setCustomerId("unused-topology-keys-on-record-key-instead")
                 .setMerchantId(merchantId)
                 .setAmount(amount)

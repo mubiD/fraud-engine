@@ -4,6 +4,7 @@ import com.fraudengine.api.dto.DataResponse;
 import com.fraudengine.api.dto.FraudAssessmentDto;
 import com.fraudengine.api.dto.MerchantRiskSummaryDto;
 import com.fraudengine.api.dto.PagedResponse;
+import com.fraudengine.api.dto.SortDirection;
 import com.fraudengine.api.mapper.TransactionMapper;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.service.TransactionQueryService;
@@ -17,7 +18,6 @@ import com.fraudengine.api.cursor.CursorUtils;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Pattern;
 import org.springframework.data.domain.Slice;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
@@ -57,25 +57,23 @@ public class MerchantController {
             @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
-            @RequestParam(required = false) String from,
+            @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
-            @RequestParam(required = false) String to,
-            @Parameter(description = "ISO-8601 timestamp cursor from the previous page's nextCursor field")
+            @RequestParam(required = false) Instant to,
+            @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
             @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
-            @RequestParam(defaultValue = "desc") @Pattern(regexp = "asc|desc", message = "must be 'asc' or 'desc'") String sort) {
+            @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        Instant fromInstant = from != null ? Instant.parse(from) : null;
-        Instant toInstant   = to   != null ? Instant.parse(to)   : null;
         CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<FraudAssessment> slice = queryService.getFlaggedByMerchant(
-                merchantId, ruleViolated, minRiskScore, fromInstant, toInstant,
+                merchantId, ruleViolated, minRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort);
+                pageSize, sort.name());
 
         List<FraudAssessmentDto> data = slice.getContent().stream()
                 .map(mapper::toDto)
@@ -110,8 +108,7 @@ public class MerchantController {
             @Parameter(description = "Merchant identifier", required = true)
             @PathVariable String merchantId,
             @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards")
-            @RequestParam(required = false) String since) {
-        Instant sinceInstant = since != null ? Instant.parse(since) : null;
-        return DataResponse.of(queryService.getMerchantRiskSummary(merchantId, sinceInstant));
+            @RequestParam(required = false) Instant since) {
+        return DataResponse.of(queryService.getMerchantRiskSummary(merchantId, since));
     }
 }

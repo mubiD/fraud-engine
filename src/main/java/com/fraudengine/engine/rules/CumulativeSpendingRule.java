@@ -6,15 +6,14 @@ import com.fraudengine.engine.FraudRule;
 import com.fraudengine.engine.RuleResult;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Severity;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 @Component
-@Order(12)
 public class CumulativeSpendingRule implements FraudRule {
 
     private static final String RULE_NAME = "CUMULATIVE_SPENDING";
@@ -69,5 +68,13 @@ public class CumulativeSpendingRule implements FraudRule {
     @Override public String getRuleVersion() { return RULE_VERSION; }
     @Override public int getPriority()       { return 12; }
     @Override public boolean isEnabled()     { return properties.getCumulativeSpending().isEnabled(); }
+
+    @Override
+    public Map<String, Object> getConfig() {
+        return Map.of(
+                "hourlyLimit", properties.getCumulativeSpending().getHourlyLimit(),
+                "dailyLimit", properties.getCumulativeSpending().getDailyLimit(),
+                "hourlyWindowMinutes", properties.getCumulativeSpending().getHourlyWindowMinutes());
+    }
 
 }

@@ -26,4 +26,10 @@ message TransactionEvent {
   double latitude       = 9;
   double longitude      = 10;
   google.protobuf.Timestamp timestamp = 11;
+  // Added 2026-09-10: DeviceFingerprintRule needs this to ever see real data. Additive
+  // field, backward/forward compatible under Schema Registry's default compatibility
+  // check — old producers that don't set it leave it as "" (proto3 scalar default),
+  // which ProtoMapper.toTransactionEntity treats as absent, same as category/location.
+  // Populating it is an upstream producer change outside this repo; see DESIGN.md §11.
+  string device_fingerprint = 12;
 }
