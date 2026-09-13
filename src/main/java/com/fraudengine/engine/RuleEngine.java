@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 public class RuleEngine {
 
     private static final Logger log = LoggerFactory.getLogger(RuleEngine.class);
+    private static final Comparator<FraudRule> PRIORITY_ORDER = Comparator.comparingInt(FraudRule::getPriority);
 
     private final List<FraudRule> rules;
     private final EvaluationContextBuilder contextBuilder;
@@ -45,7 +46,7 @@ public class RuleEngine {
         Instant start = Instant.now();
         List<FraudRule> enabledRules = rules.stream()
                 .filter(FraudRule::isEnabled)
-                .sorted(Comparator.comparingInt(FraudRule::getPriority))
+                .sorted(PRIORITY_ORDER)
                 .collect(Collectors.toList());
 
         log.debug("Starting rule evaluation: enabledRules={}", enabledRules.size());
@@ -139,7 +140,7 @@ public class RuleEngine {
 
     public List<FraudRule> getRules() {
         return rules.stream()
-                .sorted(Comparator.comparingInt(FraudRule::getPriority))
+                .sorted(PRIORITY_ORDER)
                 .collect(Collectors.toList());
     }
 }

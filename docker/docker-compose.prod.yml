@@ -10,6 +10,8 @@ version: "3.9"
 #        export KAFKA_SSL_TRUSTSTORE_PASSWORD=<ts-password>
 #        export KAFKA_ADMIN_PASSWORD=<broker-admin-password>
 #        export KAFKA_CLIENT_PASSWORD=<kafka-client-password>
+#        export POSTGRES_PASSWORD=<postgres-password>
+#        export FRAUD_IDP_URI=<real-issuer-uri>   # e.g. https://idp.example/oauth2/default
 #   3. docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #      vault-init runs automatically, prints VAULT_ROLE_ID and VAULT_SECRET_ID.
 #   4. Export those values and restart the fraud-engine:
@@ -26,6 +28,8 @@ services:
     container_name: fraud-postgres-prod
     ports:
       - "5437:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data_prod:/var/lib/postgresql/data
 
@@ -210,9 +214,11 @@ services:
     restart: "no"
 
   # Mock OIDC/JWKS issuer: verification-only, same rationale as load-test's (see
-  # docker-compose.load-test.yml). Real prod points FRAUD_IDP_URI at Acme Bank's real IdP;
-  # this stands in for it so `make prod` boots and is exercisable outside the corporate
-  # network. Override FRAUD_IDP_URI back to the real issuer for an actual prod deployment.
+  # docker-compose.load-test.yml). Real prod points FRAUD_IDP_URI at Acme Bank's real IdP.
+  # Unlike load-test's compose file, this one no longer defaults fraud-engine's FRAUD_IDP_URI
+  # to this mock — it must be exported explicitly (see the header comment above), even to
+  # point at this same mock for a local/demo run of `make prod`, so a real deployment can't
+  # silently boot against it by omission.
   mock-oidc:
     container_name: fraud-mock-oidc-prod
     image: ghcr.io/navikt/mock-oauth2-server:latest
@@ -253,7 +259,11 @@ services:
       VAULT_AUTH_METHOD: APPROLE
       # Clear the dev-mode root token so it cannot be used in prod
       VAULT_TOKEN: ""
-      FRAUD_IDP_URI: http://mock-oidc:8080/default
+      # No default: unlike load-test's compose file (which intentionally points at the local
+      # mock-oidc for its own throwaway runs), this is meant to represent a real prod
+      # deployment. An unset value fails fast at startup (SecurityConfig's jwtDecoder() bean
+      # calls JwtDecoders.fromIssuerLocation on it) instead of silently booting against the mock.
+      FRAUD_IDP_URI: ${FRAUD_IDP_URI}
 
 volumes:
   postgres_data_prod:

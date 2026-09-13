@@ -254,7 +254,7 @@ ALTER TABLE fraud_assessments ADD CONSTRAINT uq_assessments_transaction_id UNIQU
 
 ### Data lifecycle
 
-`PartitionMaintenanceJob` runs nightly at 02:00: pre-creates the partition for `today + 2 days` and drops the partition for `today − 91 days` (90-day retention). It's the one component explicitly disabled under the `standalone` profile, since the H2 in-memory database used there doesn't support table partitioning.
+`PartitionMaintenanceJob` runs nightly at 02:00: pre-creates the partition for `today + 2 days` and detaches the partition for `today − 91 days` (90-day retention) via `ALTER TABLE ... DETACH PARTITION` rather than dropping it — the detached partition survives as an ordinary standalone table for a separate, deliberate archival/delete process, not deleted outright. It's the one component explicitly disabled under the `standalone` profile, since the H2 in-memory database used there doesn't support table partitioning.
 
 ### Trade-offs
 
@@ -348,7 +348,7 @@ Controllers never return JPA entities. MapStruct generates the entity→DTO mapp
 
 ### Multi-environment layout
 
-Three self-contained environments (`dev`, `load-test`, `prod`), each with its own app instance, Postgres, 3-broker Kafka cluster, and (in `dev`) an exposed Schema Registry/Vault/Prometheus, all on distinct host ports so multiple environments run side by side locally via `docker-compose.*.yml`. The same topology is expressed as per-environment Helm values (`helm/values-*.yaml`) for Kubernetes deployment. (`int`/`qa` existed earlier in the project and were removed outright — they never got real use as distinct environments; `load-test` was renamed from `load` for clarity.)
+Three self-contained environments (`dev`, `load-test`, `prod`), each with its own app instance, Postgres, 3-broker Kafka cluster, and (in `dev`) an exposed Schema Registry/Vault/Prometheus, all on distinct host ports so multiple environments run side by side locally via `docker-compose.*.yml`. The same topology is expressed as per-environment Helm values (`helm/values-*.yaml`) for Kubernetes deployment — deliberately values files only, not a full chart (`Chart.yaml`/`templates/`): these are meant to plug into an externally-managed platform Helm chart, not ship one from this repo. (`int`/`qa` existed earlier in the project and were removed outright — they never got real use as distinct environments; `load-test` was renamed from `load` for clarity.)
 
 ### Dockerfile
 
@@ -368,7 +368,7 @@ Every rule, the rule engine's orchestration logic, the context builder, and the 
 
 ### Layer 2: Integration tests (Testcontainers)
 
-Real Postgres and Kafka containers per test class, full Spring context, mock (in-process) Schema Registry. Covers the full pipeline (`transactions.raw` → consumer → rule engine → persisted assessment → query API), DLT routing after exhausted retries, and ordered concurrent processing for a single customer.
+Real Postgres and Kafka containers per test class, full Spring context, mock (in-process) Schema Registry. Covers the full pipeline (`transactions.raw` → consumer → rule engine → persisted assessment → query API), DLT routing after exhausted retries, dedup-on-redelivery, and the Kafka Streams velocity store. Not yet covered: ordered concurrent processing for a single customer (a real gap, not yet built).
 
 ### Layer 3: Load & performance tests (k6)
 

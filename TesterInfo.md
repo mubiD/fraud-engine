@@ -241,7 +241,7 @@ Returns cursor-paginated assessments where `disposition = CLEARED`.
 
 **`GET /api/v1/rules`**
 
-Returns all 13 registered fraud rules, ordered by priority, with live config.
+Returns all 12 registered fraud rules, ordered by priority, with live config.
 
 **Response 200 OK (excerpt):**
 ```json
@@ -688,7 +688,7 @@ If you're only ever testing against `make dev`, you won't hit any of this — wh
 
 13. **Context lookback (default 60 minutes) bounds every window-based rule**, not just velocity/geographic — also duplicate, card-cloning, device-fingerprint, multi-channel, cross-merchant-velocity, and cumulative-spending's hourly window. The app validates all of these against the lookback at startup and refuses to start if any window is configured wider than it.
 
-14. **Partition maintenance job:** runs at 02:00 daily. Creates the partition 2 days ahead; drops the partition from 91 days ago (90-day retention plus a 1-day buffer). Test data older than ~91 days will be purged.
+14. **Partition maintenance job:** runs at 02:00 daily. Creates the partition 2 days ahead; detaches (not drops) the partition from 91 days ago (90-day retention plus a 1-day buffer) via `ALTER TABLE ... DETACH PARTITION`. Test data older than ~91 days will be detached from the active partition set, not deleted — it survives as an ordinary standalone table pending a separate archival/delete process.
 
 15. **No runtime rule config change:** rules cannot be enabled/disabled or have thresholds changed via API — requires a redeployment.
 

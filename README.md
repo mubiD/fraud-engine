@@ -944,7 +944,7 @@ Log format:
 The `transactions` table is range-partitioned by `timestamp` (daily). `PartitionMaintenanceJob` runs every night at 02:00:
 
 - Creates the partition for `today + 2 days` (pre-creation buffer)
-- Drops the partition for `today − 91 days` (90-day retention)
+- Detaches the partition for `today − 91 days` (90-day retention) via `ALTER TABLE ... DETACH PARTITION` — the data survives as an ordinary standalone table, not deleted; archival/deletion from there is a separate, deliberate process
 
 The `fraud_assessments` table has a composite foreign key `(transaction_id, transaction_timestamp)` referencing the partitioned table's composite primary key `(id, timestamp)`.
 

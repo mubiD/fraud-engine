@@ -90,9 +90,10 @@ small change, but the natural "next tier" of this project.
 - A real corporate CA for prod's Kafka TLS, replacing the self-signed one
   `scripts/gen-kafka-certs.sh` issues (`DESIGN.md` §11 already names this as the one remaining gap
   after hostname verification was fixed).
-- A data-retention story beyond `PartitionMaintenanceJob`'s hard 90-day drop: archive-then-delete
-  to cold storage (S3/Glacier) if this ever needs to support compliance audits or disputes older
-  than 90 days.
+- A data-retention story beyond `PartitionMaintenanceJob`'s 90-day detach: it already keeps
+  detached data as a standalone table rather than dropping it, but nothing yet archives or
+  deletes that table — archive-then-delete to cold storage (S3/Glacier) if this ever needs to
+  support compliance audits or disputes older than 90 days.
 - Right-to-erasure support for `customer_id`. PII policy currently just means "don't log it," but
   the ID itself still lives in Postgres indefinitely.
 

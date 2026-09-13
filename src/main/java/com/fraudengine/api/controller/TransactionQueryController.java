@@ -67,13 +67,13 @@ public class TransactionQueryController {
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
+        CursorUtils.DecodedCursor decoded = decodeCursor(cursor);
 
         Slice<Transaction> slice = queryService.getByCustomerId(
                 customerId, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort.name());
+                pageSize, sort);
 
         List<TransactionSummaryDto> data = slice.getContent().stream()
                 .map(mapper::toSummaryDto)
@@ -152,13 +152,13 @@ public class TransactionQueryController {
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
+        CursorUtils.DecodedCursor decoded = decodeCursor(cursor);
 
         Slice<FraudAssessment> slice = queryService.getFlagged(
                 customerId, ruleViolated, minRiskScore, maxRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort.name());
+                pageSize, sort);
 
         return toAssessmentPage(slice);
     }
@@ -191,13 +191,13 @@ public class TransactionQueryController {
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
+        CursorUtils.DecodedCursor decoded = decodeCursor(cursor);
 
         Slice<FraudAssessment> slice = queryService.getPendingReview(
                 customerId, ruleViolated, minRiskScore, maxRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort.name());
+                pageSize, sort);
 
         return toAssessmentPage(slice);
     }
@@ -226,15 +226,19 @@ public class TransactionQueryController {
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
+        CursorUtils.DecodedCursor decoded = decodeCursor(cursor);
 
         Slice<FraudAssessment> slice = queryService.getPassed(
                 customerId, minRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort.name());
+                pageSize, sort);
 
         return toAssessmentPage(slice);
+    }
+
+    private CursorUtils.DecodedCursor decodeCursor(String cursor) {
+        return cursor != null ? CursorUtils.decode(cursor) : null;
     }
 
     private PagedResponse<FraudAssessmentDto> toAssessmentPage(Slice<FraudAssessment> slice) {

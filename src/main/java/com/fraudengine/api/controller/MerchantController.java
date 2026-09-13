@@ -73,7 +73,7 @@ public class MerchantController {
                 merchantId, ruleViolated, minRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
-                pageSize, sort.name());
+                pageSize, sort);
 
         List<FraudAssessmentDto> data = slice.getContent().stream()
                 .map(mapper::toDto)

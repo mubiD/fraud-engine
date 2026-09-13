@@ -41,43 +41,29 @@ public interface TransactionRepository extends JpaRepository<Transaction, Transa
     List<Transaction> findRecentByCustomer(@Param("customerId") String customerId,
                                            @Param("since") Instant since);
 
+    // No ORDER BY here: Spring Data appends one from `pageable`'s Sort (timestamp, id — see
+    // TransactionQueryService), since the keyset-cursor comparison direction below is the only
+    // part of "sort direction" that can't come from Sort alone.
     @Query("""
             SELECT t FROM Transaction t
             LEFT JOIN FETCH t.assessment a
             LEFT JOIN FETCH a.ruleViolations
             WHERE t.customerId = :customerId
               AND (CAST(:cursorTimestamp AS timestamp) IS NULL
-                   OR t.timestamp < :cursorTimestamp
-                   OR (t.timestamp = :cursorTimestamp AND t.id < :cursorId))
+                   OR (:ascending = true AND (t.timestamp > :cursorTimestamp
+                        OR (t.timestamp = :cursorTimestamp AND t.id > :cursorId)))
+                   OR (:ascending = false AND (t.timestamp < :cursorTimestamp
+                        OR (t.timestamp = :cursorTimestamp AND t.id < :cursorId))))
               AND (CAST(:from AS timestamp) IS NULL OR t.timestamp >= :from)
               AND (CAST(:to AS timestamp) IS NULL OR t.timestamp <= :to)
-            ORDER BY t.timestamp DESC, t.id DESC
             """)
     Slice<Transaction> findByCustomerInRange(@Param("customerId") String customerId,
                                              @Param("from") Instant from,
                                              @Param("to") Instant to,
                                              @Param("cursorTimestamp") Instant cursorTimestamp,
                                              @Param("cursorId") UUID cursorId,
+                                             @Param("ascending") boolean ascending,
                                              Pageable pageable);
-
-    @Query("""
-            SELECT t FROM Transaction t
-            LEFT JOIN FETCH t.assessment a
-            LEFT JOIN FETCH a.ruleViolations
-            WHERE t.customerId = :customerId
-              AND (CAST(:cursorTimestamp AS timestamp) IS NULL
-                   OR t.timestamp > :cursorTimestamp
-                   OR (t.timestamp = :cursorTimestamp AND t.id > :cursorId))
-              AND (CAST(:from AS timestamp) IS NULL OR t.timestamp >= :from)
-              AND (CAST(:to AS timestamp) IS NULL OR t.timestamp <= :to)
-            ORDER BY t.timestamp ASC, t.id ASC
-            """)
-    Slice<Transaction> findByCustomerInRangeAsc(@Param("customerId") String customerId,
-                                                @Param("from") Instant from,
-                                                @Param("to") Instant to,
-                                                @Param("cursorTimestamp") Instant cursorTimestamp,
-                                                @Param("cursorId") UUID cursorId,
-                                                Pageable pageable);
 
     // Scoped to a single currency so a customer transacting in more than one currency
     // never has those amounts pooled as equivalent magnitude by CumulativeSpendingRule's

@@ -4,13 +4,17 @@ import com.fraudengine.api.dto.CustomerRiskSummaryDto;
 import com.fraudengine.api.dto.FraudSummaryDto;
 import com.fraudengine.api.dto.MerchantRiskSummaryDto;
 import com.fraudengine.api.dto.RuleBreakdownDto;
+import com.fraudengine.api.dto.SortDirection;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -44,6 +48,15 @@ public class TransactionQueryService {
         }
     }
 
+    // The keyset-cursor comparison direction (< vs >) is threaded to the repository as an
+    // explicit boolean since it can't be derived from Sort; the ORDER BY itself is derived
+    // here and appended by Spring Data, since the repositories' @Query methods intentionally
+    // omit their own ORDER BY.
+    private Pageable pageable(int size, SortDirection sort, String... properties) {
+        Sort.Direction direction = sort == SortDirection.asc ? Sort.Direction.ASC : Sort.Direction.DESC;
+        return PageRequest.of(0, size, Sort.by(direction, properties));
+    }
+
     private void validateRuleViolated(String ruleViolated) {
         if (ruleViolated == null) return;
         Set<String> valid = ruleManagementService.getRules().stream()
@@ -58,15 +71,11 @@ public class TransactionQueryService {
     @Transactional(readOnly = true)
     public Slice<Transaction> getByCustomerId(String customerId, Instant from, Instant to,
                                               Instant cursorTimestamp, UUID cursorId, int pageSize,
-                                              String sort) {
+                                              SortDirection sort) {
         validateDateRange(from, to);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        if ("asc".equals(sort)) {
-            return transactionRepository.findByCustomerInRangeAsc(customerId, from, to, cursorTimestamp, cursorId,
-                    PageRequest.of(0, size));
-        }
         return transactionRepository.findByCustomerInRange(customerId, from, to, cursorTimestamp, cursorId,
-                PageRequest.of(0, size));
+                sort == SortDirection.asc, pageable(size, sort, "timestamp", "id"));
     }
 
     @Transactional(readOnly = true)
@@ -84,16 +93,13 @@ public class TransactionQueryService {
                                              Integer minRiskScore, Integer maxRiskScore,
                                              Instant from, Instant to,
                                              Instant cursorTimestamp, UUID cursorId, int pageSize,
-                                             String sort) {
+                                             SortDirection sort) {
         validateDateRange(from, to);
         validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        if ("asc".equals(sort)) {
-            return assessmentRepository.findFlaggedAsc(customerId, ruleViolated, minRiskScore, maxRiskScore,
-                    from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
-        }
         return assessmentRepository.findFlagged(customerId, ruleViolated, minRiskScore, maxRiskScore,
-                from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+                from, to, cursorTimestamp, cursorId, sort == SortDirection.asc,
+                pageable(size, sort, "assessedAt", "id"));
     }
 
     @Transactional(readOnly = true)
@@ -101,31 +107,24 @@ public class TransactionQueryService {
                                                    Integer minRiskScore, Integer maxRiskScore,
                                                    Instant from, Instant to,
                                                    Instant cursorTimestamp, UUID cursorId, int pageSize,
-                                                   String sort) {
+                                                   SortDirection sort) {
         validateDateRange(from, to);
         validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        if ("asc".equals(sort)) {
-            return assessmentRepository.findPendingReviewAsc(customerId, ruleViolated, minRiskScore, maxRiskScore,
-                    from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
-        }
         return assessmentRepository.findPendingReview(customerId, ruleViolated, minRiskScore, maxRiskScore,
-                from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+                from, to, cursorTimestamp, cursorId, sort == SortDirection.asc,
+                pageable(size, sort, "assessedAt", "id"));
     }
 
     @Transactional(readOnly = true)
     public Slice<FraudAssessment> getPassed(String customerId, Integer minRiskScore,
                                             Instant from, Instant to,
                                             Instant cursorTimestamp, UUID cursorId, int pageSize,
-                                            String sort) {
+                                            SortDirection sort) {
         validateDateRange(from, to);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        if ("asc".equals(sort)) {
-            return assessmentRepository.findPassedAsc(customerId, minRiskScore, from, to, cursorTimestamp, cursorId,
-                    PageRequest.of(0, size));
-        }
         return assessmentRepository.findPassed(customerId, minRiskScore, from, to, cursorTimestamp, cursorId,
-                PageRequest.of(0, size));
+                sort == SortDirection.asc, pageable(size, sort, "assessedAt", "id"));
     }
 
     @Transactional(readOnly = true)
@@ -133,19 +132,20 @@ public class TransactionQueryService {
                                                         Integer minRiskScore,
                                                         Instant from, Instant to,
                                                         Instant cursorTimestamp, UUID cursorId, int pageSize,
-                                                        String sort) {
+                                                        SortDirection sort) {
         validateDateRange(from, to);
         validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        if ("asc".equals(sort)) {
-            return assessmentRepository.findFlaggedByMerchantAsc(merchantId, ruleViolated, minRiskScore,
-                    from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
-        }
         return assessmentRepository.findFlaggedByMerchant(merchantId, ruleViolated, minRiskScore,
-                from, to, cursorTimestamp, cursorId, PageRequest.of(0, size));
+                from, to, cursorTimestamp, cursorId, sort == SortDirection.asc,
+                pageable(size, sort, "assessedAt", "id"));
     }
 
-    @Transactional(readOnly = true)
+    // REPEATABLE_READ (Postgres: snapshot isolation) so the independent COUNTs below all see
+    // the same snapshot — otherwise a row committed between them under the default READ
+    // COMMITTED can make totalFlagged momentarily exceed totalAssessed. Safe for a read-only
+    // transaction: no serialization-failure/retry risk, which only applies to writers.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FraudSummaryDto getFraudSummary(Instant from, Instant to) {
         validateDateRange(from, to);
         long totalAssessed = assessmentRepository.countInRange(from, to);
@@ -176,7 +176,9 @@ public class TransactionQueryService {
         return dto;
     }
 
-    @Transactional(readOnly = true)
+    // See getFraudSummary for why REPEATABLE_READ: same read-skew risk across this method's
+    // several independent count/aggregate queries.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CustomerRiskSummaryDto getCustomerRiskSummary(String customerId, Instant since) {
         long total = transactionRepository.countByCustomerId(customerId, since);
         long flagged = assessmentRepository.countFlaggedByCustomerId(customerId, since);
@@ -207,7 +209,9 @@ public class TransactionQueryService {
         return dto;
     }
 
-    @Transactional(readOnly = true)
+    // See getFraudSummary for why REPEATABLE_READ: same read-skew risk across this method's
+    // several independent count/aggregate queries.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public MerchantRiskSummaryDto getMerchantRiskSummary(String merchantId, Instant since) {
         long total = transactionRepository.countByMerchantId(merchantId, since);
         long flagged = assessmentRepository.countFlaggedByMerchantId(merchantId, since);

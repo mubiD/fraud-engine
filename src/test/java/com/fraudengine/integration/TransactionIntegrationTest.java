@@ -7,6 +7,9 @@ import com.fraudengine.model.enums.TransactionType;
 import com.fraudengine.proto.TransactionEventProto;
 import com.fraudengine.repository.FraudAssessmentRepository;
 import com.fraudengine.repository.TransactionRepository;
+import com.fraudengine.streams.CustomerActivityState;
+import com.fraudengine.streams.KafkaStreamsRecentActivityStore;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -38,6 +41,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -80,9 +84,14 @@ class TransactionIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired FraudAssessmentRepository assessmentRepository;
     @Autowired TransactionRepository transactionRepository;
+    @Autowired KafkaStreamsRecentActivityStore recentActivityStore;
+    @Autowired MeterRegistry meterRegistry;
 
     @Value("${fraud.kafka.topics.transactions-raw}")
     String rawTopic;
+
+    @Value("${fraud.kafka.topics.transactions-dlt}")
+    String dltTopic;
 
     // mock:// schema registry is an in-process singleton, so same URL = same registry instance
     private static final String MOCK_SCHEMA_REGISTRY = "mock://fraud-engine-test";
@@ -213,12 +222,97 @@ class TransactionIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // Kafka → DLT (dead-letter topic) on repeated processing failure
+    // -----------------------------------------------------------------------
+
+    @Test
+    void invalidCurrency_exhaustsRetriesAndRoutesToDlt() {
+        // currency is VARCHAR(3) NOT NULL (V1__init_schema.sql) — a longer value is a real,
+        // deterministic failure reachable through the public event shape, no raw
+        // poison-pill/deserializer wiring needed. @RetryableTopic: 3 attempts, 1s/2s backoff.
+        UUID txId = UUID.randomUUID();
+        TransactionEventProto.TransactionEvent event = buildEvent(txId, "CUST_DLT", "MERCH_DLT",
+                new BigDecimal("50.00"), "RETAIL", TransactionType.CARD_PRESENT, "TOOLONG");
+
+        try (KafkaConsumer<String, byte[]> consumer = openConsumer(dltTopic)) {
+            consumer.poll(Duration.ofMillis(300));
+
+            testTemplate.send(rawTopic, event.getCustomerId(), event);
+
+            ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofSeconds(20));
+            assertThat(records.count()).isGreaterThanOrEqualTo(1);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Kafka Streams velocity store
+    // -----------------------------------------------------------------------
+
+    @Test
+    void velocityStore_reflectsRecentTransactionsForCustomer() {
+        String customerId = "CUST_VELOCITY";
+        int eventCount = 3;
+        for (int i = 0; i < eventCount; i++) {
+            UUID txId = UUID.randomUUID();
+            TransactionEventProto.TransactionEvent event = buildEvent(txId, customerId, "MERCH_V",
+                    new BigDecimal("20.00"), "RETAIL", TransactionType.CARD_PRESENT);
+            testTemplate.send(rawTopic, customerId, event);
+        }
+
+        // The Kafka Streams topology runs as a second, independent consumer group on the same
+        // topic (VelocityStreamsTopologyConfig) — it may still be starting/rebalancing when
+        // this test begins, so lookup() can legitimately throw StoreUnavailableException for a
+        // while; ignoreExceptions() lets awaitility keep polling through that instead of failing.
+        await().atMost(20, TimeUnit.SECONDS).ignoreExceptions().until(() -> {
+            Optional<CustomerActivityState> state = recentActivityStore.lookup(customerId);
+            return state.isPresent() && state.get().recentTransactions().size() >= eventCount;
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Dedup on redelivery
+    // -----------------------------------------------------------------------
+
+    @Test
+    void sameTransactionIdDeliveredTwice_assessedOnlyOnce() {
+        UUID txId = UUID.randomUUID();
+        TransactionEventProto.TransactionEvent event = buildEvent(txId, "CUST_DEDUP", "MERCH_DEDUP",
+                new BigDecimal("40.00"), "RETAIL", TransactionType.CARD_PRESENT);
+
+        double duplicatesBefore = meterRegistry.counter("fraud.kafka.duplicate_delivery.total").count();
+
+        testTemplate.send(rawTopic, event.getCustomerId(), event);
+        await().atMost(10, TimeUnit.SECONDS).until(() ->
+                assessmentRepository.findByTransactionId(txId).isPresent());
+
+        // Same transactionId redelivered — simulates the at-least-once redelivery
+        // TransactionConsumer's dedup check (findByTransactionId before evaluating) guards
+        // against, e.g. a Kafka offset commit failing after the first delivery's transaction
+        // already committed.
+        testTemplate.send(rawTopic, event.getCustomerId(), event);
+
+        await().atMost(10, TimeUnit.SECONDS).until(() ->
+                meterRegistry.counter("fraud.kafka.duplicate_delivery.total").count() > duplicatesBefore);
+
+        assertThat(transactionRepository.findByIdOnly(txId)).isPresent();
+        long assessmentCount = assessmentRepository.findByTransactionId(txId).stream().count();
+        assertThat(assessmentCount).isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
     private TransactionEventProto.TransactionEvent buildEvent(UUID id, String customerId,
                                                                String merchantId, BigDecimal amount,
                                                                String category, TransactionType type) {
+        return buildEvent(id, customerId, merchantId, amount, category, type, "GBP");
+    }
+
+    private TransactionEventProto.TransactionEvent buildEvent(UUID id, String customerId,
+                                                               String merchantId, BigDecimal amount,
+                                                               String category, TransactionType type,
+                                                               String currency) {
         TransactionEventProto.TransactionType protoType = switch (type) {
             case CARD_PRESENT  -> TransactionEventProto.TransactionType.CARD_PRESENT;
             case CONTACTLESS   -> TransactionEventProto.TransactionType.CONTACTLESS;
@@ -232,7 +326,7 @@ class TransactionIntegrationTest {
                 .setCustomerId(customerId)
                 .setMerchantId(merchantId)
                 .setAmount(amount.toPlainString())
-                .setCurrency("GBP")
+                .setCurrency(currency)
                 .setCategory(category)
                 .setTransactionType(protoType)
                 .setTimestamp(com.google.protobuf.Timestamp.newBuilder()

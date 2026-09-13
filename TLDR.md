@@ -86,7 +86,9 @@ Prerequisites: Docker, plus a local JDK 21 + Maven on `PATH`. Full detail, other
   working a review queue means calling endpoints, not clicking through a dashboard.
 - **Not multi-tenant or white-label.** It's built for one issuer's transaction stream, not as a
   platform serving multiple banks with isolated configs.
-- **Not hardened for a real production rollout as-is.** `prod`'s Kafka TLS uses a self-signed CA,
-  the local IDP is a mock OIDC server standing in for the real one, and the deploy pipeline's
-  actual infrastructure steps are stubbed (portfolio/showcase constraints, not oversights: see
-  `DESIGN.md` §11).
+- **Not hardened for a real production rollout as-is.** `prod`'s Kafka TLS uses a self-signed CA
+  (see `DESIGN.md` §11); a mock OIDC server stands in for a real IdP for local `dev`/`load-test`
+  runs (`prod`'s compose file requires `FRAUD_IDP_URI` to be exported explicitly — no silent
+  default to the mock); and the deploy pipeline's actual infrastructure steps are stubbed (see
+  [docs/future-prospects.md](./docs/future-prospects.md)) — portfolio/showcase constraints, not
+  oversights.
