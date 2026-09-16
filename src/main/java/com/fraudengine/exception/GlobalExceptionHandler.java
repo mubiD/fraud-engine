@@ -79,7 +79,12 @@ public class GlobalExceptionHandler {
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(
                 HttpStatus.TOO_MANY_REQUESTS, "Too many requests — please retry after a moment.");
         HttpHeaders headers = new HttpHeaders();
-        headers.set("Retry-After", "10");
+        // Approximates the "api" limiter's 1s refresh window (application.yml) — the
+        // overwhelming majority of 429s come from it, since every read endpoint shares it.
+        // The standalone-submit/standalone-stream limiters refresh every 10s instead, so this
+        // is a slight overstatement of urgency for those two dev-only demo endpoints, not
+        // exposed to real clients relying on this header.
+        headers.set("Retry-After", "1");
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).headers(headers).body(detail);
     }
 

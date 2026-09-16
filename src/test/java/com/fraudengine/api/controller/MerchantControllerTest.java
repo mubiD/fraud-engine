@@ -92,7 +92,7 @@ class MerchantControllerTest {
 
     @Test
     void getFlaggedByMerchant_returns200WithData() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -106,7 +106,7 @@ class MerchantControllerTest {
 
     @Test
     void getFlaggedByMerchant_withDateRange_passesInstantsToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), eq(FROM), eq(TO), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
@@ -114,12 +114,12 @@ class MerchantControllerTest {
                         .param("to", "2026-07-31T23:59:59Z"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, null, null, FROM, TO, null, null, 20, SortDirection.desc);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, null, null, null, FROM, TO, null, null, 20, SortDirection.desc);
     }
 
     @Test
     void getFlaggedByMerchant_withNextPage_setsNextCursor() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), true));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -131,7 +131,7 @@ class MerchantControllerTest {
 
     @Test
     void getFlaggedByMerchant_withRuleViolated_passesRuleToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -140,12 +140,12 @@ class MerchantControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)));
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", null, null, null, null, null, 20, SortDirection.desc);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", null, null, null, null, null, null, 20, SortDirection.desc);
     }
 
     @Test
     void getFlaggedByMerchant_withMinRiskScore_passesScoreToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), eq(75), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), eq(75), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
                 .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
         when(mapper.toDto(assessment)).thenReturn(assessmentDto);
 
@@ -154,12 +154,12 @@ class MerchantControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)));
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, null, 75, null, null, null, null, 20, SortDirection.desc);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, null, 75, null, null, null, null, null, 20, SortDirection.desc);
     }
 
     @Test
     void getFlaggedByMerchant_withRuleViolatedAndMinRiskScore_passesBothToService() throws Exception {
-        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), eq(60), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), eq("VelocityRule"), eq(60), isNull(), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
                 .thenReturn(new SliceImpl<>(List.of(), PageRequest.of(0, 20), false));
 
         mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
@@ -167,7 +167,28 @@ class MerchantControllerTest {
                         .param("minRiskScore", "60"))
                 .andExpect(status().isOk());
 
-        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", 60, null, null, null, null, 20, SortDirection.desc);
+        verify(queryService).getFlaggedByMerchant(MERCHANT, "VelocityRule", 60, null, null, null, null, null, 20, SortDirection.desc);
+    }
+
+    @Test
+    void getFlaggedByMerchant_withMaxRiskScore_passesScoreToService() throws Exception {
+        when(queryService.getFlaggedByMerchant(eq(MERCHANT), isNull(), isNull(), eq(40), isNull(), isNull(), isNull(), isNull(), eq(20), eq(SortDirection.desc)))
+                .thenReturn(new SliceImpl<>(List.of(assessment), PageRequest.of(0, 20), false));
+        when(mapper.toDto(assessment)).thenReturn(assessmentDto);
+
+        mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
+                        .param("maxRiskScore", "40"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)));
+
+        verify(queryService).getFlaggedByMerchant(MERCHANT, null, null, 40, null, null, null, null, 20, SortDirection.desc);
+    }
+
+    @Test
+    void getFlaggedByMerchant_maxRiskScoreAbove100_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/merchants/{merchantId}/flagged", MERCHANT)
+                        .param("maxRiskScore", "101"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

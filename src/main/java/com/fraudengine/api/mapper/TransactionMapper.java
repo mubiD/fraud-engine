@@ -1,10 +1,8 @@
 package com.fraudengine.api.mapper;
 
 import com.fraudengine.api.dto.FraudAssessmentDto;
-import com.fraudengine.api.dto.RuleDto;
 import com.fraudengine.api.dto.RuleViolationDto;
 import com.fraudengine.api.dto.TransactionSummaryDto;
-import com.fraudengine.engine.FraudRule;
 import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.RuleViolation;
 import com.fraudengine.model.Transaction;
@@ -23,13 +21,6 @@ public interface TransactionMapper {
 
     @Mapping(target = "severity", expression = "java(violation.getSeverity().name())")
     RuleViolationDto toDto(RuleViolation violation);
-
-    @Mapping(target = "ruleName", expression = "java(rule.getRuleName())")
-    @Mapping(target = "ruleVersion", expression = "java(rule.getRuleVersion())")
-    @Mapping(target = "priority", expression = "java(rule.getPriority())")
-    @Mapping(target = "enabled", expression = "java(rule.isEnabled())")
-    @Mapping(target = "config", expression = "java(rule.getConfig())")
-    RuleDto toDto(FraudRule rule);
 
     @Mapping(target = "transactionId", source = "id")
     @Mapping(target = "assessment", source = "assessment")

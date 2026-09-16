@@ -168,13 +168,15 @@ grafana:
 # the real Confluent Protobuf wire format, and those classes are only on the
 # classpath under that opt-in profile (pom.xml); omitting it fails with
 # ClassNotFoundException: io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer,
-# found live 2026-09-09. test-unit doesn't need it (pure rule tests, no Kafka).
+# found live 2026-09-09. test-unit excludes only integration/** (the
+# Testcontainers-based test needing Docker) and doesn't need -Pconfluent —
+# every other test class compiles and runs without it.
 
 test:
 	mvn test -Pconfluent
 
 test-unit:
-	mvn test -Dtest="**/engine/**"
+	mvn test -Dtest='!**/integration/**'
 
 test-integration:
 	mvn test -Dtest="**/integration/**" -Pconfluent

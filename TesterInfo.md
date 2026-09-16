@@ -281,7 +281,7 @@ Pre-aggregated risk profile: `totalTransactions`, `flaggedCount`, `notFlaggedCou
 
 **`GET /api/v1/merchants/{merchantId}/flagged`**
 
-Same filter set as §4.5 (`ruleViolated`, `minRiskScore`, `from`/`to`, `cursor`, `pageSize`), scoped to one merchant, filters combine the same way.
+Same filter set as §4.5 (`ruleViolated`, `minRiskScore`, `maxRiskScore`, `from`/`to`, `cursor`, `pageSize`), scoped to one merchant, filters combine the same way.
 
 ---
 

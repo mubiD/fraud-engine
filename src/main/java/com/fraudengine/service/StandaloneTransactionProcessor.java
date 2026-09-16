@@ -10,6 +10,9 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+import java.util.UUID;
+
 // Persists, evaluates, and marks a single transaction ASSESSED, one Postgres transaction per call.
 // A separate bean (not a private method on StandaloneTransactionController) so @Transactional
 // actually applies when called in a loop from stream(): Spring's proxy only intercepts calls that
@@ -45,5 +48,16 @@ public class StandaloneTransactionProcessor {
         transactionRepository.save(tx);
 
         return assessment;
+    }
+
+    // Backs submit()'s idempotency check: a transactionId that's already been persisted and
+    // assessed returns its existing assessment instead of re-evaluating. Kept here rather than
+    // in the controller so StandaloneTransactionController has no repository dependency of its
+    // own, consistent with every other controller in the app routing exclusively through a
+    // @Service.
+    @Transactional(readOnly = true)
+    public Optional<FraudAssessment> findExisting(UUID transactionId) {
+        return transactionRepository.findByIdOnly(transactionId)
+                .flatMap(t -> fraudAssessmentRepository.findByTransactionIdWithDetails(transactionId));
     }
 }

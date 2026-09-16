@@ -79,6 +79,22 @@ public class RuleProperties {
                         name, minutes, contextLookbackMinutes));
             }
         });
+
+        // duplicate's windows are seconds-based (sub-minute granularity), so they're checked
+        // separately in seconds rather than folded into the minutes map above with a lossy
+        // seconds->minutes conversion. Same recentCustomerTransactions-bounded rule as above.
+        int lookbackSeconds = contextLookbackMinutes * 60;
+        Map<String, Integer> windowSecondsByRule = Map.of(
+                "duplicate.card-present-window-seconds", duplicate.getCardPresentWindowSeconds(),
+                "duplicate.card-not-present-window-seconds", duplicate.getCardNotPresentWindowSeconds());
+
+        windowSecondsByRule.forEach((name, seconds) -> {
+            if (seconds > lookbackSeconds) {
+                throw new IllegalStateException(String.format(
+                        "fraud.rules.%s (%d) exceeds context-lookback-minutes (%d, = %d seconds)",
+                        name, seconds, contextLookbackMinutes, lookbackSeconds));
+            }
+        });
     }
 
     public static class AmountThresholdConfig {

@@ -93,7 +93,7 @@ class TransactionQueryServiceTest {
     @Test
     void getFlaggedByMerchant_toBeforeFrom_throwsIllegalArgument() {
         assertThatThrownBy(() ->
-                service.getFlaggedByMerchant(MERCHANT, null, null, TO, FROM, null, null, 20, SortDirection.desc))
+                service.getFlaggedByMerchant(MERCHANT, null, null, null, TO, FROM, null, null, 20, SortDirection.desc))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -226,7 +226,7 @@ class TransactionQueryServiceTest {
         when(ruleManagementService.getRules()).thenReturn(List.of(amountRule, velocityRule));
 
         assertThatThrownBy(() ->
-                service.getFlaggedByMerchant(MERCHANT, "NoSuchRule", null, null, null, null, null, 20, SortDirection.desc))
+                service.getFlaggedByMerchant(MERCHANT, "NoSuchRule", null, null, null, null, null, null, 20, SortDirection.desc))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("NoSuchRule");
     }
@@ -298,11 +298,11 @@ class TransactionQueryServiceTest {
         when(ruleManagementService.getRules()).thenReturn(List.of(velocityRule));
         Slice<FraudAssessment> expected = new SliceImpl<>(List.of());
         when(assessmentRepository.findFlaggedByMerchant(
-                eq(MERCHANT), eq("VelocityRule"), eq(60), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), eq(false), any()))
+                eq(MERCHANT), eq("VelocityRule"), eq(60), eq(80), eq(FROM), eq(TO), eq(CURSOR_TS), eq(CURSOR_ID), eq(false), any()))
                 .thenReturn(expected);
 
         Slice<FraudAssessment> result = service.getFlaggedByMerchant(
-                MERCHANT, "VelocityRule", 60, FROM, TO, CURSOR_TS, CURSOR_ID, 10, SortDirection.desc);
+                MERCHANT, "VelocityRule", 60, 80, FROM, TO, CURSOR_TS, CURSOR_ID, 10, SortDirection.desc);
 
         assertThat(result).isSameAs(expected);
     }

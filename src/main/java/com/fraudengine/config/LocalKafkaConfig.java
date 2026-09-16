@@ -53,6 +53,17 @@ public class LocalKafkaConfig {
         return new JpaTransactionManager(emf);
     }
 
+    // Same plain JPA manager under a second, explicit name: TransactionQueryService's
+    // isolation-level-sensitive summary queries (getFraudSummary/getCustomerRiskSummary/
+    // getMerchantRiskSummary) reference "jpaTransactionManager" by name so the same
+    // @Transactional annotation works under every profile — under load-test/prod
+    // (KafkaConfig.java), "transactionManager" is the chained Kafka+JPA manager, which
+    // can't honor an isolation level at all (see that bean's own comment on this).
+    @Bean("jpaTransactionManager")
+    public PlatformTransactionManager jpaTransactionManager(EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
+    }
+
     @Bean
     public NewTopic localTransactionsRawTopic() {
         return TopicBuilder.name(transactionsRawTopic).partitions(1).replicas(1).build();

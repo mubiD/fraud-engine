@@ -7,7 +7,7 @@ import java.util.Map;
 @Schema(description = "Fraud rule registered with the rule engine")
 public class RuleDto {
 
-    @Schema(description = "Canonical rule name", example = "AmountThresholdRule")
+    @Schema(description = "Canonical rule name", example = "AMOUNT_THRESHOLD")
     private String ruleName;
 
     @Schema(description = "Rule version string", example = "1.0")

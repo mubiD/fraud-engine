@@ -1,7 +1,7 @@
 package com.fraudengine.api.controller;
 
 import com.fraudengine.api.dto.RuleDto;
-import com.fraudengine.api.mapper.TransactionMapper;
+import com.fraudengine.api.mapper.RuleMapper;
 import com.fraudengine.config.SecurityConfig;
 import com.fraudengine.engine.FraudRule;
 import com.fraudengine.service.RuleManagementService;
@@ -34,7 +34,7 @@ class RuleControllerTest {
     RuleManagementService ruleManagementService;
 
     @MockBean
-    TransactionMapper mapper;
+    RuleMapper mapper;
 
     @Test
     void getRules_returnsAllRules() throws Exception {

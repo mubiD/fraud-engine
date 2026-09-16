@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(description = "How many times a given rule fired within a fraud summary window")
 public class RuleBreakdownDto {
 
-    @Schema(description = "Name of the rule", example = "AmountThresholdRule")
+    @Schema(description = "Name of the rule", example = "AMOUNT_THRESHOLD")
     private String ruleName;
 
     @Schema(description = "Number of flagged transactions that triggered this rule", example = "87")

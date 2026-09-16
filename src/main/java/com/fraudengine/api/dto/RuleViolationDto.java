@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(description = "A single rule that fired and contributed to a fraud assessment")
 public class RuleViolationDto {
 
-    @Schema(description = "Name of the rule that fired", example = "AmountThresholdRule")
+    @Schema(description = "Name of the rule that fired", example = "AMOUNT_THRESHOLD")
     private String ruleName;
 
     @Schema(description = "Version of the rule at the time of evaluation", example = "1.0")

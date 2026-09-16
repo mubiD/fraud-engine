@@ -10,6 +10,19 @@ spring:
   kafka:
     properties:
       schema.registry.url: mock://fraud-engine-test
+    # spring.kafka.streams.* is a separate KafkaProperties.Streams block that does NOT
+    # inherit spring.kafka.properties above (application.yml sets schema.registry.url
+    # under both producer/consumer's common `properties` AND `streams.properties`
+    # separately for exactly this reason). Without this override, the Kafka Streams
+    # topology (VelocityStreamsTopologyConfig) falls back to application.yml's production
+    # default (http://schema-registry:8081), which doesn't exist in tests — every record
+    # then fails Kafka Streams' Protobuf deserialization and is silently dropped by
+    # LogAndContinueExceptionHandler, so customer-activity-store is never populated.
+    # Found live 2026-09-16: TransactionIntegrationTest.velocityStore_reflectsRecentTransactionsForCustomer
+    # timed out waiting for state that could never arrive.
+    streams:
+      properties:
+        schema.registry.url: mock://fraud-engine-test
 
 fraud:
   kafka:

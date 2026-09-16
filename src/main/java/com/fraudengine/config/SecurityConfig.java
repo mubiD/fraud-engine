@@ -36,7 +36,10 @@ public class SecurityConfig {
         return token -> {
             try {
                 Jwt decodedJwt = defaultDecoder.decode(token);
-                log.debug("Decoded JWT: {}", decodedJwt);
+                // Logging only issuer/expiry, not the full token: Jwt's toString() includes every
+                // claim (sub, roles) — the same identifying-data-in-logs discipline applied
+                // elsewhere in this codebase (customerId/merchantId are deliberately not logged).
+                log.debug("Decoded JWT: issuer={}, expiresAt={}", decodedJwt.getIssuer(), decodedJwt.getExpiresAt());
                 return decodedJwt;
             } catch (JwtException ex) {
                 log.error("Error decoding JWT: {}", ex.getMessage());

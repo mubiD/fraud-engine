@@ -24,7 +24,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/v1/merchants", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -52,10 +51,12 @@ public class MerchantController {
     public PagedResponse<FraudAssessmentDto> getFlaggedByMerchant(
             @Parameter(description = "Merchant identifier", required = true)
             @PathVariable String merchantId,
-            @Parameter(description = "Filter by the name of the rule that was violated (e.g. VelocityRule)")
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. VELOCITY)")
             @RequestParam(required = false) String ruleViolated,
             @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
+            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100); combine with minRiskScore for a band query")
+            @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
             @Parameter(description = "ISO-8601 start of date range (inclusive)")
             @RequestParam(required = false) Instant from,
             @Parameter(description = "ISO-8601 end of date range (inclusive)")
@@ -70,26 +71,13 @@ public class MerchantController {
         CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
 
         Slice<FraudAssessment> slice = queryService.getFlaggedByMerchant(
-                merchantId, ruleViolated, minRiskScore, from, to,
+                merchantId, ruleViolated, minRiskScore, maxRiskScore, from, to,
                 decoded != null ? decoded.timestamp() : null,
                 decoded != null ? decoded.id() : null,
                 pageSize, sort);
 
-        List<FraudAssessmentDto> data = slice.getContent().stream()
-                .map(mapper::toDto)
-                .toList();
-
-        String nextCursor = slice.hasNext() && !data.isEmpty()
-                ? CursorUtils.encode(
-                        data.get(data.size() - 1).getAssessedAt(),
-                        data.get(data.size() - 1).getAssessmentId())
-                : null;
-
-        return PagedResponse.<FraudAssessmentDto>builder()
-                .data(data)
-                .nextCursor(nextCursor)
-                .hasMore(slice.hasNext())
-                .build();
+        return CursorUtils.toPagedResponse(slice, mapper::toDto,
+                FraudAssessmentDto::getAssessedAt, FraudAssessmentDto::getAssessmentId);
     }
 
     @GetMapping("/{merchantId}/risk-summary")

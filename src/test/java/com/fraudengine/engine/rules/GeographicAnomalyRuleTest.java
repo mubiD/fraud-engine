@@ -64,6 +64,19 @@ class GeographicAnomalyRuleTest {
         ).isViolation()).isFalse();
     }
 
+    @Test
+    void subMinuteGap_usesFullPrecisionTimeDiff_doesNotInflateComputedSpeed() {
+        Instant now = Instant.now();
+        // ~20km apart, 100 seconds apart: true speed is 20km / (100s/3600) = 720 km/h,
+        // under the 900 km/h threshold. Truncating 100s down to a whole minute (the bug
+        // this guards against) would compute 20km / (1/60h) = 1200 km/h instead, a false
+        // violation. Uses full millisecond precision so this passes correctly.
+        assertThat(rule.evaluate(
+                tx(51.6871, -0.1278, now),
+                ctx(List.of(tx(51.5074, -0.1278, now.minusSeconds(100))))
+        ).isViolation()).isFalse();
+    }
+
     // ---- Merchant location fallback (Gap 8) ----
 
     @Test

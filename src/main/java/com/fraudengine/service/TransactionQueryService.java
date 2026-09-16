@@ -57,6 +57,12 @@ public class TransactionQueryService {
         return PageRequest.of(0, size, Sort.by(direction, properties));
     }
 
+    // Percentage of `part` within `whole`, rounded to 2 decimal places; 0.0 when whole is
+    // empty rather than dividing by zero.
+    private static double pct(long part, long whole) {
+        return whole > 0 ? Math.round((part * 100.0 / whole) * 100.0) / 100.0 : 0.0;
+    }
+
     private void validateRuleViolated(String ruleViolated) {
         if (ruleViolated == null) return;
         Set<String> valid = ruleManagementService.getRules().stream()
@@ -129,14 +135,14 @@ public class TransactionQueryService {
 
     @Transactional(readOnly = true)
     public Slice<FraudAssessment> getFlaggedByMerchant(String merchantId, String ruleViolated,
-                                                        Integer minRiskScore,
+                                                        Integer minRiskScore, Integer maxRiskScore,
                                                         Instant from, Instant to,
                                                         Instant cursorTimestamp, UUID cursorId, int pageSize,
                                                         SortDirection sort) {
         validateDateRange(from, to);
         validateRuleViolated(ruleViolated);
         int size = pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
-        return assessmentRepository.findFlaggedByMerchant(merchantId, ruleViolated, minRiskScore,
+        return assessmentRepository.findFlaggedByMerchant(merchantId, ruleViolated, minRiskScore, maxRiskScore,
                 from, to, cursorTimestamp, cursorId, sort == SortDirection.asc,
                 pageable(size, sort, "assessedAt", "id"));
     }
@@ -145,24 +151,19 @@ public class TransactionQueryService {
     // the same snapshot — otherwise a row committed between them under the default READ
     // COMMITTED can make totalFlagged momentarily exceed totalAssessed. Safe for a read-only
     // transaction: no serialization-failure/retry risk, which only applies to writers.
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(transactionManager = "jpaTransactionManager", readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FraudSummaryDto getFraudSummary(Instant from, Instant to) {
         validateDateRange(from, to);
         long totalAssessed = assessmentRepository.countInRange(from, to);
         long totalFlagged = assessmentRepository.countFlaggedInRange(from, to);
         long totalNotFlagged = totalAssessed - totalFlagged;
-        double fraudRate = totalAssessed > 0
-                ? Math.round((totalFlagged * 100.0 / totalAssessed) * 100.0) / 100.0
-                : 0.0;
+        double fraudRate = pct(totalFlagged, totalAssessed);
 
         List<Object[]> ruleRows = assessmentRepository.countByRuleInRange(from, to);
         List<RuleBreakdownDto> ruleBreakdown = ruleRows.stream().map(row -> {
             String ruleName = (String) row[0];
             long count = ((Number) row[1]).longValue();
-            double pct = totalFlagged > 0
-                    ? Math.round((count * 100.0 / totalFlagged) * 100.0) / 100.0
-                    : 0.0;
-            return new RuleBreakdownDto(ruleName, count, pct);
+            return new RuleBreakdownDto(ruleName, count, pct(count, totalFlagged));
         }).toList();
 
         FraudSummaryDto dto = new FraudSummaryDto();
@@ -178,14 +179,12 @@ public class TransactionQueryService {
 
     // See getFraudSummary for why REPEATABLE_READ: same read-skew risk across this method's
     // several independent count/aggregate queries.
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(transactionManager = "jpaTransactionManager", readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CustomerRiskSummaryDto getCustomerRiskSummary(String customerId, Instant since) {
         long total = transactionRepository.countByCustomerId(customerId, since);
         long flagged = assessmentRepository.countFlaggedByCustomerId(customerId, since);
         long passed = total - flagged;
-        double fraudRate = total > 0
-                ? Math.round((flagged * 100.0 / total) * 100.0) / 100.0
-                : 0.0;
+        double fraudRate = pct(flagged, total);
 
         Integer maxScore = assessmentRepository.findMaxRiskScoreByCustomerId(customerId, since);
 
@@ -211,14 +210,12 @@ public class TransactionQueryService {
 
     // See getFraudSummary for why REPEATABLE_READ: same read-skew risk across this method's
     // several independent count/aggregate queries.
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(transactionManager = "jpaTransactionManager", readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public MerchantRiskSummaryDto getMerchantRiskSummary(String merchantId, Instant since) {
         long total = transactionRepository.countByMerchantId(merchantId, since);
         long flagged = assessmentRepository.countFlaggedByMerchantId(merchantId, since);
         long passed = total - flagged;
-        double fraudRate = total > 0
-                ? Math.round((flagged * 100.0 / total) * 100.0) / 100.0
-                : 0.0;
+        double fraudRate = pct(flagged, total);
 
         Integer maxScore = assessmentRepository.findMaxRiskScoreByMerchantId(merchantId, since);
 

@@ -196,7 +196,7 @@ class TransactionQueryControllerTest {
         mockMvc.perform(get("/api/v1/transactions").param("customerId", CUSTOMER))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.status").value(429))
-                .andExpect(header().string("Retry-After", "10"));
+                .andExpect(header().string("Retry-After", "1"));
     }
 
     @Test

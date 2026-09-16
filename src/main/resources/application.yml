@@ -79,6 +79,18 @@ spring:
         # a permanently wedged partition, and EvaluationContextBuilder's Postgres fallback
         # already covers the customers whose evaluations land while this is happening.
         default.deserialization.exception.handler: org.apache.kafka.streams.errors.LogAndContinueExceptionHandler
+        # Required for Interactive Query metadata (queryMetadataForKey/streamsMetadataForStore)
+        # to return anything at all, even for this single local instance — without it, Kafka
+        # Streams has no HostInfo to attribute local partitions to, so
+        # streamsMetadataForStore()/queryMetadataForKey() return empty/NOT_AVAILABLE
+        # unconditionally, and KafkaStreamsRecentActivityStore.lookup() always throws
+        # StoreUnavailableException, silently forcing every evaluation onto the Postgres
+        # fallback path regardless of environment. This value doesn't need to be reachable by
+        # peers (no remote-routing RPC endpoint is implemented — see
+        # KafkaStreamsRecentActivityStore's own comment on that known limitation); it only
+        # needs to be a well-formed host:port so Kafka Streams considers this instance
+        # queryable. Found live 2026-09-16 via TransactionIntegrationTest.
+        application.server: localhost:${server.port:8080}
 
   cache:
     type: caffeine
@@ -261,11 +273,24 @@ server:
 resilience4j:
   ratelimiter:
     instances:
+      # 300/s sustained (30% headroom over the ~230 TPS documented baseline load, see
+      # load-tests/scenarios/01-baseline.js) on a 1s refresh window rather than a wider one:
+      # a short window bounds the worst-case burst an attacker can spend in a single instant
+      # to 300 requests, instead of letting a 10x-wider window (e.g. 3000/10s, same average
+      # rate) all land in the first millisecond. Found live 2026-09-16: the previous 100/10s
+      # config rejected 48% of real load-test polling traffic at just 20 TPS, a tenth of the
+      # documented baseline.
       api:
-        limit-for-period: 100
-        limit-refresh-period: 10s
+        limit-for-period: 300
+        limit-refresh-period: 1s
         timeout-duration: 0
       standalone-submit:
         limit-for-period: 20
+        limit-refresh-period: 10s
+        timeout-duration: 0
+      # Much stricter than standalone-submit: one call can run up to 10,000 transactions
+      # through the full rule engine synchronously, so it's the heaviest endpoint in the API.
+      standalone-stream:
+        limit-for-period: 5
         limit-refresh-period: 10s
         timeout-duration: 0

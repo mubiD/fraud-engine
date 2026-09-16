@@ -82,8 +82,7 @@ public class EvaluationContextBuilder {
     // recentCustomerTransactions + dailySpendTotal + the CustomerAmountAnomalyRule baseline:
     // the three pieces of context served by the Kafka Streams state store, each with its
     // own Postgres fallback below. Merchant location (Caffeine-cached reference data) is
-    // unaffected by this and stays exactly as it was; see the implementation plan's Scope
-    // section.
+    // unaffected by this and stays exactly as it was.
     private record RecentActivity(List<Transaction> recent, BigDecimal dailySpend,
                                    AmountBaselineStats amountBaseline) {}
 

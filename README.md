@@ -286,7 +286,7 @@ GET /api/v1/transactions/flagged
 | Param | Type | Required | Description |
 |---|---|---|---|
 | `customerId` | string | no | Narrow to a specific customer |
-| `ruleViolated` | string | no | Narrow to assessments where this rule fired (e.g. `VelocityRule`) |
+| `ruleViolated` | string | no | Narrow to assessments where this rule fired (e.g. `VELOCITY`) |
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
 | `maxRiskScore` | int | no | Upper bound on risk score (inclusive). Combine with `minRiskScore` to query a band, e.g. `50–65` isolates low-confidence fraud for false-positive review |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
@@ -301,7 +301,7 @@ curl "http://localhost:8081/api/v1/transactions/flagged?from=2026-07-01T00:00:00
 curl "http://localhost:8081/api/v1/transactions/flagged?minRiskScore=50&maxRiskScore=65"
 
 # Velocity violations for a specific customer
-curl "http://localhost:8081/api/v1/transactions/flagged?customerId=CUST-001&ruleViolated=VelocityRule"
+curl "http://localhost:8081/api/v1/transactions/flagged?customerId=CUST-001&ruleViolated=VELOCITY"
 ```
 
 #### List transactions pending review
@@ -371,7 +371,7 @@ Response `200 OK` (excerpt):
 {
   "data": [
     {
-      "ruleName": "AmountThresholdRule",
+      "ruleName": "AMOUNT_THRESHOLD",
       "ruleVersion": "1.0",
       "priority": 1,
       "enabled": true,
@@ -381,7 +381,7 @@ Response `200 OK` (excerpt):
       }
     },
     {
-      "ruleName": "VelocityRule",
+      "ruleName": "VELOCITY",
       "ruleVersion": "1.0",
       "priority": 2,
       "enabled": true,
@@ -427,7 +427,7 @@ Response `200 OK`:
     "notFlaggedCount": 338,
     "fraudRate": 1.17,
     "highestRiskScore": 75,
-    "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule", "TimeOfDayAnomalyRule"],
+    "mostTriggeredRules": ["AMOUNT_THRESHOLD", "VELOCITY", "TIME_OF_DAY_ANOMALY"],
     "firstTransactionAt": "2025-01-15T08:00:00Z",
     "lastTransactionAt": "2026-07-23T09:00:00Z"
   }
@@ -448,6 +448,7 @@ GET /api/v1/merchants/{merchantId}/flagged
 |---|---|---|---|
 | `ruleViolated` | string | no | Narrow to assessments where this rule fired |
 | `minRiskScore` | int | no | Lower bound on risk score (inclusive) |
+| `maxRiskScore` | int | no | Upper bound on risk score (inclusive). Combine with `minRiskScore` to query a band |
 | `from` / `to` | ISO-8601 | no | Date range on `assessedAt` |
 | `cursor` | opaque string | no | Pagination cursor — copy verbatim from the previous response's `nextCursor` |
 | `pageSize` | int 1–1000 | no | Default 20 |
@@ -460,7 +461,7 @@ curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?from=2026-07-
 curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?minRiskScore=75"
 
 # Which velocity violations occurred at this merchant?
-curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?ruleViolated=VelocityRule"
+curl "http://localhost:8081/api/v1/merchants/MERCH-NIKE-ZA/flagged?ruleViolated=VELOCITY"
 ```
 
 #### Get merchant risk summary
@@ -490,7 +491,7 @@ Response `200 OK`:
     "fraudRate": 0.65,
     "highestRiskScore": 85,
     "uniqueCustomers": 534,
-    "mostTriggeredRules": ["AmountThresholdRule", "VelocityRule"],
+    "mostTriggeredRules": ["AMOUNT_THRESHOLD", "VELOCITY"],
     "firstTransactionAt": "2024-01-01T00:00:00Z",
     "lastTransactionAt": "2026-07-23T09:00:00Z"
   }
@@ -529,9 +530,9 @@ Response `200 OK`:
     "totalNotFlagged": 48079,
     "fraudRate": 0.50,
     "ruleBreakdown": [
-      { "ruleName": "AmountThresholdRule", "count": 98,  "percentage": 40.66 },
-      { "ruleName": "VelocityRule",        "count": 72,  "percentage": 29.88 },
-      { "ruleName": "GeographicAnomalyRule", "count": 45, "percentage": 18.67 }
+      { "ruleName": "AMOUNT_THRESHOLD", "count": 98,  "percentage": 40.66 },
+      { "ruleName": "VELOCITY",        "count": 72,  "percentage": 29.88 },
+      { "ruleName": "GEOGRAPHIC_ANOMALY", "count": 45, "percentage": 18.67 }
     ]
   }
 }

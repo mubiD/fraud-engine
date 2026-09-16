@@ -7,8 +7,6 @@ import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.Disposition;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
-import com.fraudengine.repository.FraudAssessmentRepository;
-import com.fraudengine.repository.TransactionRepository;
 import com.fraudengine.service.StandaloneTransactionProcessor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,8 +39,6 @@ class StandaloneTransactionControllerTest {
     @Autowired
     MockMvc mockMvc;
 
-    @MockBean TransactionRepository transactionRepository;
-    @MockBean FraudAssessmentRepository fraudAssessmentRepository;
     @MockBean StandaloneTransactionProcessor processor;
     @MockBean TransactionMapper mapper;
 
@@ -254,11 +250,9 @@ class StandaloneTransactionControllerTest {
         UUID sharedId = UUID.randomUUID();
         com.fraudengine.api.dto.FraudAssessmentDto winnerDto = new com.fraudengine.api.dto.FraudAssessmentDto();
 
-        when(transactionRepository.findByIdOnly(sharedId))
-                .thenReturn(Optional.empty())   // pre-check: doesn't exist yet
-                .thenReturn(Optional.of(savedTx)); // recovery lookup: winner has since committed
-        when(fraudAssessmentRepository.findByTransactionIdWithDetails(sharedId))
-                .thenReturn(Optional.of(passedAssessment));
+        when(processor.findExisting(sharedId))
+                .thenReturn(Optional.empty())              // pre-check: doesn't exist yet
+                .thenReturn(Optional.of(passedAssessment)); // recovery lookup: winner has since committed
         when(mapper.toDto(passedAssessment)).thenReturn(winnerDto);
         when(processor.process(any())).thenThrow(
                 new org.springframework.dao.DataIntegrityViolationException("duplicate key value violates unique constraint"));
@@ -281,8 +275,7 @@ class StandaloneTransactionControllerTest {
     void submit_duplicateTransactionId_returnsExistingAssessmentWithoutReprocessing() throws Exception {
         UUID existingId = UUID.randomUUID();
 
-        when(transactionRepository.findByIdOnly(existingId)).thenReturn(Optional.of(savedTx));
-        when(fraudAssessmentRepository.findByTransactionIdWithDetails(existingId)).thenReturn(Optional.of(passedAssessment));
+        when(processor.findExisting(existingId)).thenReturn(Optional.of(passedAssessment));
         when(mapper.toDto(passedAssessment)).thenReturn(new com.fraudengine.api.dto.FraudAssessmentDto());
 
         mockMvc.perform(post("/api/v1/standalone/submit")

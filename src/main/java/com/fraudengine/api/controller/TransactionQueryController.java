@@ -27,7 +27,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -75,21 +74,8 @@ public class TransactionQueryController {
                 decoded != null ? decoded.id() : null,
                 pageSize, sort);
 
-        List<TransactionSummaryDto> data = slice.getContent().stream()
-                .map(mapper::toSummaryDto)
-                .toList();
-
-        String nextCursor = slice.hasNext() && !data.isEmpty()
-                ? CursorUtils.encode(
-                        data.get(data.size() - 1).getTimestamp(),
-                        data.get(data.size() - 1).getTransactionId())
-                : null;
-
-        return PagedResponse.<TransactionSummaryDto>builder()
-                .data(data)
-                .nextCursor(nextCursor)
-                .hasMore(slice.hasNext())
-                .build();
+        return CursorUtils.toPagedResponse(slice, mapper::toSummaryDto,
+                TransactionSummaryDto::getTimestamp, TransactionSummaryDto::getTransactionId);
     }
 
     @GetMapping("/{transactionId}")
@@ -135,7 +121,7 @@ public class TransactionQueryController {
     public PagedResponse<FraudAssessmentDto> getFlagged(
             @Parameter(description = "Filter by customer identifier")
             @RequestParam(required = false) String customerId,
-            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AmountThresholdRule)")
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AMOUNT_THRESHOLD)")
             @RequestParam(required = false) String ruleViolated,
             @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
@@ -174,7 +160,7 @@ public class TransactionQueryController {
     public PagedResponse<FraudAssessmentDto> getPendingReview(
             @Parameter(description = "Filter by customer identifier")
             @RequestParam(required = false) String customerId,
-            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AmountThresholdRule)")
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AMOUNT_THRESHOLD)")
             @RequestParam(required = false) String ruleViolated,
             @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
@@ -242,20 +228,7 @@ public class TransactionQueryController {
     }
 
     private PagedResponse<FraudAssessmentDto> toAssessmentPage(Slice<FraudAssessment> slice) {
-        List<FraudAssessmentDto> data = slice.getContent().stream()
-                .map(mapper::toDto)
-                .toList();
-
-        String nextCursor = slice.hasNext() && !data.isEmpty()
-                ? CursorUtils.encode(
-                        data.get(data.size() - 1).getAssessedAt(),
-                        data.get(data.size() - 1).getAssessmentId())
-                : null;
-
-        return PagedResponse.<FraudAssessmentDto>builder()
-                .data(data)
-                .nextCursor(nextCursor)
-                .hasMore(slice.hasNext())
-                .build();
+        return CursorUtils.toPagedResponse(slice, mapper::toDto,
+                FraudAssessmentDto::getAssessedAt, FraudAssessmentDto::getAssessmentId);
     }
 }

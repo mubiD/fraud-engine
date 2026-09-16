@@ -6,8 +6,6 @@ import com.fraudengine.model.FraudAssessment;
 import com.fraudengine.model.Transaction;
 import com.fraudengine.model.enums.TransactionStatus;
 import com.fraudengine.model.enums.TransactionType;
-import com.fraudengine.repository.FraudAssessmentRepository;
-import com.fraudengine.repository.TransactionRepository;
 import com.fraudengine.service.StandaloneTransactionProcessor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -72,17 +70,11 @@ import java.util.concurrent.ThreadLocalRandom;
 )
 public class StandaloneTransactionController {
 
-    private final TransactionRepository transactionRepository;
-    private final FraudAssessmentRepository fraudAssessmentRepository;
     private final StandaloneTransactionProcessor processor;
     private final TransactionMapper mapper;
 
-    public StandaloneTransactionController(TransactionRepository transactionRepository,
-                                           FraudAssessmentRepository fraudAssessmentRepository,
-                                           StandaloneTransactionProcessor processor,
+    public StandaloneTransactionController(StandaloneTransactionProcessor processor,
                                            TransactionMapper mapper) {
-        this.transactionRepository = transactionRepository;
-        this.fraudAssessmentRepository = fraudAssessmentRepository;
         this.processor = processor;
         this.mapper = mapper;
     }
@@ -157,12 +149,11 @@ public class StandaloneTransactionController {
     }
 
     private Optional<FraudAssessmentDto> existingAssessment(UUID transactionId) {
-        return transactionRepository.findByIdOnly(transactionId)
-                .flatMap(t -> fraudAssessmentRepository.findByTransactionIdWithDetails(transactionId))
-                .map(mapper::toDto);
+        return processor.findExisting(transactionId).map(mapper::toDto);
     }
 
     @PostMapping("/stream")
+    @RateLimiter(name = "standalone-stream")
     @Operation(
         summary = "Stream N fake transactions through the fraud engine (standalone demo)",
         description = """
@@ -254,7 +245,7 @@ public class StandaloneTransactionController {
         @Schema(description = "Merchant identifier", example = "MERCH-NIKE-ZA")
         @NotBlank @Size(max = 64) String merchantId,
 
-        @Schema(description = "Transaction amount — values above 5000 trigger the AmountThresholdRule",
+        @Schema(description = "Transaction amount — values above 5000 trigger the AMOUNT_THRESHOLD rule",
                 example = "6500.00")
         @NotNull @Positive @Digits(integer = 15, fraction = 4,
                 message = "numeric overflow — amount must fit the database column's precision (up to 15 integer digits, 4 fraction digits)")
@@ -281,7 +272,7 @@ public class StandaloneTransactionController {
         Double longitude,
 
         @Schema(description = "Device fingerprint (e.g. hashed user-agent + IP). "
-                + "When present, triggers DeviceFingerprintRule if the device is new for this customer.",
+                + "When present, triggers DEVICE_FINGERPRINT if the device is new for this customer.",
                 example = "a3f1c2e9b7d04562")
         @Size(max = 128) String deviceFingerprint
     ) {}

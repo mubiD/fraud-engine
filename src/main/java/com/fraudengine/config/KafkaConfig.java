@@ -187,4 +187,22 @@ public class KafkaConfig {
         JpaTransactionManager jpaTransactionManager = new JpaTransactionManager(entityManagerFactory);
         return new ChainedKafkaTransactionManager<>(kafkaTransactionManager, jpaTransactionManager);
     }
+
+    // A second, plain JPA-only manager for read-only queries that need an explicit isolation
+    // level (TransactionQueryService's getFraudSummary/getCustomerRiskSummary/
+    // getMerchantRiskSummary, all @Transactional(isolation = REPEATABLE_READ) to avoid
+    // read-skew across their several independent COUNT queries). Found live 2026-09-16: those
+    // three endpoints 500'd unconditionally under load-test/prod — with no manager named
+    // explicitly, they resolved to the @Primary chainedKafkaTransactionManager above, and
+    // Spring Kafka's KafkaTransactionManager leg throws InvalidIsolationLevelException the
+    // moment any isolation level other than DEFAULT is requested ("Apache Kafka does not
+    // support an isolation level concept"). Every other read method in that service stays on
+    // the chained manager unchanged — this is only needed where an explicit isolation level is
+    // requested. Named "jpaTransactionManager" everywhere (StandaloneConfig, LocalKafkaConfig
+    // too) so the same @Transactional(transactionManager = "jpaTransactionManager") annotation
+    // resolves correctly under every profile.
+    @Bean("jpaTransactionManager")
+    public JpaTransactionManager jpaTransactionManager(EntityManagerFactory entityManagerFactory) {
+        return new JpaTransactionManager(entityManagerFactory);
+    }
 }

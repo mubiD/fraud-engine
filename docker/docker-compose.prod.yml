@@ -242,8 +242,6 @@ services:
     depends_on:
       vault-init:
         condition: service_completed_successfully
-      mock-oidc:
-        condition: service_healthy
     ports:
       - "8085:8080"
     volumes:

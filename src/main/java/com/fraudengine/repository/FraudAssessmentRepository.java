@@ -103,6 +103,7 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
               AND (CAST(:from AS timestamp) IS NULL OR fa.assessedAt >= :from)
               AND (CAST(:to AS timestamp) IS NULL OR fa.assessedAt <= :to)
               AND (CAST(:minRiskScore AS integer) IS NULL OR fa.riskScore >= :minRiskScore)
+              AND (CAST(:maxRiskScore AS integer) IS NULL OR fa.riskScore <= :maxRiskScore)
               AND (CAST(:ruleViolated AS string) IS NULL OR EXISTS (
                   SELECT rv FROM RuleViolation rv
                   WHERE rv.assessment = fa AND rv.ruleName = :ruleViolated
@@ -111,6 +112,7 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
     Slice<FraudAssessment> findFlaggedByMerchant(@Param("merchantId") String merchantId,
                                                   @Param("ruleViolated") String ruleViolated,
                                                   @Param("minRiskScore") Integer minRiskScore,
+                                                  @Param("maxRiskScore") Integer maxRiskScore,
                                                   @Param("from") Instant from,
                                                   @Param("to") Instant to,
                                                   @Param("cursorTimestamp") Instant cursorTimestamp,

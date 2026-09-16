@@ -67,7 +67,7 @@ public class GeographicAnomalyRule implements FraudRule {
     private boolean isPhysicallyImpossible(double lat1, double lon1, Instant ts1,
                                             double lat2, double lon2, Instant ts2,
                                             double maxSpeedKmh) {
-        double timeDiffHours = Math.abs(Duration.between(ts1, ts2).toMinutes()) / 60.0;
+        double timeDiffHours = Math.abs(Duration.between(ts1, ts2).toMillis()) / 3_600_000.0;
         if (timeDiffHours < MIN_TIME_DIFF_HOURS) {
             return false;
         }

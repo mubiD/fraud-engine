@@ -74,10 +74,14 @@ public class CustomerActivityProcessor
             }
             store.put(customerId, current.withAppended(entry, recentWindow, baselineLookbackDays));
         } catch (Exception e) {
-            log.error("Failed to update customer-activity-store for customerId={}, offset={} — "
+            // customerId deliberately omitted from this log line (see class comment on
+            // TesterInfo.md's "customer and merchant IDs are not logged" policy, honored
+            // consistently across the codebase) — timestamp is enough to correlate this against
+            // the Postgres fallback path without writing a real customer identifier into logs.
+            log.error("Failed to update customer-activity-store, record timestamp={} — "
                     + "skipping this record; EvaluationContextBuilder's Postgres fallback covers "
                     + "reads until the next successful update for this customer",
-                    customerId, record.timestamp(), e);
+                    record.timestamp(), e);
         }
     }
 }
