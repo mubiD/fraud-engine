@@ -23,6 +23,5 @@ public interface TransactionMapper {
     RuleViolationDto toDto(RuleViolation violation);
 
     @Mapping(target = "transactionId", source = "id")
-    @Mapping(target = "assessment", source = "assessment")
     TransactionSummaryDto toSummaryDto(Transaction transaction);
 }

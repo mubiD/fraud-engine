@@ -639,7 +639,7 @@ All error responses use `Content-Type: application/problem+json`.
 | `400` | Malformed/missing request body | `{ "detail": "Request body is missing or malformed. Ensure the body is valid JSON and all required fields are present." }` |
 | `404` | No assessment for transaction ID | `{ "detail": "<message>" }` |
 | `409` | Outcome already resolved (§4.14) | `{ "detail": "<message>" }` |
-| `429` | Rate limit exceeded (standalone `/submit` only) | `{ "detail": "Too many requests — please retry after a moment." }`, `Retry-After: 10` header |
+| `429` | Rate limit exceeded — the `api` limiter (300 requests/second, shared by nearly every `/api/v1/**` endpoint, not just standalone) is far more likely to be the actual trigger than either standalone limiter (`/submit` 20/10s, `/stream` 5/10s) | `{ "detail": "Too many requests — please retry after a moment." }`, `Retry-After: 1` header — always `1` regardless of which named limiter actually rejected the request (`GlobalExceptionHandler.handleRateLimit` doesn't branch on it), a deliberate approximation that slightly overstates urgency for the two 10s-window standalone limiters |
 | `500` | Unhandled exception | `{ "detail": "An unexpected error occurred" }` |
 
 ---

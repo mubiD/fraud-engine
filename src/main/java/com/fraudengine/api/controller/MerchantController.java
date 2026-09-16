@@ -68,7 +68,7 @@ public class MerchantController {
             @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
-        CursorUtils.DecodedCursor decoded = cursor != null ? CursorUtils.decode(cursor) : null;
+        CursorUtils.DecodedCursor decoded = CursorUtils.decodeOrNull(cursor);
 
         Slice<FraudAssessment> slice = queryService.getFlaggedByMerchant(
                 merchantId, ruleViolated, minRiskScore, maxRiskScore, from, to,

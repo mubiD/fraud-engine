@@ -22,7 +22,7 @@ import java.util.Map;
 //     24 buckets, serving CumulativeSpendingRule's daily leg. A running list of every
 //     transaction over 24h would be a much larger and mostly-unused piece of hot state for
 //     a single rule's one aggregate number; hourly-granularity buckets are the standard
-//     rolling-sum technique for this (see the plan's "Option B" rationale) and are more
+//     rolling-sum technique for this (see DESIGN.md §5's Kafka Streams section) and are more
 //     than sufficient precision for a fraud heuristic, not an accounting figure. Keyed by
 //     currency (not just bucket) so a customer transacting in more than one currency never
 //     gets those amounts pooled as equivalent magnitude. Found live 2026-09-09 as a real

@@ -80,6 +80,26 @@ class RuleEngineTest {
         assertThat(result.getRuleViolations()).hasSize(1);
     }
 
+    // A rule throwing an unanticipated RuntimeException must not abort the other rules'
+    // evaluation — it's treated as a pass, and the assessment still reflects every other
+    // rule's real result, so one bad rule degrades to "one rule skipped," not "no assessment."
+    @Test
+    void ruleThrowsUnexpectedException_treatedAsPass_otherRulesStillEvaluatedAndCounted() {
+        FraudRule throwingRule = mock(FraudRule.class);
+        when(throwingRule.isEnabled()).thenReturn(true);
+        when(throwingRule.getPriority()).thenReturn(0);
+        when(throwingRule.getRuleName()).thenReturn("THROWING");
+        when(throwingRule.evaluate(any(), any())).thenThrow(new NullPointerException("boom"));
+
+        FraudAssessment result = new RuleEngine(List.of(throwingRule, violatingRule), contextBuilder, scoringProperties, fraudMetrics)
+                .evaluate(tx());
+
+        assertThat(result.getDisposition()).isEqualTo(Disposition.FLAGGED);
+        assertThat(result.getRuleViolations()).hasSize(1);
+        assertThat(result.getRuleViolations().get(0).getRuleName()).isEqualTo("VIOLATING");
+        verify(fraudMetrics).recordRuleError("THROWING");
+    }
+
     // ── metrics ──────────────────────────────────────────────────────────────
     // Recorded inside RuleEngine.evaluate() itself (not by callers) so every ingress
     // path (Kafka consumer, or the synchronous standalone/local demo stub) reports

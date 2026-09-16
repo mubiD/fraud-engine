@@ -59,10 +59,15 @@ public class KafkaStreamsRecentActivityStore implements RecentActivityStore {
     // (VelocityStreamsTopologyConfig's own docs), so this check is normally a no-op, but it
     // turns "scaled to >1 replica without also building remote-store routing" from a silent
     // wrong answer (velocity rules reading empty state as clean history) into a loud, already
-    // -handled fallback to Postgres. See EvaluationContextBuilder.loadRecentActivity. Real
-    // horizontal scaling would still want an RPC layer (application.server + an internal
-    // endpoint peers can call) to route to the owning instance instead of merely falling
-    // back; not built here, tracked as a known limitation, not solved.
+    // -handled fallback to Postgres. See EvaluationContextBuilder.loadRecentActivity.
+    // application.server (application.yml) is configured — required just for this class's own
+    // Interactive Query metadata to resolve at all, even for this single local instance (found
+    // live 2026-09-16: without it, queryMetadataForKey/streamsMetadataForStore return
+    // NOT_AVAILABLE/empty unconditionally, so this fallback was silently the *only* path ever
+    // taken, in every environment). Real horizontal scaling would still want an actual RPC
+    // layer (an internal endpoint peers can call) to route to the owning instance instead of
+    // merely falling back; that routing layer itself isn't built here, tracked as a known
+    // limitation, not solved.
     private void assertPartitionHostedLocally(KafkaStreams streams, String customerId) {
         KeyQueryMetadata metadata = streams.queryMetadataForKey(
                 CustomerActivityProcessor.STORE_NAME, customerId, KEY_SERIALIZER);

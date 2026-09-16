@@ -20,8 +20,9 @@ import java.time.Duration;
 // ordering is preserved the same way it is for TransactionConsumer: transactions.raw is
 // partitioned by customerId, but the two consumer groups are not coordinated with each
 // other, so this store can lag behind what TransactionConsumer has already processed
-// (see the plan's Known Limitations: an accepted, monitored staleness risk, not solved
-// here). Terminal processor: nothing is forwarded downstream, it only writes state.
+// (see DESIGN.md §5's "Known limitation, accepted rather than solved": a monitored
+// staleness risk, not solved here). Terminal processor: nothing is forwarded downstream,
+// it only writes state.
 public class CustomerActivityProcessor
         implements Processor<String, TransactionEventProto.TransactionEvent, Void, Void> {
 

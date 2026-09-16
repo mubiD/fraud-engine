@@ -54,7 +54,7 @@ public class RuleEngine {
         EvaluationContext context = contextBuilder.build(transaction);
 
         List<RuleResult> violations = enabledRules.stream()
-                .map(rule -> rule.evaluate(transaction, context))
+                .map(rule -> evaluateSafely(rule, transaction, context))
                 .filter(RuleResult::isViolation)
                 .collect(Collectors.toList());
 
@@ -103,6 +103,25 @@ public class RuleEngine {
         }
 
         return assessment;
+    }
+
+    // One rule throwing an unanticipated RuntimeException (e.g. an NPE on a transaction shape
+    // it didn't guard against) must not abort the other 11 rules' evaluation — without this,
+    // a single-rule bug fails the whole assessment, sends the transaction through Kafka's
+    // retry/DLT path, and marks it FAILED, when 11 valid rule results were still available.
+    // Same "one bad input shouldn't crash everything else" resilience CustomerActivityProcessor
+    // already applies to a malformed record. Treated as a pass, not a violation: an unknown
+    // failure is not evidence of fraud, and this keeps FraudRule's contract simple (no
+    // rule needs its own try-catch for this).
+    private RuleResult evaluateSafely(FraudRule rule, Transaction transaction, EvaluationContext context) {
+        try {
+            return rule.evaluate(transaction, context);
+        } catch (RuntimeException e) {
+            log.error("Rule {} threw during evaluation — treating as a pass, not aborting the other rules",
+                    rule.getRuleName(), e);
+            metrics.recordRuleError(rule.getRuleName());
+            return RuleResult.pass(rule.getRuleName());
+        }
     }
 
     // Log-odds (naive-Bayes) combination: see ScoringProperties for rationale.

@@ -624,7 +624,7 @@ Each rule is tested in isolation with zero Spring context, fast and deterministi
 | Test class | Controller | Tests |
 |---|---|---|
 | `TransactionQueryControllerTest` | `TransactionQueryController` | 38 |
-| `MerchantControllerTest` | `MerchantController` | 13 |
+| `MerchantControllerTest` | `MerchantController` | 15 |
 | `StatsControllerTest` | `StatsController` | 4 |
 | `CustomerControllerTest` | `CustomerController` | 4 |
 | `RuleControllerTest` | `RuleController` | 3 |
@@ -732,10 +732,10 @@ make k6-run-all
 
 | Scenario | Purpose | Load |
 |---|---|---|
-| `01-baseline` | Steady-state throughput | 100 VUs, 2 min |
-| `02-ramp` | Find degradation point under increasing load | 10 → 500 VUs, 5 min |
-| `03-spike` | Validate Kafka absorbs a sudden burst | 50 → 500 → 50 VUs, ~4 min |
-| `04-fraud-rules` | Mixed read/query traffic | 100 VUs, 3 min |
+| `01-baseline` | Steady-state throughput | ~230 TPS (daily-average estimate), 2 min |
+| `02-ramp` | Find degradation point under increasing load | ~100 → 400 → 800 → 1,200 TPS, 5 min |
+| `03-spike` | Validate Kafka absorbs a sudden burst | ~230 → 2,500 → 230 TPS, ~4 min |
+| `04-fraud-rules` | Mixed write (real Kafka ingestion) + concurrent read/query traffic | ~900 TPS write + 20 VUs read, 3 min |
 
 Pass/fail thresholds are in `load-tests/config.js`:
 
@@ -820,7 +820,7 @@ fraud:
     default-likelihood-ratio-critical: 120.0
 ```
 
-Startup validation: every rule window measured against `recentCustomerTransactions` (currently `velocity`, `geographic`, `card-cloning`, `device-fingerprint`, `multi-channel`, `cross-merchant-velocity`, and `cumulative-spending`'s hourly window) is checked against `context-lookback-minutes` in one exhaustive map (`RuleProperties.validate()`). If any exceeds it, the app fails to start with an `IllegalStateException` rather than silently under-counting.
+Startup validation: every rule window measured against `recentCustomerTransactions` (currently `velocity`, `geographic`, `card-cloning`, `device-fingerprint`, `multi-channel`, `cross-merchant-velocity`, `cumulative-spending`'s hourly window, and `duplicate`'s two windows) is checked against `context-lookback-minutes` in two exhaustive maps (`RuleProperties.validate()`) — one in minutes for every rule but `duplicate`, one in seconds for `duplicate`'s two windows specifically. If any exceeds it, the app fails to start with an `IllegalStateException` rather than silently under-counting.
 
 ### Environment variables
 
@@ -1054,7 +1054,7 @@ src/
 └── test/java/com/fraudengine/
     ├── api/controller/
     │   ├── TransactionQueryControllerTest.java  # 38 tests
-    │   ├── MerchantControllerTest.java          # 13 tests
+    │   ├── MerchantControllerTest.java          # 15 tests
     │   ├── CustomerControllerTest.java          # 4 tests
     │   ├── StatsControllerTest.java             # 4 tests
     │   ├── RuleControllerTest.java              # 3 tests

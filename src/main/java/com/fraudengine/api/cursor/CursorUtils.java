@@ -41,6 +41,12 @@ public final class CursorUtils {
                 .build();
     }
 
+    // Every controller needs "decode if present, else null" — centralized here instead of
+    // each controller reimplementing the same null-check around decode().
+    public static DecodedCursor decodeOrNull(String cursor) {
+        return cursor != null ? decode(cursor) : null;
+    }
+
     public static DecodedCursor decode(String cursor) {
         try {
             String raw = new String(Base64.getUrlDecoder().decode(cursor));

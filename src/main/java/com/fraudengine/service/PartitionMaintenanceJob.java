@@ -29,8 +29,12 @@ public class PartitionMaintenanceJob {
     @PersistenceContext
     private EntityManager em;
 
+    // Explicitly named: this job only ever runs native SQL partition DDL, no Kafka involved,
+    // so it should use the plain JPA manager rather than defaulting to the @Primary
+    // ChainedKafkaTransactionManager (KafkaConfig.java) under load-test/prod, which would
+    // needlessly open a no-op Kafka transaction leg on every run.
     @Scheduled(cron = "0 0 2 * * ?")
-    @Transactional
+    @Transactional("jpaTransactionManager")
     public void run() {
         createUpcomingPartition();
         detachExpiredPartition();

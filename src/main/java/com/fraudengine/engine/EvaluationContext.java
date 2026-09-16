@@ -42,7 +42,7 @@ public class EvaluationContext {
     public static Builder builder() { return new Builder(); }
 
     public static class Builder {
-        private List<Transaction> recentCustomerTransactions;
+        private List<Transaction> recentCustomerTransactions = List.of();
         private Double merchantLatitude;
         private Double merchantLongitude;
         private java.math.BigDecimal dailySpendTotal = java.math.BigDecimal.ZERO;

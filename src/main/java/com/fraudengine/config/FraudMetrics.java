@@ -16,8 +16,10 @@ public class FraudMetrics {
     private final Timer evaluationTimer;
     private final Counter contextFromStreamsCounter;
     private final Counter contextFromPostgresCounter;
+    private final MeterRegistry registry;
 
     public FraudMetrics(MeterRegistry registry) {
+        this.registry = registry;
         this.flaggedCounter = Counter.builder("fraud.assessments.total")
                 .description("Total fraud assessments")
                 .tag("verdict", "FLAGGED")
@@ -69,4 +71,12 @@ public class FraudMetrics {
     // operational signal for how often that fallback is actually triggering.
     public void recordContextFromStreams()  { contextFromStreamsCounter.increment(); }
     public void recordContextFromPostgres() { contextFromPostgresCounter.increment(); }
+
+    // Tagged by rule name on demand rather than pre-registered per rule (unlike the fixed
+    // verdict/source tag sets above): RuleEngine.evaluate() treats a throwing rule as a pass
+    // rather than aborting the other 11 rules, and this is the operational signal for how
+    // often that's actually happening, and for which rule.
+    public void recordRuleError(String ruleName) {
+        registry.counter("fraud.rule.error.total", "rule", ruleName).increment();
+    }
 }
