@@ -1,7 +1,7 @@
 # System Context — Fraud Rule Engine
 
-C4 Model, Level 1 (Context). Scope: production topology (`load-test`/`prod`), where Kafka is
-the only ingestion path. See "Assumptions" for how `local`/`standalone` differ.
+C4 Model, Level 1 (Context). Scope: the full Kafka-connected architecture.
+See "Assumptions" for how `local`/`standalone` profiles differ.
 
 ```mermaid
 flowchart TB
@@ -37,14 +37,14 @@ flowchart TB
   class postgres db
 ```
 
-- Kafka is the only ingestion path in `load-test`/`prod`; no HTTP submission endpoint exists there.
+- Kafka is the ingestion path for all non-local/standalone profiles; `local` (i.e. `make dev`) also activates the standalone HTTP stub alongside Kafka.
 - The Analyst's only write action is `PATCH .../outcome`; everything else is read-only.
 - Schema Registry and Vault are production-only: `local`/`standalone` skip both.
 - The IDP is bypassed entirely in `local`/`standalone`/`test` (`SecurityConfig`'s `noSecurityFilterChain`).
 
 ## Assumptions / things to verify
 
-- **Production topology only.** `local`/`standalone` swap in a synchronous HTTP stub
+- **Kafka topology only.** `local`/`standalone` profiles swap in a synchronous HTTP stub
   (`StandaloneTransactionController`) that bypasses Kafka, Schema Registry, and JWT entirely. It's a
   genuinely different diagram, not a subset of this one.
 - **"Downstream Consumers" and "Transaction Source" are inferred**, not concrete systems in this

@@ -8,7 +8,7 @@
 
 This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank. It evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
 
-In production-like environments (`load-test`, `prod`), transactions enter **exclusively** via Kafka; there is no HTTP endpoint to submit a transaction. §2 below describes a demo-only HTTP submission stub that exists solely in `local`/`standalone` profiles, not in production. The query API is otherwise read-only except for one real, always-present write endpoint (§4.14), which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
+Transactions enter the system via Kafka on all non-local/standalone Spring profiles. §2 below describes a demo-only HTTP submission stub active only in `local`/`standalone` profiles. The query API is otherwise read-only except for one real, always-present write endpoint (§4.14), which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
 
 ---
 
@@ -16,18 +16,14 @@ In production-like environments (`load-test`, `prod`), transactions enter **excl
 
 | Path | Active When |
 |---|---|
-| **Kafka topic** `transactions.raw` (Protobuf) | `load-test`, `prod` (the real production path) |
+| **Kafka topic** `transactions.raw` (Protobuf) | All non-local/standalone profiles (the real pipeline) |
 | **HTTP POST** `/api/v1/standalone/submit` or `/api/v1/standalone/stream` | `standalone` and `local` Spring profiles only (an explicit demo/dev stub, not a production feature) |
-
-**Verified directly from the docker-compose files** (this matters, so don't infer it from environment names):
 
 | `make` target | Environment name | `SPRING_PROFILES_ACTIVE` |
 |---|---|---|
 | `make dev` | dev | **`local`** |
-| `make load-test` | load-test | `load-test` |
-| `make prod` | prod | `prod` |
 
-So **`make dev` is the one environment where the standalone HTTP endpoints are reachable**: its Spring profile is `local`, not a profile literally named `dev`. `load-test`/`prod` each run their own matching profile name, neither of which is `local`/`standalone`/`test`, so the real Kafka consumer pipeline is active there and the standalone controller is not wired in at all (`@Profile("standalone | local")` on `StandaloneTransactionController`).
+**`make dev` runs the `local` Spring profile, not a profile literally named `dev`** — that's what makes the standalone HTTP endpoints reachable there. `local` activates `StandaloneTransactionController` (`@Profile("standalone | local")`) alongside the real Kafka consumer pipeline.
 
 The `standalone` profile (not tied to any `make` target — run manually with `--spring.profiles.active=standalone`) uses an **H2 in-memory database** (no PostgreSQL, no Kafka, no Vault), which is the quickest way to exercise the rule engine with zero infrastructure. `local` (i.e. `make dev`) uses real PostgreSQL + Kafka with JSON wire format (no Confluent Schema Registry needed).
 
@@ -38,10 +34,8 @@ The `standalone` profile (not tied to any `make` target — run manually with `-
 | Environment | App (host) | PostgreSQL (host) | Kafka Broker 1/2/3 (host) |
 |---|---|---|---|
 | `dev` | **8081** | 5433 | 9192 / 9193 / 9194 |
-| `load-test` | 8084 | 5436 | 9492 / 9493 / 9494 |
-| `prod` | 8085 | 5437 | 9592 / 9593 / 9594 |
 
-Container-internal port is always **8080**. Each environment runs its own 3-broker Kafka cluster (replication factor 2).
+Container-internal port is always **8080**.
 
 Swagger UI: `http://localhost:<host-port>/swagger-ui.html` (root `/` redirects there). In secured environments (§11) you'll need a bearer token pasted into Swagger's Authorize button to actually call anything beyond the whitelisted paths.
 
@@ -531,7 +525,7 @@ Config: `fraud.rules.geographic.max-travel-speed-kmh` (default 900), `fraud.rule
 
 ## 7. Transaction Lifecycle
 
-**Production path** (`load-test`/`prod` — Kafka only):
+**Kafka path** (non-local/standalone profiles):
 
 ```
 transactions.raw (Kafka) ──► TransactionConsumer ──► EvaluationContextBuilder
@@ -652,17 +646,14 @@ All error responses use `Content-Type: application/problem+json`.
 |---|---|---|
 | `dev` (`make dev`) | `local` | **No** — all requests permitted |
 | standalone (manual run) | `standalone` | **No** |
-| `load-test`, `prod` | `load-test` / `prod` | **Yes** — OAuth2 JWT bearer token |
 
-Where auth is required: `Authorization: Bearer <jwt>`, issued by Acme Bank's IDP configured via `FRAUD_IDP_URI`. The token's `roles` claim must contain `FRAUD_ANALYST` or `FRAUD_ENGINEER` (mapped to `ROLE_*` Spring Security authorities). `/actuator/health`, `/actuator/info`, `/actuator/prometheus`, and the Swagger/OpenAPI paths are open in every profile. If the configured IDP is unreachable at startup, the app **fails to start** — this is intentional, not a bug, if you see it in a secured environment.
-
-If you're only ever testing against `make dev`, you won't hit any of this — which is exactly why it's worth confirming which environment a given test run actually targets before writing "no auth needed" into a test plan.
+`/actuator/health`, `/actuator/info`, `/actuator/prometheus`, and the Swagger/OpenAPI paths are open in every profile. JWT bearer token auth (`Authorization: Bearer <jwt>`) would be required under any non-local/standalone profile — not applicable for `make dev`.
 
 ---
 
 ## 12. Key Testing Facts and Gotchas
 
-1. **`make dev` runs the `local` Spring profile, not a profile named "dev".** That's what makes the standalone HTTP endpoints reachable there and nowhere else in the make targets (§2, §11). `standalone` profile (H2, no Kafka) is run manually, not via a `make` target; use `/h2-console` if enabled.
+1. **`make dev` runs the `local` Spring profile, not a profile named "dev".** That's what makes the standalone HTTP endpoints reachable (§2, §11). `standalone` profile (H2, no Kafka) is run manually, not via a `make` target; use `/h2-console` if enabled.
 
 2. **Amount boundary is exact and category-dependent.** 5000.00 flat does **not** trigger `AMOUNT_THRESHOLD`; 5000.01 does. But check `category` first — a `RETAIL` transaction uses a 15000 threshold, not 5000 (§5.1).
 

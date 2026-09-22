@@ -197,14 +197,25 @@ public class StandaloneTransactionController {
                               "CUST-006","CUST-007","CUST-008","CUST-009","CUST-010"};
         String[] merchants  = {"MERCH-WOOLWORTHS-ZA","MERCH-CHECKERS-ZA","MERCH-PICK-N-PAY-ZA",
                                "MERCH-SHOPRITE-ZA","MERCH-CLICKS-ZA","MERCH-DISCHEM-ZA"};
+        // International locations included so GEOGRAPHIC_ANOMALY can fire: a transaction from
+        // Cape Town followed by one from Moscow or New York for the same customer within the
+        // 60-minute window is physically impossible at any travel speed.
         String[][] locations = {
             {"-33.9249","18.4241","Cape Town, ZA"},
             {"-26.2041","28.0473","Johannesburg, ZA"},
             {"-29.8587","31.0218","Durban, ZA"},
             {"-25.7479","28.2293","Pretoria, ZA"},
-            {"-26.1070","28.0567","Sandton, ZA"}
+            {"55.7558","37.6173","Moscow, RU"},
+            {"40.7128","-74.0060","New York, US"},
+            {"51.5074","-0.1278","London, GB"}
         };
-        String[] categories = {"RETAIL","GROCERY","PHARMACY","FUEL","DINING"};
+        // High-risk categories at ~15% combined weight to exercise HIGH_RISK_MERCHANT_CATEGORY.
+        String[] categories = {
+            "RETAIL","RETAIL","RETAIL","RETAIL","RETAIL",
+            "GROCERY","GROCERY","GROCERY","GROCERY",
+            "PHARMACY","PHARMACY","FUEL","DINING",
+            "CRYPTO_EXCHANGE","MONEY_TRANSFER","GAMBLING"
+        };
         TransactionType[] types = TransactionType.values();
 
         boolean isHighAmount = rng.nextInt(100) < 15;
@@ -227,7 +238,10 @@ public class StandaloneTransactionController {
                 .location(loc[2])
                 .latitude(Double.parseDouble(loc[0]))
                 .longitude(Double.parseDouble(loc[1]))
-                .timestamp(Instant.now())
+                // Random timestamp within the last 58 minutes so consecutive transactions for the
+                // same customer can be > 1 minute apart while still falling within GEOGRAPHIC_ANOMALY's
+                // 60-minute window — enabling the physically-impossible-travel check to fire.
+                .timestamp(Instant.now().minusSeconds(rng.nextLong(0, 58 * 60)))
                 .status(TransactionStatus.PENDING)
                 .build();
     }

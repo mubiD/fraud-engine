@@ -4,7 +4,7 @@
 
 A production-grade backend service that consumes transaction events from Kafka, evaluates them against a configurable set of fraud detection rules, persists assessments to PostgreSQL, and routes outcomes to dedicated downstream topics.
 
-**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · OpenTelemetry · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers · k6
+**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · OpenTelemetry · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers
 
 ---
 
@@ -86,36 +86,31 @@ Query API (read-only, with one write exception — see below)
 
 Prerequisites: **Docker**, plus a local **JDK 21** and **Maven** (`mvn` on `PATH`). No Kafka installation required, since that runs inside containers. The JAR is built on the host, not inside the image (`scripts/deploy.sh`); see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
 
-Each environment is fully self-contained: its own app instance, Postgres database, Kafka cluster, and observability stack, all on separate host ports so multiple environments can run simultaneously.
+The `dev` environment is fully self-contained: app instance, Postgres + streaming replica, 3-broker Kafka cluster, Schema Registry, Vault, and Prometheus — all started with a single command.
 
-| Service | dev | load-test | prod |
-|---|---|---|---|
-| App | 8081 | 8084 | 8085 |
-| Postgres | 5433 | 5436 | 5437 |
-| Kafka broker 1 | 9192 | 9492 | 9592 |
-| Kafka broker 2 | 9193 | 9493 | 9593 |
-| Kafka broker 3 | 9194 | 9494 | 9594 |
-| Schema Registry | 8091 | — | — |
-| Vault | 8200 | — | — |
-| Instana agent | — | — | — |
-| Prometheus | 9090 | — | — |
+| Service | dev |
+|---|---|
+| App | 8081 |
+| Postgres | 5433 |
+| Kafka broker 1/2/3 | 9192 / 9193 / 9194 |
+| Schema Registry | 8091 |
+| Vault | 8200 |
+| Prometheus | 9090 |
 
-> Schema Registry, Vault, and Prometheus host-port mappings are only exposed in the `dev` environment; in other environments they're accessible within the Docker network. The Instana agent row is intentionally all dashes: tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only, and none of the `docker-compose*.yml` files run one, so locally (any environment, including `dev`) the app finds no tracing backend and drops spans gracefully.
+> Tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only; none of the compose files run one locally, so the app finds no tracing backend and drops spans gracefully.
 
 ### Start an environment
 
 ```bash
 make dev
-make load-test
-make prod
 ```
 
-Each command:
-1. Builds the app image from source
+This command:
+1. Builds the app JAR on the host, then builds the Docker image
 2. Starts Postgres and waits until healthy
 3. Starts the 3-broker Kafka cluster and waits until healthy
 4. Starts Schema Registry and waits until healthy
-5. Starts Vault in dev mode, pre-unsealed, for `dev`/`load-test`; `prod`'s compose override replaces this with a server-mode Vault + one-shot `vault-init` AppRole flow (`VAULT_ROLE_ID`/`VAULT_SECRET_ID` printed on first run) instead
+5. Starts Vault in dev mode, pre-unsealed
 6. Starts the fraud-engine (Flyway runs migrations on boot)
 7. Polls `/actuator/health` until the app is ready
 
@@ -123,7 +118,7 @@ Postgres data volumes are named per environment and persist across restarts.
 
 ### Try it out (`dev` only)
 
-`make dev` runs the app under the `local` Spring profile, which disables the Kafka consumer and activates a synchronous HTTP stub instead (`StandaloneTransactionController`). It's the only way to feed transactions into a locally-run environment without producing raw Protobuf to Kafka yourself. Not present in `load-test`/`prod`, where the real Kafka pipeline is the only ingress (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
+`make dev` runs the app under the `local` Spring profile, which activates a synchronous HTTP stub (`StandaloneTransactionController`) alongside the real Kafka consumer. It's the easiest way to feed transactions into the running engine without producing raw Protobuf to Kafka yourself (see [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion)).
 
 ```bash
 # Submit one transaction and see the assessment inline
@@ -132,19 +127,19 @@ curl -X POST http://localhost:8081/api/v1/standalone/submit \
   -d '{"customerId":"CUST-001","merchantId":"MERCH-001","amount":150.00,"currency":"ZAR","transactionType":"CARD_PRESENT"}'
 
 # Or generate a batch of random transactions through the rule engine
-make stream ENV=dev COUNT=500
+make stream 500
 ```
 
 ### Tear down
 
 ```bash
-make stop dev
+make stop
 ```
 
 ### Tail logs
 
 ```bash
-make logs ENV=dev
+make logs
 ```
 
 ### See all running environments
@@ -157,7 +152,7 @@ make ps
 
 ## API Reference
 
-> In `load-test`/`prod` there is no HTTP submission endpoint: transactions enter exclusively via the `transactions.raw` Kafka topic, and the API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `dev`/`standalone` are the exception to that: `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under those two profiles. See "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
+> The API is read-only with one deliberate exception: `PATCH /api/v1/transactions/{id}/outcome`, which lets an analyst record a fraud assessment's real-world ground truth (see below). `POST /api/v1/standalone/submit` and `/stream` are a demo/dev-only synchronous stub, active only under `local`/`standalone` profiles. See "Try it out" above and [DESIGN.md §3](./DESIGN.md#3-inbound-layer--kafka-ingestion).
 
 All paginated endpoints return a consistent envelope:
 
@@ -166,8 +161,6 @@ All paginated endpoints return a consistent envelope:
 ```
 
 `nextCursor` is an opaque, base64-encoded token (internally a timestamp + row id, used for keyset pagination with a stable tie-break) — treat it as an opaque string, not a timestamp you construct yourself. Pass it verbatim as the `cursor` parameter on the next request to advance the page; `null` means there are no more pages. All timestamps elsewhere in responses (and in `from`/`to`/`since` request parameters) are ISO-8601 UTC.
-
-> Replace `8081` with the port for the environment you started (`8084` = load-test, `8085` = prod).
 
 ---
 
@@ -538,8 +531,6 @@ Response `200 OK`:
 }
 ```
 
-> Replace `8081` with the port for the environment you started.
-
 ---
 
 ## Fraud Rules
@@ -693,60 +684,6 @@ make test
 
 ---
 
-## Load & Performance Tests
-
-Load tests run exclusively against the `load-test` environment, which includes InfluxDB and Grafana for live metrics.
-
-### 1. Start the load-test environment
-
-```bash
-make load-test
-```
-
-### 2. Open the live dashboard
-
-```bash
-make grafana
-# or open http://localhost:3000 manually
-```
-
-The k6 dashboard is pre-provisioned, no login or setup required.
-
-### 3. Run a scenario
-
-```bash
-make k6-run                          # 01-baseline (default)
-make k6-run SCENARIO=02-ramp
-make k6-run SCENARIO=03-spike
-make k6-run SCENARIO=04-fraud-rules
-make k6-run SCENARIO=01-baseline RATE=500   # override target concurrent load
-```
-
-### 4. Run all scenarios sequentially
-
-```bash
-make k6-run-all
-```
-
-### Scenarios
-
-| Scenario | Purpose | Load |
-|---|---|---|
-| `01-baseline` | Steady-state throughput | ~230 TPS (daily-average estimate), 2 min |
-| `02-ramp` | Find degradation point under increasing load | ~100 → 400 → 800 → 1,200 TPS, 5 min |
-| `03-spike` | Validate Kafka absorbs a sudden burst | ~230 → 2,500 → 230 TPS, ~4 min |
-| `04-fraud-rules` | Mixed write (real Kafka ingestion) + concurrent read/query traffic | ~900 TPS write + 20 VUs read, 3 min |
-
-Pass/fail thresholds are in `load-tests/config.js`:
-
-```js
-http_req_duration: ['p(95)<1500', 'p(99)<2000'],
-http_req_failed:   ['rate<0.05'],
-```
-
-HTML reports are written to `load-tests/results/` at the end of each run.
-
----
 
 ## Configuration
 
@@ -846,9 +783,9 @@ Security is profile-gated so local development and tests require no credentials.
 |---|---|
 | `local`, `standalone` | All requests permitted. No IDP contact. |
 | `test` | All requests permitted. `@WebMvcTest` tests pass without auth headers. |
-| `load-test`, `prod` | JWT bearer token required on `/api/v1/**`. |
+| all others | JWT bearer token required on `/api/v1/**`. |
 
-> Note: the `dev` **environment** (`make dev`, `docker-compose.dev.yml`) activates the `local` Spring **profile**, not a profile named `dev`, so it falls in the open bucket above, with no auth required. The `load-test`/`prod` environments each activate their own like-named profile.
+> Note: the `dev` environment (`make dev`) activates the `local` Spring profile, not a profile named `dev` — so no auth is required locally.
 
 ### Authentication
 
@@ -1072,12 +1009,4 @@ src/
     └── integration/            # TransactionIntegrationTest (Testcontainers + mock Schema Registry,
                                  # requires -Pconfluent — see "Integration tests" above)
 
-load-tests/
-├── config.js               # Shared BASE_URL, thresholds, data pools
-├── scenarios/              # One file per k6 scenario
-├── lib/reporter.js         # HTML summary generation
-├── results/                # Generated HTML reports (gitignored)
-└── grafana/
-    ├── provisioning/       # Auto-configured datasource + dashboard provider
-    └── dashboards/         # Pre-built k6 Grafana dashboard
 ```

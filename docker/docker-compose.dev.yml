@@ -55,12 +55,11 @@ services:
 
   fraud-engine:
     container_name: fraud-engine-dev
+    mem_limit: 1g
     ports:
       - "8081:8080"
     environment:
       SPRING_PROFILES_ACTIVE: local
-    stdin_open: true
-    tty: true
 
   vault:
     container_name: fraud-vault-dev

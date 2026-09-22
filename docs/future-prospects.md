@@ -87,9 +87,6 @@ small change, but the natural "next tier" of this project.
 
 - Vault's DB secrets engine for dynamic, rotating Postgres credentials instead of the current
   static `DB_PASSWORD`.
-- A real corporate CA for prod's Kafka TLS, replacing the self-signed one
-  `scripts/gen-kafka-certs.sh` issues (`DESIGN.md` §11 already names this as the one remaining gap
-  after hostname verification was fixed).
 - A data-retention story beyond `PartitionMaintenanceJob`'s 90-day detach: it already keeps
   detached data as a standalone table rather than dropping it, but nothing yet archives or
   deletes that table — archive-then-delete to cold storage (S3/Glacier) if this ever needs to

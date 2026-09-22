@@ -45,9 +45,9 @@ public class StatsController {
     @ApiResponse(responseCode = "400", description = "Invalid date-time parameters",
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public DataResponse<FraudSummaryDto> getFraudSummary(
-            @Parameter(description = "ISO-8601 start of the window (inclusive)")
+            @Parameter(description = "ISO-8601 start of the window (inclusive)", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
-            @Parameter(description = "ISO-8601 end of the window (inclusive)")
+            @Parameter(description = "ISO-8601 end of the window (inclusive)", example = "2026-08-31T23:59:59Z")
             @RequestParam(required = false) Instant to) {
 
         return DataResponse.of(queryService.getFraudSummary(from, to));

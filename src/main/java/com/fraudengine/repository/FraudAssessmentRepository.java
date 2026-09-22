@@ -51,10 +51,12 @@ public interface FraudAssessmentRepository extends JpaRepository<FraudAssessment
     // -----------------------------------------------------------------------
 
     // LEFT JOIN FETCH on ruleViolations (a to-many collection) combined with Pageable means
-    // Hibernate falls back to in-memory pagination for this query (can't LIMIT at the SQL
-    // level with a to-many fetch join), which is acceptable at this project's scale (pageSize capped
-    // at 1000). The fetch join is needed so TransactionMapper can map ruleViolations to a DTO
-    // after this method's @Transactional scope closes (open-in-view is disabled).
+    // Hibernate falls back to in-memory pagination (HHH90003004): it loads all matching rows
+    // then slices in Java. pageSize caps the output, not the input — a large flagged set still
+    // loads fully before being sliced. Acceptable here because the result set stays small by
+    // design (demo volume), but would need a two-query approach (id-page first, then fetch) at
+    // production scale. The fetch join is needed so TransactionMapper can map ruleViolations to
+    // a DTO after this method's @Transactional scope closes (open-in-view is disabled).
     // No ORDER BY here: Spring Data appends one from `pageable`'s Sort (assessedAt, id — see
     // TransactionQueryService), since the keyset-cursor comparison direction below is the only
     // part of "sort direction" that can't come from Sort alone.

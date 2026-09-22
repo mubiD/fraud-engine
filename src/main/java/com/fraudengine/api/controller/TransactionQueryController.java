@@ -53,17 +53,17 @@ public class TransactionQueryController {
     @ApiResponse(responseCode = "400", description = "Invalid request parameters",
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<TransactionSummaryDto> getByCustomerId(
-            @Parameter(description = "Customer identifier", required = true)
+            @Parameter(description = "Customer identifier", required = true, example = "CUST-001")
             @RequestParam @NotBlank String customerId,
-            @Parameter(description = "ISO-8601 start of date range (inclusive)")
+            @Parameter(description = "ISO-8601 start of date range (inclusive)", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
-            @Parameter(description = "ISO-8601 end of date range (inclusive)")
+            @Parameter(description = "ISO-8601 end of date range (inclusive)", example = "2026-08-31T23:59:59Z")
             @RequestParam(required = false) Instant to,
             @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
-            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20", example = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
-            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)", example = "desc")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
         CursorUtils.DecodedCursor decoded = CursorUtils.decodeOrNull(cursor);
@@ -86,7 +86,7 @@ public class TransactionQueryController {
     @ApiResponse(responseCode = "200", description = "Transaction found")
     @ApiResponse(responseCode = "404", description = "No transaction exists for the given ID")
     public DataResponse<TransactionSummaryDto> getById(
-            @Parameter(description = "UUID of the transaction", required = true)
+            @Parameter(description = "UUID of the transaction", required = true, example = "a3f1c2e9-b7d0-4562-8c3e-d1f2a4b5c6d7")
             @PathVariable UUID transactionId) {
         return queryService.getById(transactionId)
                 .map(mapper::toSummaryDto)
@@ -102,7 +102,7 @@ public class TransactionQueryController {
     @ApiResponse(responseCode = "200", description = "Assessment found")
     @ApiResponse(responseCode = "404", description = "No assessment exists for the given transaction ID")
     public DataResponse<FraudAssessmentDto> getAssessment(
-            @Parameter(description = "UUID of the transaction", required = true)
+            @Parameter(description = "UUID of the transaction", required = true, example = "a3f1c2e9-b7d0-4562-8c3e-d1f2a4b5c6d7")
             @PathVariable UUID transactionId) {
         return queryService.getAssessment(transactionId)
                 .map(mapper::toDto)
@@ -119,23 +119,23 @@ public class TransactionQueryController {
     @ApiResponse(responseCode = "400", description = "Invalid request parameters",
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<FraudAssessmentDto> getFlagged(
-            @Parameter(description = "Filter by customer identifier")
+            @Parameter(description = "Filter by customer identifier", example = "CUST-001")
             @RequestParam(required = false) String customerId,
-            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AMOUNT_THRESHOLD)")
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AMOUNT_THRESHOLD)", example = "AMOUNT_THRESHOLD")
             @RequestParam(required = false) String ruleViolated,
-            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
+            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)", example = "65")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
-            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100). Combine with minRiskScore to query a band, e.g. 50–65 for low-confidence fraud review.")
+            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100). Combine with minRiskScore to query a band, e.g. 50–65 for low-confidence fraud review.", example = "100")
             @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
-            @Parameter(description = "ISO-8601 start of date range (inclusive)")
+            @Parameter(description = "ISO-8601 start of date range (inclusive)", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
-            @Parameter(description = "ISO-8601 end of date range (inclusive)")
+            @Parameter(description = "ISO-8601 end of date range (inclusive)", example = "2026-08-31T23:59:59Z")
             @RequestParam(required = false) Instant to,
             @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
-            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20", example = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
-            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)", example = "desc")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
         CursorUtils.DecodedCursor decoded = CursorUtils.decodeOrNull(cursor);
@@ -158,23 +158,23 @@ public class TransactionQueryController {
     @ApiResponse(responseCode = "400", description = "Invalid request parameters",
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<FraudAssessmentDto> getPendingReview(
-            @Parameter(description = "Filter by customer identifier")
+            @Parameter(description = "Filter by customer identifier", example = "CUST-001")
             @RequestParam(required = false) String customerId,
-            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AMOUNT_THRESHOLD)")
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. AMOUNT_THRESHOLD)", example = "VELOCITY")
             @RequestParam(required = false) String ruleViolated,
-            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
+            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)", example = "50")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
-            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100)")
+            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100)", example = "64")
             @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
-            @Parameter(description = "ISO-8601 start of date range (inclusive)")
+            @Parameter(description = "ISO-8601 start of date range (inclusive)", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
-            @Parameter(description = "ISO-8601 end of date range (inclusive)")
+            @Parameter(description = "ISO-8601 end of date range (inclusive)", example = "2026-08-31T23:59:59Z")
             @RequestParam(required = false) Instant to,
             @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
-            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20", example = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
-            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)", example = "desc")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
         CursorUtils.DecodedCursor decoded = CursorUtils.decodeOrNull(cursor);
@@ -197,19 +197,19 @@ public class TransactionQueryController {
     @ApiResponse(responseCode = "400", description = "Invalid request parameters",
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<FraudAssessmentDto> getPassed(
-            @Parameter(description = "Filter by customer identifier")
+            @Parameter(description = "Filter by customer identifier", example = "CUST-001")
             @RequestParam(required = false) String customerId,
-            @Parameter(description = "Filter to assessments with a risk score at or above this value (0–100). Use to surface near-misses: transactions that almost triggered a fraud flag.")
+            @Parameter(description = "Filter to assessments with a risk score at or above this value (0–100). Use to surface near-misses: transactions that almost triggered a fraud flag.", example = "45")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
-            @Parameter(description = "ISO-8601 start of date range (inclusive)")
+            @Parameter(description = "ISO-8601 start of date range (inclusive)", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
-            @Parameter(description = "ISO-8601 end of date range (inclusive)")
+            @Parameter(description = "ISO-8601 end of date range (inclusive)", example = "2026-08-31T23:59:59Z")
             @RequestParam(required = false) Instant to,
             @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
-            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20", example = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
-            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)", example = "desc")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
         CursorUtils.DecodedCursor decoded = CursorUtils.decodeOrNull(cursor);

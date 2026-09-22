@@ -29,14 +29,13 @@ curl -X POST http://localhost:8081/api/v1/standalone/submit \
   -d '{"customerId":"CUST-001","merchantId":"MERCH-001","amount":150.00,"currency":"ZAR","transactionType":"CARD_PRESENT"}'
 
 # Or generate a batch of random transactions through the rule engine
-make stream ENV=dev COUNT=500
+make stream 500
 
 # Tear down
-make stop dev
+make stop
 ```
 
-Prerequisites: Docker, plus a local JDK 21 + Maven on `PATH`. Full detail, other environments
-(`load-test`, `prod`), and the full API reference: [README.md](./README.md).
+Prerequisites: Docker, plus a local JDK 21 + Maven on `PATH`. Full detail and the full API reference: [README.md](./README.md).
 
 ## The design thinking, briefly
 
@@ -86,9 +85,4 @@ Prerequisites: Docker, plus a local JDK 21 + Maven on `PATH`. Full detail, other
   working a review queue means calling endpoints, not clicking through a dashboard.
 - **Not multi-tenant or white-label.** It's built for one issuer's transaction stream, not as a
   platform serving multiple banks with isolated configs.
-- **Not hardened for a real production rollout as-is.** `prod`'s Kafka TLS uses a self-signed CA
-  (see `DESIGN.md` §11); a mock OIDC server stands in for a real IdP for local `dev`/`load-test`
-  runs (`prod`'s compose file requires `FRAUD_IDP_URI` to be exported explicitly — no silent
-  default to the mock); and the deploy pipeline's actual infrastructure steps are stubbed (see
-  [docs/future-prospects.md](./docs/future-prospects.md)) — portfolio/showcase constraints, not
-  oversights.
+- **Not hardened for a real production rollout as-is.** The deploy pipeline's actual infrastructure steps are stubbed (see [docs/future-prospects.md](./docs/future-prospects.md)) — portfolio/showcase constraints, not oversights.

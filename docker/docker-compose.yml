@@ -66,6 +66,7 @@ services:
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
     environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
@@ -89,6 +90,7 @@ services:
   kafka2:
     image: confluentinc/cp-kafka:7.6.1
     environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
       KAFKA_NODE_ID: 2
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29093,CONTROLLER://0.0.0.0:9093
@@ -112,6 +114,7 @@ services:
   kafka3:
     image: confluentinc/cp-kafka:7.6.1
     environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
       KAFKA_NODE_ID: 3
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29094,CONTROLLER://0.0.0.0:9093
@@ -197,7 +200,7 @@ services:
       vault:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

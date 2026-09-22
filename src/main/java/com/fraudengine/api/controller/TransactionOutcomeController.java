@@ -7,6 +7,7 @@ import com.fraudengine.model.enums.AssessmentOutcome;
 import com.fraudengine.service.AssessmentOutcomeService;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -52,6 +53,7 @@ public class TransactionOutcomeController {
     @ApiResponse(responseCode = "404", description = "No assessment exists for this transaction")
     @ApiResponse(responseCode = "409", description = "Outcome already resolved")
     public ResponseEntity<FraudAssessmentDto> updateOutcome(
+            @Parameter(description = "UUID of the transaction to record an outcome for", required = true, example = "a3f1c2e9-b7d0-4562-8c3e-d1f2a4b5c6d7")
             @PathVariable UUID transactionId,
             @RequestBody @Valid UpdateOutcomeRequest request) {
         FraudAssessment updated = outcomeService.updateOutcome(transactionId, request.outcome());

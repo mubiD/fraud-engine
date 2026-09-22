@@ -49,23 +49,23 @@ public class MerchantController {
     @ApiResponse(responseCode = "400", description = "Invalid request parameters",
         content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
     public PagedResponse<FraudAssessmentDto> getFlaggedByMerchant(
-            @Parameter(description = "Merchant identifier", required = true)
+            @Parameter(description = "Merchant identifier", required = true, example = "MERCH-NIKE-ZA")
             @PathVariable String merchantId,
-            @Parameter(description = "Filter by the name of the rule that was violated (e.g. VELOCITY)")
+            @Parameter(description = "Filter by the name of the rule that was violated (e.g. VELOCITY)", example = "VELOCITY")
             @RequestParam(required = false) String ruleViolated,
-            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)")
+            @Parameter(description = "Filter to assessments with a risk score at or above this value (inclusive, 0–100)", example = "65")
             @RequestParam(required = false) @Min(0) @Max(100) Integer minRiskScore,
-            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100); combine with minRiskScore for a band query")
+            @Parameter(description = "Filter to assessments with a risk score at or below this value (inclusive, 0–100); combine with minRiskScore for a band query", example = "100")
             @RequestParam(required = false) @Min(0) @Max(100) Integer maxRiskScore,
-            @Parameter(description = "ISO-8601 start of date range (inclusive)")
+            @Parameter(description = "ISO-8601 start of date range (inclusive)", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant from,
-            @Parameter(description = "ISO-8601 end of date range (inclusive)")
+            @Parameter(description = "ISO-8601 end of date range (inclusive)", example = "2026-08-31T23:59:59Z")
             @RequestParam(required = false) Instant to,
             @Parameter(description = "Opaque pagination cursor — copy verbatim from the previous page's nextCursor field; do not construct manually")
             @RequestParam(required = false) String cursor,
-            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20"))
+            @Parameter(description = "Number of results per page (1–1000)", schema = @Schema(defaultValue = "20", example = "20"))
             @RequestParam(defaultValue = "20") @Min(1) @Max(1000) int pageSize,
-            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)")
+            @Parameter(description = "Sort direction: asc (oldest-first) or desc (newest-first, default)", example = "desc")
             @RequestParam(defaultValue = "desc") SortDirection sort) {
 
         CursorUtils.DecodedCursor decoded = CursorUtils.decodeOrNull(cursor);
@@ -93,9 +93,9 @@ public class MerchantController {
     )
     @ApiResponse(responseCode = "200", description = "Merchant risk summary returned")
     public DataResponse<MerchantRiskSummaryDto> getMerchantRiskSummary(
-            @Parameter(description = "Merchant identifier", required = true)
+            @Parameter(description = "Merchant identifier", required = true, example = "MERCH-NIKE-ZA")
             @PathVariable String merchantId,
-            @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards")
+            @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant since) {
         return DataResponse.of(queryService.getMerchantRiskSummary(merchantId, since));
     }

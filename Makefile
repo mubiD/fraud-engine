@@ -1,4 +1,4 @@
-.PHONY: dev load-test prod stop logs ps build test k6-run k6-run-all grafana help
+.PHONY: dev stop stream build logs ps test test-unit test-integration help
 
 # On native Windows (invoked from PowerShell/cmd, not already inside Git Bash), GNU Make's own
 # recipe-spawning code fails to quote a SHELL path containing spaces ("Program Files" always
@@ -19,7 +19,7 @@ endif
 # skips spawning a shell entirely for a recipe line with no shell metacharacters — it parses
 # the target script's shebang itself and execs "env bash <script path> args" directly,
 # bypassing SHELL/.SHELLFLAGS and re-hitting the same unquoted-spacey-path bug (the script's
-# own absolute path, not just the shell's). The "&& :" appended to every ./scripts/deploy.sh
+# own absolute path, not just the shell's). The "&& :" appended to the ./scripts/deploy.sh
 # line below forces real shell routing (a shell metacharacter defeats the direct-exec
 # fast path) while still propagating deploy.sh's real exit code: "&&" short-circuits so ":"
 # (always exit 0) only runs after a genuine success; a bare ";" would silently swallow
@@ -31,7 +31,7 @@ endif
 # Bash's real one (System32 is always first in the Machine PATH, ahead of anything a user adds
 # to their own PATH), so machines with no WSL distro installed then fail with
 # "execvpe(/bin/bash) failed: No such file or directory", found live 2026-09-09. Fixing PATH
-# order isn't reliable (Machine PATH always wins), so instead every deploy.sh invocation below
+# order isn't reliable (Machine PATH always wins), so instead the deploy.sh invocation below
 # calls Git Bash's own bash.exe explicitly (derived from the already-resolved, already-short
 # SHELL path, so it's just as space-safe) rather than letting the shebang do an ambiguous PATH
 # search. BASH := bash on macOS/Linux is a no-op: invoking `bash script.sh` there behaves
@@ -42,51 +42,85 @@ else
 BASH := bash
 endif
 
-# Capture the env name when invoked as: make stop <env>
-_STOP_ENV := $(filter dev load-test prod,$(MAKECMDGOALS))
+# ── Java 21 auto-detection ────────────────────────────────────────────────────
+# If the active JAVA_HOME already points to a Java 21 JDK, use it as-is.
+# Otherwise, locate one in the standard OS install paths and export it for this
+# make session only (no permanent change to the user's shell environment).
+# On Windows the install path varies too widely to detect reliably, so we check
+# and fail fast with a clear message instead.
+ifeq ($(OS),Windows_NT)
+  _JAVA_VER := $(shell cmd /c "\"$(JAVA_HOME)\bin\java.exe\" -version 2>&1" | findstr /i "version")
+  ifeq ($(findstring "21.,$(_JAVA_VER)),)
+    $(warning )
+    $(warning ERROR: Java 21 is required but JAVA_HOME does not point to a Java 21 JDK.)
+    $(warning        Set JAVA_HOME to your Java 21 install, for example:)
+    $(warning          set JAVA_HOME=C:\Program Files\Amazon Corretto\jdk21.x.x_x)
+    $(warning        Download: https://aws.amazon.com/corretto/)
+    $(warning )
+    $(error Java 21 not found)
+  endif
+else
+  ifeq ($(shell uname),Darwin)
+    # /usr/libexec/java_home is the macOS-canonical locator: returns the home path
+    # of the requested version if installed, empty string if not.
+    _JAVA21_HOME := $(shell /usr/libexec/java_home -v 21 2>/dev/null)
+  else
+    # Linux: check the paths used by Amazon Corretto, Eclipse Temurin, and the
+    # default OpenJDK apt/dnf packages (amd64 and arm64 suffixes).
+    _JAVA21_HOME := $(firstword $(wildcard \
+        /usr/lib/jvm/java-21-amazon-corretto \
+        /usr/lib/jvm/java-21-openjdk-amd64 \
+        /usr/lib/jvm/java-21-openjdk-arm64 \
+        /usr/lib/jvm/temurin-21 \
+        /usr/lib/jvm/java-21))
+  endif
 
-ENVS := dev load-test prod
+  ifneq ($(_JAVA21_HOME),)
+    # Found a Java 21 install that isn't the current JAVA_HOME — switch for this
+    # make session only.
+    ifneq ($(JAVA_HOME),$(_JAVA21_HOME))
+      export JAVA_HOME := $(_JAVA21_HOME)
+    endif
+  else
+    # No Java 21 found anywhere — bail early with a useful error rather than a
+    # cryptic Maven source-compatibility failure deep in the build.
+    $(warning )
+    $(warning ERROR: Java 21 is required but could not be found.)
+    $(warning        Install Amazon Corretto 21: https://aws.amazon.com/corretto/)
+    $(warning        Then re-run make.)
+    $(warning )
+    $(error Java 21 not found)
+  endif
+endif
 
-# ── Environment launchers ────────────────────────────────────────────────────
-# Each just starts that environment, one command, no extra steps. dev/load-test
-# need nothing further; prod additionally bootstraps Kafka TLS certs and Vault's
-# AppRole identity on first run (see scripts/deploy.sh), but it's still a single `make prod`.
+COMPOSE := docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -p fraud-dev
+
+# Capture the count argument when invoked as: make stream <n>
+_STREAM_COUNT := $(filter-out stream,$(MAKECMDGOALS))
+
+# ── Environment launcher ─────────────────────────────────────────────────────
 
 dev:
-	"$(BASH)" ./scripts/deploy.sh dev && :
-
-load-test:
-	"$(BASH)" ./scripts/deploy.sh load-test && :
-	@echo ""
-	@echo "  Grafana dashboard → http://localhost:3000"
-	@echo "  (open it before running k6-run so you see metrics stream in live)"
-	@echo ""
-
-prod:
-	"$(BASH)" ./scripts/deploy.sh prod && :
+	"$(BASH)" ./scripts/deploy.sh && :
 
 # ── Teardown ─────────────────────────────────────────────────────────────────
 
 stop:
-	@if [ -z "$(_STOP_ENV)" ]; then \
-	  echo "Usage: make stop <dev|load-test|prod>"; exit 1; fi
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(_STOP_ENV).yml \
-	  -p fraud-$(_STOP_ENV) down --remove-orphans
+	$(COMPOSE) down --remove-orphans
 
-# ── Fake event streaming (local/standalone profiles only) ───────────────────
+# ── Fake event streaming (local/standalone profile) ──────────────────────────
 # Usage:
-#   make stream ENV=dev COUNT=500
-COUNT ?= 10
+#   make stream
+#   make stream 500
+COUNT ?= $(if $(_STREAM_COUNT),$(_STREAM_COUNT),10)
 
 stream:
-	@if [ -z "$(ENV)" ]; then \
-	  echo "Usage: make stream ENV=<dev|load-test|prod> [COUNT=<n>]"; exit 1; fi
-	$(eval APP_PORT := $(shell docker inspect --format='{{range $$p, $$b := .NetworkSettings.Ports}}{{if eq $$p "8080/tcp"}}{{(index $$b 0).HostPort}}{{end}}{{end}}' fraud-engine-$(ENV) 2>/dev/null))
-	@if [ -z "$(APP_PORT)" ]; then echo "fraud-engine-$(ENV) is not running"; exit 1; fi
+	$(eval APP_PORT := $(shell docker inspect --format='{{range $$p, $$b := .NetworkSettings.Ports}}{{if eq $$p "8080/tcp"}}{{(index $$b 0).HostPort}}{{end}}{{end}}' fraud-engine-dev 2>/dev/null))
+	@if [ -z "$(APP_PORT)" ]; then echo "fraud-engine-dev is not running"; exit 1; fi
 	@# Pretty-print if python3 is around, otherwise print raw JSON rather than fail outright.
-	@# python3 isn't guaranteed on any of the three platforms this Makefile targets (never
-	@# bundled on Windows, and no longer bundled by default on recent macOS either), found live
-	@# 2026-09-09 testing on a Windows machine with neither python3 nor python on PATH.
+	@# python3 isn't guaranteed on all platforms this Makefile targets (never bundled on Windows,
+	@# and no longer bundled by default on recent macOS either), found live 2026-09-09 testing
+	@# on a Windows machine with neither python3 nor python on PATH.
 	curl -s -X POST "http://localhost:$(APP_PORT)/api/v1/standalone/stream?count=$(COUNT)" | (python3 -m json.tool 2>/dev/null || cat)
 
 # ── Image build (no startup) ─────────────────────────────────────────────────
@@ -97,72 +131,15 @@ build:
 # ── Observability ────────────────────────────────────────────────────────────
 
 logs:
-	@if [ -z "$(ENV)" ]; then \
-	  echo "Usage: make logs ENV=<dev|load-test|prod>"; exit 1; fi
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(ENV).yml \
-	  -p fraud-$(ENV) logs -f fraud-engine
+	$(COMPOSE) logs -f fraud-engine
 
 ps:
 	docker ps --filter "name=fraud-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-# ── Load tests (LOAD-TEST environment only) ─────────────────────────────────
-
-# Run a single k6 scenario inside the load-test environment.
-# Metrics stream to InfluxDB in real time, open http://localhost:3000 to watch live.
-# SCENARIO defaults to 01-baseline. Options: 01-baseline, 02-ramp, 03-spike, 04-fraud-rules
-# RATE overrides the scenario's target concurrent load (transactions/sec it should handle);
-# each scenario has its own sensible default (see load-tests/README.md's Capacity numbers)
-# if RATE isn't given.
-# Usage:
-#   make k6-run
-#   make k6-run SCENARIO=02-ramp
-#   make k6-run SCENARIO=01-baseline RATE=500
-SCENARIO ?= 01-baseline
-
-k6-run:
-	@echo "  Live dashboard → http://localhost:3000"
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load-test.yml \
-	  -p fraud-load-test --profile k6 \
-	  run --rm $(if $(RATE),-e RATE=$(RATE)) k6 run /scripts/scenarios/$(SCENARIO).js
-
-# Run all four scenarios sequentially (mirrors load-tests/run-all.sh but fully containerised)
-k6-run-all:
-	@echo "  Live dashboard → http://localhost:3000"
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load-test.yml \
-	  -p fraud-load-test --profile k6 \
-	  run --rm k6 run /scripts/scenarios/01-baseline.js
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load-test.yml \
-	  -p fraud-load-test --profile k6 \
-	  run --rm k6 run /scripts/scenarios/02-ramp.js
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load-test.yml \
-	  -p fraud-load-test --profile k6 \
-	  run --rm k6 run /scripts/scenarios/03-spike.js
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.load-test.yml \
-	  -p fraud-load-test --profile k6 \
-	  run --rm k6 run /scripts/scenarios/04-fraud-rules.js
-
-# Open the Grafana dashboard, cross-platform. Was macOS-only ("open", found live 2026-09-09
-# hitting "command not found" on both Windows and Linux). Windows has no "open"/"xdg-open" at
-# all (and "start" is a cmd.exe builtin, not a real executable, so it wouldn't resolve under
-# this Makefile's sh.exe SHELL either; explorer.exe is the portable equivalent and is a real
-# PE binary on PATH), Linux uses xdg-open. explorer.exe returns a nonzero exit code on success
-# for unrelated reasons, hence "|| :" so that's never mistaken for a real failure.
-ifeq ($(OS),Windows_NT)
-GRAFANA_OPEN := explorer.exe http://localhost:3000 || :
-else ifeq ($(shell uname -s 2>/dev/null),Darwin)
-GRAFANA_OPEN := open http://localhost:3000
-else
-GRAFANA_OPEN := xdg-open http://localhost:3000
-endif
-
-grafana:
-	$(GRAFANA_OPEN)
-
 # ── Unit / integration tests ─────────────────────────────────────────────────
-# Plain `mvn`, not `./mvnw`: this repo has never had a Maven wrapper committed
-# (no mvnw/mvnw.cmd/.mvn/), so these targets always failed with "No such file
-# or directory" before this fix, found live 2026-09-09. Resolves JAVA_HOME/mvn
-# from your shell, same as scripts/deploy.sh.
+# Uses ./mvnw (Maven wrapper) — no separate Maven install required.
+# The wrapper downloads the correct Maven version on first run and caches it
+# in ~/.m2/wrapper. Resolves JAVA_HOME from the auto-detection block above.
 #
 # test/test-integration need -Pconfluent: TransactionIntegrationTest exercises
 # the real Confluent Protobuf wire format, and those classes are only on the
@@ -173,53 +150,37 @@ grafana:
 # every other test class compiles and runs without it.
 
 test:
-	mvn test -Pconfluent
+	./mvnw test -Pconfluent
 
 test-unit:
-	mvn test -Dtest='!**/integration/**'
+	./mvnw test -Dtest='!**/integration/**'
 
 test-integration:
-	mvn test -Dtest="**/integration/**" -Pconfluent
+	./mvnw test -Dtest="**/integration/**" -Pconfluent
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 help:
 	@echo ""
-	@echo "  make dev          Start the DEV environment        (port 8081, pg 5433, kafka 9192)"
-	@echo "  make load-test    Start the LOAD-TEST environment  (port 8084, pg 5436, kafka 9492)"
-	@echo "  make prod         Start the PROD environment       (port 8085, pg 5437, kafka 9592)"
-	@echo ""
-	@echo "  make stop load-test       Tear down the LOAD-TEST environment"
-	@echo "  make logs ENV=load-test   Tail fraud-engine logs for LOAD-TEST"
-	@echo "  make stream ENV=dev COUNT=500   Stream 500 fake transactions through the rule engine"
+	@echo "  make dev                  Start the dev environment  (port 8081, pg 5433, kafka 9192)"
+	@echo "  make stop                 Tear down the dev environment"
+	@echo "  make logs                 Tail fraud-engine logs"
+	@echo "  make stream [n]           Stream n fake transactions through the rule engine (default 10)"
 	@echo "  make ps                   List all running fraud-* containers"
-	@echo ""
 	@echo "  make build                Build the Docker image locally (no containers)"
-	@echo ""
-	@echo "  make k6-run                                Run k6 baseline scenario against LOAD-TEST env"
-	@echo "  make k6-run SCENARIO=02-ramp               Run a specific k6 scenario"
-	@echo "  make k6-run SCENARIO=01-baseline RATE=500  Override the scenario's target concurrent load"
-	@echo "  make k6-run-all                            Run all four k6 scenarios sequentially"
-	@echo "  make grafana                               Open the Grafana dashboard in your browser"
 	@echo ""
 	@echo "  make test                 Run all tests (Testcontainers, no infra needed)"
 	@echo "  make test-unit            Run unit tests only"
 	@echo "  make test-integration     Run integration tests only"
 	@echo ""
 
-# When "stop" is a goal, prevent make from also launching the env target as a second goal
-# (e.g. "make stop dev" naming both "stop" and "dev"). Deliberately placed at the very end of
-# the file, after every real target (dev/load-test/prod) is already defined: GNU Make resolves
-# a target named in more than one rule by using whichever recipe was defined LAST, not first.
-# This exact suppression used to sit right after _STOP_ENV near the top, before the real env
-# targets, so its empty recipe was always the one silently overridden
-# ("Makefile:NN: warning: overriding recipe for target 'dev'", "warning: ignoring old recipe"),
-# never the other way around. Consequence, confirmed live: "make stop dev" ran `docker compose
-# down` and then immediately redeployed dev again, rather than just stopping it. Found live
-# 2026-09-09, pre-existing since before this Makefile ever actually ran (make itself didn't
-# work at all until this session, so this bug had never been exercised before).
-ifneq ($(filter stop,$(MAKECMDGOALS)),)
-ifneq ($(_STOP_ENV),)
-$(_STOP_ENV): ;
+# When "stream" is a goal with a positional count argument (e.g. "make stream 500"),
+# prevent Make from trying to build the count value as a target. The outer guard ensures
+# this suppressor only fires when "stream" is actually one of the requested goals —
+# without it, $(filter-out stream,...) on any other invocation (e.g. "make dev") resolves
+# to that target's own name and silently overrides its recipe with an empty one.
+ifneq ($(filter stream,$(MAKECMDGOALS)),)
+ifneq ($(_STREAM_COUNT),)
+$(_STREAM_COUNT): ;
 endif
 endif

@@ -41,9 +41,9 @@ public class CustomerController {
     )
     @ApiResponse(responseCode = "200", description = "Risk summary returned")
     public DataResponse<CustomerRiskSummaryDto> getCustomerRiskSummary(
-            @Parameter(description = "Customer identifier", required = true)
+            @Parameter(description = "Customer identifier", required = true, example = "CUST-001")
             @PathVariable String customerId,
-            @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards")
+            @Parameter(description = "ISO-8601 timestamp; scopes activity metrics to this point in time onwards", example = "2026-08-01T00:00:00Z")
             @RequestParam(required = false) Instant since) {
         return DataResponse.of(queryService.getCustomerRiskSummary(customerId, since));
     }
