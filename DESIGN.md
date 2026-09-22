@@ -16,7 +16,7 @@
 5. [Processing Layer — The Rule Engine](#5-processing-layer--the-rule-engine)
 6. [Persistence Layer — PostgreSQL](#6-persistence-layer--postgresql)
 7. [Query Layer — REST API](#7-query-layer--rest-api)
-8. [Infrastructure — Docker, Helm & Vault](#8-infrastructure--docker-helm--vault)
+8. [Infrastructure — Docker & Vault](#8-infrastructure--docker--vault)
 9. [Testing Strategy](#9-testing-strategy)
 10. [Extensibility & Future-Proofing Summary](#10-extensibility--future-proofing-summary)
 11. [Known Drawbacks & Production Considerations](#11-known-drawbacks--production-considerations)
@@ -344,11 +344,11 @@ Controllers never return JPA entities. MapStruct generates the entity→DTO mapp
 
 ---
 
-## 8. Infrastructure — Docker, Helm & Vault
+## 8. Infrastructure — Docker & Vault
 
 ### Multi-environment layout
 
-A single `dev` environment (`docker-compose.yml` + `docker-compose.dev.yml`): one app instance, Postgres + streaming replica, 3-broker Kafka cluster, Schema Registry, Vault, and Prometheus, all on fixed host ports. The same topology is expressed as Helm values (`helm/values-dev.yaml`) for Kubernetes deployment — deliberately a values file only, not a full chart (`Chart.yaml`/`templates/`): it plugs into an externally-managed platform Helm chart, not ships one from this repo.
+A single `dev` environment (`docker-compose.yml` + `docker-compose.dev.yml`): one app instance, Postgres + streaming replica, 3-broker Kafka cluster, Schema Registry, Vault, and Prometheus, all on fixed host ports.
 
 ### Dockerfile
 
