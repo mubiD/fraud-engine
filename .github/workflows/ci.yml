@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+# Cancel any in-progress run for the same branch/PR when a new commit is pushed.
+# Prevents queued runs from piling up on fast-moving branches.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Job 1: compile + test ────────────────────────────────────────────────────
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Amazon Corretto 21 matches the base image used in docker/Dockerfile.
+      # `cache: maven` restores ~/.m2 between runs — avoids re-downloading the
+      # full dependency tree (~400 MB) on every push.
+      - name: Set up JDK 21 (Corretto)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+          cache: 'maven'
+
+      - name: Compile
+        run: ./mvnw compile -q
+
+      # Unit tests run without Docker or external services.
+      # Excludes the Testcontainers-based integration test class.
+      - name: Unit tests
+        run: ./mvnw test -Dtest='!**/integration/**' -q
+
+      # Integration tests spin up real Postgres + Kafka via Testcontainers.
+      # GitHub's ubuntu-latest runner ships Docker, so no extra service config needed.
+      # -Pconfluent is required: TransactionIntegrationTest exercises the Confluent
+      # Protobuf wire format; those classes only land on the classpath under that profile.
+      - name: Integration tests
+        run: ./mvnw test -Dtest='**/integration/**' -Pconfluent
+
+      # Upload the Surefire XML reports so GitHub can surface per-test pass/fail
+      # detail on the PR checks page, even when the job itself succeeds.
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+  # ── Job 2: Docker image build ────────────────────────────────────────────────
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: test  # only builds the image if all tests pass
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Corretto)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+          cache: 'maven'
+
+      # Build the JAR on the host, not inside the image. The Dockerfile's own
+      # header comment explains why: the Confluent Maven repo requires auth that
+      # isn't available inside a plain build container.
+      - name: Build JAR
+        run: ./mvnw package -DskipTests -q
+
+      # Tag with the short commit SHA so every image built in CI is traceable
+      # back to the exact commit that produced it.
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f docker/Dockerfile \
+            -t fraud-engine:${{ github.sha }} \
+            -t fraud-engine:latest \
+            .
