@@ -1,0 +1,153 @@
+{
+  "title": "k6 — Fraud Engine Load Tests",
+  "uid": "k6-fraud-engine",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active VUs",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-k6" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT mean(\"value\") FROM \"vus\" WHERE $timeFilter GROUP BY time($__interval) fill(previous)",
+          "refId": "A",
+          "alias": "VUs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "fixedColor": "#5794F2", "mode": "fixed" }, "unit": "short" }
+      },
+      "options": { "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 2,
+      "title": "Requests / second",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-k6" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT non_negative_derivative(sum(\"value\"), 1s) FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval) fill(0)",
+          "refId": "A",
+          "alias": "RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "fixedColor": "#73BF69", "mode": "fixed" }, "unit": "reqps" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Response time p95 (ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-k6" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(none)",
+          "refId": "A",
+          "alias": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 800 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Error rate (%)",
+      "type": "timeseries",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-k6" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT mean(\"value\") * 100 FROM \"http_req_failed\" WHERE $timeFilter GROUP BY time($__interval) fill(0)",
+          "refId": "A",
+          "alias": "Error %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Response time percentiles (p50 / p90 / p99)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-k6" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT percentile(\"value\", 50) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(none)",
+          "refId": "p50",
+          "alias": "p50"
+        },
+        {
+          "rawQuery": true,
+          "query": "SELECT percentile(\"value\", 90) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(none)",
+          "refId": "p90",
+          "alias": "p90"
+        },
+        {
+          "rawQuery": true,
+          "query": "SELECT percentile(\"value\", 99) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(none)",
+          "refId": "p99",
+          "alias": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "HTTP responses by status code",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-k6" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT non_negative_derivative(sum(\"value\"), 1s) FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval), \"status\" fill(0)",
+          "refId": "A",
+          "alias": "$tag_status"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      }
+    }
+  ]
+}

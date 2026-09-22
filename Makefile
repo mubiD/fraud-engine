@@ -1,4 +1,4 @@
-.PHONY: dev stop stream build logs ps test test-unit test-integration help
+.PHONY: dev stop stream build logs ps test test-unit test-integration load-test grafana help
 
 # On native Windows (invoked from PowerShell/cmd, not already inside Git Bash), GNU Make's own
 # recipe-spawning code fails to quote a SHELL path containing spaces ("Program Files" always
@@ -93,7 +93,13 @@ else
   endif
 endif
 
-COMPOSE := docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -p fraud-dev
+COMPOSE          := docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -p fraud-dev
+LOADTEST_COMPOSE := docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.loadtest.yml -p fraud-dev
+
+# Load-test tunables: override on the command line, e.g. make load-test scenario=03 vus=30 duration=5m
+_LT_SCENARIO := $(or $(scenario),01)
+_LT_VUS      := $(or $(vus),)
+_LT_DURATION := $(or $(duration),)
 
 # Capture the count argument when invoked as: make stream <n>
 _STREAM_COUNT := $(filter-out stream,$(MAKECMDGOALS))
@@ -158,6 +164,37 @@ test-unit:
 test-integration:
 	./mvnw test -Dtest="**/integration/**" -Pconfluent
 
+# ── Load tests ───────────────────────────────────────────────────────────────
+# Requires: make dev must already be running.
+# InfluxDB + Grafana start automatically and remain up until make stop.
+
+load-test:
+	@STATUS=$$(docker inspect --format='{{.State.Health.Status}}' fraud-engine-dev 2>/dev/null); \
+	 if [ "$$STATUS" != "healthy" ]; then \
+	   echo "fraud-engine-dev is not running or not healthy — run make dev first"; exit 1; \
+	 fi
+	$(LOADTEST_COMPOSE) up -d influxdb grafana
+	@SCRIPT=$$(ls "$(CURDIR)/load-tests/scenarios/$(_LT_SCENARIO)-"*.js 2>/dev/null | head -1); \
+	 if [ -z "$$SCRIPT" ]; then \
+	   echo "No scenario found for '$(_LT_SCENARIO)'. Available:"; \
+	   ls load-tests/scenarios/*.js | xargs -n1 basename; \
+	   exit 1; \
+	 fi; \
+	 echo "==> $$(basename $$SCRIPT)  vus=$(or $(_LT_VUS),default)  duration=$(or $(_LT_DURATION),default)"; \
+	 docker run --rm \
+	   --network fraud-dev_default \
+	   -v "$(CURDIR)/load-tests:/load-tests" \
+	   -e BASE_URL=http://fraud-engine-dev:8080 \
+	   $(if $(_LT_VUS),-e VUS=$(_LT_VUS)) \
+	   $(if $(_LT_DURATION),-e DURATION=$(_LT_DURATION)) \
+	   grafana/k6 run \
+	   --out influxdb=http://fraud-influxdb:8086/k6 \
+	   "/load-tests/scenarios/$$(basename $$SCRIPT)"
+
+grafana:
+	@echo "Grafana k6 dashboard: http://localhost:3000/d/k6-fraud-engine"
+	open http://localhost:3000/d/k6-fraud-engine 2>/dev/null || xdg-open http://localhost:3000/d/k6-fraud-engine 2>/dev/null || true
+
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 help:
@@ -172,6 +209,11 @@ help:
 	@echo "  make test                 Run all tests (Testcontainers, no infra needed)"
 	@echo "  make test-unit            Run unit tests only"
 	@echo "  make test-integration     Run integration tests only"
+	@echo ""
+	@echo "  make load-test            Run scenario 01 with defaults (requires make dev)"
+	@echo "  make load-test scenario=N Run a specific scenario (01–05)"
+	@echo "  make load-test scenario=N vus=20 duration=5m"
+	@echo "  make grafana              Open Grafana k6 dashboard (http://localhost:3000/d/k6-fraud-engine)"
 	@echo ""
 
 # When "stream" is a goal with a positional count argument (e.g. "make stream 500"),
