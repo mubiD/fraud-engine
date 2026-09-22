@@ -5,11 +5,11 @@
 # working tree, and starts fresh containers. Postgres data volume is
 # preserved across deploys.
 #
-# Prerequisite: a local JDK 21 + Maven on PATH (in addition to Docker). The
-# JAR is built on the host, not inside the image (see docker/Dockerfile's
-# header comment for why: Confluent's Maven repo needs auth not available in
-# a plain build container). Resolves JAVA_HOME/mvn from your existing shell
-# environment; it does not attempt to auto-detect a JDK 21 install.
+# Prerequisite: a local JDK 21 (in addition to Docker). The JAR is built on
+# the host via ./mvnw (Maven wrapper — no separate Maven install required);
+# see docker/Dockerfile's header comment for why: Confluent's Maven repo
+# needs auth not available in a plain build container. Resolves JAVA_HOME
+# from the environment (Makefile auto-detects Java 21 before invoking this).
 
 set -euo pipefail
 

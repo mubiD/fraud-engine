@@ -35,7 +35,7 @@ make stream 500
 make stop
 ```
 
-Prerequisites: Docker, plus a local JDK 21 + Maven on `PATH`. Full detail and the full API reference: [README.md](./README.md).
+Prerequisites: Docker and a local JDK 21. Full detail and the full API reference: [README.md](./README.md).
 
 ## The design thinking, briefly
 

@@ -15,7 +15,7 @@ make load-test scenario=04 vus=20       # analyst workflow, 20 VUs
 make load-test scenario=03 vus=40 duration=6m
 ```
 
-Open Grafana at **http://localhost:3000** while a test is running to see live results.
+Open the Grafana dashboard at **http://localhost:3000/d/k6-fraud-engine** while a test is running, or run `make grafana` to open it automatically.
 
 ---
 
@@ -49,7 +49,7 @@ InfluxDB and Grafana start automatically on `make load-test` and remain running 
 
 | Service | URL |
 |---------|-----|
-| Grafana | http://localhost:3000 |
+| Grafana | http://localhost:3000/d/k6-fraud-engine |
 | InfluxDB | http://localhost:8086 |
 
 The Grafana dashboard (`k6 — Fraud Engine Load Tests`) is provisioned automatically. No login required.

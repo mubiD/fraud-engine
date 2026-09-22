@@ -84,7 +84,7 @@ Query API (read-only, with one write exception — see below)
 
 ## Running Locally
 
-Prerequisites: **Docker**, plus a local **JDK 21** and **Maven** (`mvn` on `PATH`). No Kafka installation required, since that runs inside containers. The JAR is built on the host, not inside the image (`scripts/deploy.sh`); see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
+Prerequisites: **Docker** and a local **JDK 21**. No Kafka installation required, since that runs inside containers. The JAR is built on the host using `./mvnw` (Maven wrapper — no separate Maven install required); see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
 
 The `dev` environment is fully self-contained: app instance, Postgres + streaming replica, 3-broker Kafka cluster, Schema Registry, Vault, and Prometheus — all started with a single command.
 
@@ -97,7 +97,7 @@ The `dev` environment is fully self-contained: app instance, Postgres + streamin
 | Vault | 8200 |
 | Prometheus | 9090 |
 
-> Tracing is OpenTelemetry/OTLP to an Instana agent injected via Helm in Kubernetes only; none of the compose files run one locally, so the app finds no tracing backend and drops spans gracefully.
+> Tracing is OpenTelemetry/OTLP. None of the compose files run a tracing backend locally, so the app finds nothing at `${MANAGEMENT_OTLP_TRACING_ENDPOINT}` and drops spans gracefully.
 
 ### Start an environment
 
@@ -851,8 +851,6 @@ Consumer lag per partition is automatically exposed via `kafka_consumer_fetch_ma
 ### Distributed tracing
 
 All Kafka listener invocations and HTTP requests are traced via the Micrometer OTel bridge and exported via OTLP gRPC to `${MANAGEMENT_OTLP_TRACING_ENDPOINT}`. Sampling probability is 10% by default.
-
-**In Kubernetes** the Instana agent runs as a DaemonSet. Each pod's Helm values file injects `HOST_IP` (the node IP) and sets `MANAGEMENT_OTLP_TRACING_ENDPOINT=http://$(HOST_IP):4317`, pointing the OTLP exporter at the local agent. Traces are visible in the Instana UI with full service dependency maps.
 
 **Locally** `MANAGEMENT_OTLP_TRACING_ENDPOINT` is not set. The app defaults to `http://localhost:4317`, finds nothing, and drops spans silently. All other functionality is unaffected.
 
