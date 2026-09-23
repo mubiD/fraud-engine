@@ -284,8 +284,12 @@ resilience4j:
         limit-for-period: 300
         limit-refresh-period: 1s
         timeout-duration: 0
+      # 200/10s (20 req/s average): sized for scenario 01's default 10 VUs at 1 req/s
+      # (10 req/s sustained) with 2× headroom. The previous 20/10s (2 req/s) rejected
+      # ~80% of scenario 01 traffic, causing http_req_failed to hit ~0.80 and the
+      # rate<0.01 threshold to fail with k6 exit code 99.
       standalone-submit:
-        limit-for-period: 20
+        limit-for-period: 200
         limit-refresh-period: 10s
         timeout-duration: 0
       # Much stricter than standalone-submit: one call can run up to 10,000 transactions
