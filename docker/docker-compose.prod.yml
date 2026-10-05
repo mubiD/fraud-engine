@@ -1,0 +1,234 @@
+version: "3.9"
+
+# PROD overlay: adds the full production stack on top of docker-compose.yml.
+#   - 3-broker Kafka cluster (KRaft) with RF=2
+#   - Postgres streaming read replica
+#   - Confluent Schema Registry
+#   - HashiCorp Vault with token auth (seeded by vault-init; AppRole in a real deployment)
+#
+# ⚠️  RESOURCE REQUIREMENTS:
+#   - Docker Desktop allocation must be:
+#     - CPU: 6 cores (minimum 4)
+#     - Memory: 12 GB (minimum 8 GB)
+#   - Increase in Preferences → Virtual Machine before running
+#   - First startup takes 2–3 minutes (Kafka Streams state store initialization)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Or (recommended):
+#   make prod
+#
+# Token for API testing:
+#   curl -s -X POST http://localhost:9000/default/token \
+#     -d "grant_type=client_credentials&client_id=demo&client_secret=demo" | jq -r '.access_token'
+#   curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v1/stats/summary
+
+services:
+
+  # Enable WAL streaming replication on the primary so postgres-replica can connect.
+  postgres:
+    container_name: fraud-postgres-prod
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: replicator
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+
+  # Real streaming replication via pg_basebackup (see postgres-replica-entrypoint.sh).
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: fraud-postgres-replica-prod
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARY_HOST: postgres
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
+    entrypoint: ["sh", "/usr/local/bin/postgres-replica-entrypoint.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud -d frauddb"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # Override kafka1 for 3-broker KRaft quorum. RF and min_ISR raised to 2.
+  kafka1:
+    container_name: fraud-kafka1-prod
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka1:29092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: fraud-kafka2-prod
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29093,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka2:29093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka2:29093 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: fraud-kafka3-prod
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka3:29094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka3:29094 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.1
+    container_name: fraud-schema-registry-prod
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:29092,PLAINTEXT://kafka2:29093,PLAINTEXT://kafka3:29094
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Local mock OIDC/OAuth2 server. Issues signed JWTs for API testing.
+  # Get a demo token (includes FRAUD_ANALYST role):
+  #   curl -s -X POST http://localhost:9000/default/token \
+  #     -d 'grant_type=client_credentials&client_id=demo&client_secret=demo' | jq -r .access_token
+  # Use it:
+  #   curl -H "Authorization: Bearer <token>" http://localhost:8080/actuator/health
+  mock-oauth2-server:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    container_name: fraud-mock-oauth2
+    ports:
+      - "9000:8080"
+    environment:
+      JSON_CONFIG: >
+        {"tokenCallbacks":[{"issuerId":"default","requestMappings":[{"requestParam":"grant_type","match":"client_credentials","claims":{"sub":"fraud-demo-client","roles":["FRAUD_ANALYST"]}}]}]}
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: fraud-vault-prod
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+
+  # One-shot init container: seeds secret/fraud-rule-engine with DB credentials.
+  # fraud-engine waits for this to complete before starting.
+  vault-init:
+    image: hashicorp/vault:1.15
+    container_name: fraud-vault-init
+    depends_on:
+      vault:
+        condition: service_started
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root-token
+    volumes:
+      - ./vault-init.sh:/vault-init.sh:ro
+    entrypoint: ["sh", "/vault-init.sh"]
+    restart: on-failure
+
+  fraud-engine:
+    container_name: fraud-engine-prod
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093,kafka3:29094
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      DB_REPLICA_HOST: postgres-replica
+      # Token auth against the local Vault dev instance seeded by vault-init.
+      # In a real deployment, VAULT_AUTH_METHOD=APPROLE with role/secret IDs
+      # injected by the CI/CD secrets manager would replace this.
+      VAULT_HOST: vault
+      VAULT_TOKEN: dev-root-token
+      # JWK URI for the local mock OIDC server. When set, jwtDecoder uses
+      # NimbusJwtDecoder.withJwkSetUri() instead of JwtDecoders.fromIssuerLocation(),
+      # skipping the OIDC discovery HTTP call at startup. Unset in a real deployment
+      # (where FRAUD_IDP_URI points to the real IDP and fromIssuerLocation is used).
+      FRAUD_JWK_URI: http://mock-oauth2-server:8080/default/jwks
+    depends_on:
+      postgres-replica:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      mock-oauth2-server:
+        condition: service_started
+
+  prometheus:
+    container_name: fraud-prometheus-prod
+
+volumes:
+  postgres_replica_data:

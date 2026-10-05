@@ -15,12 +15,14 @@ UI, not a card network, just the detection-and-scoring engine in the middle.
 
 ## Run it locally
 
+### Quick start (dev environment)
+
 ```bash
 make dev
 ```
 
 That's it: one command builds the app, starts Postgres + a 3-broker Kafka cluster, and boots the
-service on `http://localhost:8081`. No Kafka install, no manual setup.
+service on `http://localhost:8081`. No Kafka install, no manual setup. Takes 30–60 seconds.
 
 ```bash
 # Submit one transaction and see the assessment inline (dev-only HTTP stub — see below)
@@ -35,7 +37,23 @@ make stream 500
 make stop
 ```
 
-Prerequisites: Docker and a local JDK 21. Full detail and the full API reference: [README.md](./README.md).
+**Prerequisites:** Docker and a local JDK 21.
+
+### Production environment (for testing auth, read replicas, KRaft)
+
+```bash
+# ⚠️ First, increase Docker resources:
+#   Preferences/Settings → Virtual Machine → 6 CPU, 12 GB RAM
+#   (app will otherwise hang during startup)
+
+make prod
+```
+
+Starts a production-like environment on `http://localhost:8080` with JWT/OAuth2 auth required. First startup takes 2–3 minutes (state store initialization). See [README.md → Running Production Environment](./README.md#running-production-environment-make-prod) for token details and troubleshooting.
+
+---
+
+**Full detail and API reference:** [README.md](./README.md) · **Testing guide:** [TesterInfo.md](./TesterInfo.md)
 
 ## The design thinking, briefly
 

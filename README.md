@@ -130,6 +130,75 @@ curl -X POST http://localhost:8081/api/v1/standalone/submit \
 make stream 500
 ```
 
+### Running Production Environment (`make prod`)
+
+⚠️ **Prerequisites:** 
+- **Docker Desktop resource allocation:**
+  - **CPU:** 6 cores (minimum 4)
+  - **Memory:** 12 GB (minimum 8 GB)
+  - Increase in Rancher Desktop/Docker Desktop **Preferences → Virtual Machine** before running
+- **Docker** and **JDK 21** (same as dev)
+- First startup may take 2–3 minutes (Kafka Streams state store initialization)
+
+The `prod` environment runs the app under the `prod` Spring profile with production-like infrastructure:
+
+| Service | Port | Details |
+|---------|------|---------|
+| App | 8080 | Requires JWT/OAuth2 authentication |
+| Postgres (primary) | 5432 | Writable, WAL streaming replication enabled |
+| Postgres (replica) | 5432 (internal) | Read-only replica for context queries |
+| Kafka brokers (1/2/3) | 9092 | 3-broker KRaft cluster, RF=2, min_ISR=2 |
+| Schema Registry | 8081 | Confluent Schema Registry (Protobuf) |
+| Vault | 8200 | HashiCorp Vault (token auth, dev mode) |
+| Mock OAuth2 | 9000 | Mock OIDC server for testing auth |
+| Prometheus | 9090 | Metrics scraping |
+
+```bash
+make prod
+```
+
+This command:
+1. Builds the Docker image (same multi-stage build as `dev`)
+2. Starts 3-broker Kafka cluster (KRaft, replication factor 2)
+3. Starts Postgres primary and streaming replica
+4. Starts Schema Registry
+5. Starts Vault and seeds credentials via `vault-init`
+6. Starts the fraud-engine (Flyway runs migrations on boot)
+7. Polls `/actuator/health` until the app is ready (typically 1–2 minutes)
+
+#### Testing `prod` endpoints
+
+All `/api/v1/**` endpoints require JWT authentication. Get a token from the mock OAuth2 server:
+
+```bash
+# Get a JWT token
+TOKEN=$(curl -s -X POST http://localhost:9000/default/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=demo&client_secret=demo" \
+  | jq -r '.access_token')
+
+# Use it to call a protected endpoint
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/stats/summary
+```
+
+Public endpoints (no token required):
+- `GET /actuator/health` — service health
+- `GET /actuator/prometheus` — Prometheus metrics
+- `GET /swagger-ui.html` — Swagger UI (click "Authorize" to paste token)
+
+#### Troubleshooting `prod` startup
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| Startup hangs after 30 seconds | Docker resource constraints | Increase Docker CPU/Memory allocation and restart |
+| `401 Unauthorized` on all `/api/v1/**` calls | Missing or invalid token | Get a token from OAuth2 endpoint (see above) |
+| `503 Service Unavailable` | Kafka or Postgres not healthy | Check `docker logs fraud-kafka1-prod` or `docker logs fraud-postgres-prod` |
+| App exits with code 137 | Out of memory | Allocate more Docker memory (12 GB recommended) |
+
+#### Postgres streaming replica
+
+The `prod` environment includes a Postgres read replica with streaming replication enabled. The app reads context (recent transactions, merchant locations, customer history) from the replica to reduce write-path contention. The replica is automatically configured via `postgres-replica-entrypoint.sh` and restored using `pg_basebackup`.
+
 ### Tear down
 
 ```bash

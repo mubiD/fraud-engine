@@ -31,13 +31,16 @@ The `standalone` profile (not tied to any `make` target — run manually with `-
 
 ## 3. Environments and Ports
 
-| Environment | App (host) | PostgreSQL (host) | Kafka Broker 1/2/3 (host) |
-|---|---|---|---|
-| `dev` | **8081** | 5433 | 9192 / 9193 / 9194 |
+| Environment | App (host) | PostgreSQL (host) | Kafka Broker 1/2/3 (host) | Spring Profile | Auth Required? |
+|---|---|---|---|---|---|
+| `dev` (`make dev`) | **8081** | 5433 | 9192 / 9193 / 9194 | `local` | **No** |
+| `prod` (`make prod`) | **8080** | 5432 | 9092 / 9093 / 9094 | `prod` | **Yes** (JWT/OAuth2) |
 
 Container-internal port is always **8080**.
 
-Swagger UI: `http://localhost:<host-port>/swagger-ui.html` (root `/` redirects there). In secured environments (§11) you'll need a bearer token pasted into Swagger's Authorize button to actually call anything beyond the whitelisted paths.
+**⚠️ Before running `make prod`:** Increase Docker Desktop resource allocation to **6 CPU + 12 GB RAM** in Preferences → Virtual Machine (minimum 4 CPU + 8 GB). First startup takes 2–3 minutes.
+
+Swagger UI: `http://localhost:<host-port>/swagger-ui.html` (root `/` redirects there). In the `prod` environment, you'll need a bearer token (see §11) pasted into Swagger's Authorize button to actually call anything beyond the whitelisted paths.
 
 ---
 
@@ -645,13 +648,69 @@ All error responses use `Content-Type: application/problem+json`.
 | Environment(s) | Profile | Auth required? |
 |---|---|---|
 | `dev` (`make dev`) | `local` | **No** — all requests permitted |
+| `prod` (`make prod`) | `prod` | **Yes** — JWT/OAuth2 bearer token |
 | standalone (manual run) | `standalone` | **No** |
 
-`/actuator/health`, `/actuator/info`, `/actuator/prometheus`, and the Swagger/OpenAPI paths are open in every profile. JWT bearer token auth (`Authorization: Bearer <jwt>`) would be required under any non-local/standalone profile — not applicable for `make dev`.
+### Public endpoints (all profiles)
+
+These endpoints are **always** accessible without authentication:
+- `GET /actuator/health` — service health check
+- `GET /actuator/info` — app info
+- `GET /actuator/prometheus` — Prometheus metrics
+- `GET /swagger-ui.html` — Swagger UI (but endpoint calls require auth in `prod`)
+- `GET /api-docs` — OpenAPI schema
+
+### JWT/OAuth2 Bearer Token (prod only)
+
+In the `prod` profile, all `/api/v1/**` endpoints require a valid JWT bearer token in the `Authorization` header:
+
+```
+Authorization: Bearer <jwt>
+```
+
+#### Getting a token in `prod`
+
+The `prod` environment includes a mock OAuth2 server at `http://localhost:9000`. Request a token with demo credentials:
+
+```bash
+curl -s -X POST http://localhost:9000/default/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=demo&client_secret=demo" \
+  | jq -r '.access_token'
+```
+
+This returns a JWT signed by the mock server. The token is valid indefinitely (dev token, not time-limited).
+
+#### Using the token
+
+Pass it on every protected request:
+
+```bash
+TOKEN="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/stats/summary
+```
+
+In Swagger UI (`http://localhost:8080/swagger-ui.html`):
+1. Click the **Authorize** button (top-right)
+2. Paste the token (just the JWT, no "Bearer" prefix)
+3. Click Authorize
+4. All endpoint calls will include the token
+
+#### Token details
+
+- **Issuer:** `http://localhost:9000/default`
+- **Subject:** `fraud-demo-client`
+- **Roles (claims):** `["FRAUD_ANALYST"]`
+- The app extracts roles from the `roles` claim and requires either `FRAUD_ANALYST` or `FRAUD_ENGINEER`
+- In production, replace this with real IDP credentials and AppRole auth (see `DESIGN.md`)
 
 ---
 
 ## 12. Key Testing Facts and Gotchas
+
+**Startup times:**
+- `make dev`: 30–60 seconds (single-broker Kafka, lightweight)
+- `make prod`: 90–180 seconds first run (3-broker Kafka, Streams state store init, Postgres replica); subsequent runs ~30 seconds (2–5 minutes if Docker resources are insufficient — allocate 6 CPU + 12 GB RAM)
 
 1. **`make dev` runs the `local` Spring profile, not a profile named "dev".** That's what makes the standalone HTTP endpoints reachable (§2, §11). `standalone` profile (H2, no Kafka) is run manually, not via a `make` target; use `/h2-console` if enabled.
 
@@ -689,7 +748,102 @@ All error responses use `Content-Type: application/problem+json`.
 
 ---
 
-## 13. Observability (for test verification)
+## 13. Production Troubleshooting
+
+### Startup hangs / slow initialization
+
+**Symptom:** `make prod` output stalls at "Waiting for app to be ready"; health check times out after 2+ minutes.
+
+**Cause:** Docker resource constraints or disk I/O bottleneck (Kafka Streams RocksDB state store is reading/writing large volumes).
+
+**Solution:**
+1. Check Docker Desktop resource allocation: **Preferences → Virtual Machine**
+   - Allocate **6 CPU** (minimum 4)
+   - Allocate **12 GB RAM** (minimum 8 GB)
+2. Restart Docker Desktop (full shutdown and reopen, not just the VM)
+3. Run `make prod` again
+4. Expected startup time: 90–180 seconds on first run, ~30 seconds on subsequent runs
+
+### 401 Unauthorized on all API calls
+
+**Symptom:** Every `/api/v1/**` request returns `401 Unauthorized`.
+
+**Cause:** Missing or invalid JWT token (required in `prod` profile).
+
+**Solution:** Get a token from the mock OAuth2 server (§11):
+```bash
+TOKEN=$(curl -s -X POST http://localhost:9000/default/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=demo&client_secret=demo" \
+  | jq -r '.access_token')
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/stats/summary
+```
+
+### `ConnectionRefused` on port 9000 (OAuth2)
+
+**Symptom:** `curl http://localhost:9000/default/token` fails with connection refused or empty reply.
+
+**Cause:** Mock OAuth2 server container not fully initialized (rare, usually resolves after 10–30 seconds).
+
+**Solution:** Wait 30 seconds and retry. If it persists, check logs:
+```bash
+docker logs fraud-mock-oauth2
+```
+
+### 503 Service Unavailable
+
+**Symptom:** All requests return `503 Service Unavailable`.
+
+**Cause:** A critical dependency (Kafka, Postgres, or Vault) is unhealthy.
+
+**Solution:** Check which service failed:
+```bash
+docker ps --filter "name=fraud-" --format "table {{.Names}}\t{{.Status}}"
+```
+
+Look for services marked `(unhealthy)`. Check their logs:
+```bash
+docker logs fraud-kafka1-prod       # Kafka broker
+docker logs fraud-postgres-prod     # Postgres primary
+docker logs fraud-vault-prod        # Vault
+docker logs fraud-schema-registry-prod  # Schema Registry
+```
+
+### `IllegalStateException: Vault location ... not resolvable`
+
+**Symptom:** App startup logs show warnings about Vault paths not found, but app still starts.
+
+**Cause:** Vault is looking for profile-specific secrets (`secret/fraud-rule-engine/prod`) in addition to base secrets (`secret/fraud-rule-engine`). This is expected and safe — the base path contains the credentials the app needs.
+
+**Solution:** No action needed. App continues normally.
+
+### App exits with code 137 (OOMKilled)
+
+**Symptom:** `docker ps` shows container exited with code 137; app was running but suddenly stopped.
+
+**Cause:** Out of memory. The 3-broker Kafka cluster + Streams state store + Postgres replica consume significant memory.
+
+**Solution:** Increase Docker memory allocation to **12–16 GB** (the Streams state store can be large on first initialization).
+
+### Postgres replica not starting
+
+**Symptom:** `fraud-postgres-replica-prod` container shows `(unhealthy)` status.
+
+**Cause:** Primary Postgres hasn't finished initializing, or replication setup script (`postgres-replica-entrypoint.sh`) encountered an error.
+
+**Solution:** Wait 30 seconds. If it persists:
+```bash
+docker logs fraud-postgres-replica-prod
+```
+
+Check for permission issues or network connectivity to primary. Typically resolves on restart:
+```bash
+make stop env=prod && make prod
+```
+
+---
+
+## 15. Observability (for test verification)
 
 - **Logs:** every log line carries `requestId` (per HTTP request) and `transactionId` (Kafka path also adds `kafkaTopic`/`kafkaPartition`/`kafkaOffset`). Customer and merchant IDs are **not** logged.
 - **Metrics** (Prometheus at `GET /actuator/prometheus`):
@@ -698,3 +852,4 @@ All error responses use `Content-Type: application/problem+json`.
   - `fraud.rule.evaluation.duration.seconds` — timer, p50/p95/p99 published
   - Kafka consumer lag is exposed automatically via Micrometer/Spring Kafka auto-instrumentation
 - **Tracing:** OpenTelemetry (OTLP gRPC), 10% sampling. In `dev`, no collector is configured — traces are dropped silently, which is expected, not a bug.
+- **Production metrics dashboard:** Prometheus is exposed at `http://localhost:9090` in both `dev` and `prod`. Add custom dashboards or use Grafana alongside.
