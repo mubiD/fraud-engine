@@ -1,0 +1,20 @@
+# =============================================================================
+# PROD PROFILE
+# =============================================================================
+# Activates with: SPRING_PROFILES_ACTIVE=prod (docker-compose.prod.yml / `make prod`)
+#
+# Vault is the authoritative credential source. DB credentials are injected by
+# Spring Cloud Vault from secret/fraud-rule-engine (seeded by vault-init.sh) via
+# token auth against the local Vault dev instance. In a real deployment, AppRole
+# auth (VAULT_AUTH_METHOD=APPROLE) with role/secret IDs from the CI/CD secrets
+# manager would replace the static VAULT_TOKEN approach.
+#
+# No fallback defaults on db.username / db.password: if Vault is unreachable or the
+# secret is absent, startup fails with an unresolved placeholder error rather than
+# silently using stub credentials.
+# =============================================================================
+
+spring:
+  datasource:
+    username: ${db.username}
+    password: ${db.password}

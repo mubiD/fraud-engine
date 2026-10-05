@@ -1,6 +1,7 @@
 version: "3.9"
 
-# Base service definitions, overridden per environment via docker-compose.<env>.yml
+# Minimal base — sufficient for make dev (single Kafka broker, single Postgres, no Vault,
+# no Schema Registry). docker-compose.prod.yml adds the full production stack on top.
 # Never run this file directly; use the deploy script or:
 #   docker compose -f docker-compose.yml -f docker-compose.<env>.yml up -d
 
@@ -12,21 +13,6 @@ services:
       POSTGRES_DB: frauddb
       POSTGRES_USER: fraud
       POSTGRES_PASSWORD: fraud
-      POSTGRES_REPLICATION_USER: replicator
-      POSTGRES_REPLICATION_PASSWORD: replicator
-    # wal_level=replica + max_wal_senders/max_replication_slots: minimum primary-side
-    # config for streaming replication (see postgres-replica below). hot_standby only
-    # takes effect on a standby, but is harmless to set here too.
-    command:
-      - postgres
-      - -c
-      - wal_level=replica
-      - -c
-      - max_wal_senders=10
-      - -c
-      - max_replication_slots=10
-      - -c
-      - hot_standby=on
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
@@ -35,33 +21,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  # Read replica: DataSourceConfig routes every read-only transaction here instead of the
-  # primary above, once fraud-engine's DB_REPLICA_HOST points at it (see below). Real
-  # streaming replication via pg_basebackup, not just a second empty database (see
-  # postgres-replica-entrypoint.sh). Unverified end-to-end in any sandbox without Docker;
-  # this is standard-pattern scripting, not something that's been run against a live
-  # cluster here.
-  postgres-replica:
-    image: postgres:16-alpine
-    environment:
-      PGDATA: /var/lib/postgresql/data
-      PRIMARY_HOST: postgres
-      REPLICATION_USER: replicator
-      REPLICATION_PASSWORD: replicator
-    volumes:
-      - postgres_replica_data:/var/lib/postgresql/data
-      - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
-    entrypoint: ["sh", "/usr/local/bin/postgres-replica-entrypoint.sh"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fraud -d frauddb"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
-      start_period: 30s
 
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
@@ -72,12 +31,14 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka1:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      # Single-node KRaft: quorum of one. docker-compose.prod.yml overrides this to 3 voters.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      # RF=1 and min_ISR=1 for single-broker dev. docker-compose.prod.yml raises these.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
     healthcheck:
@@ -87,118 +48,26 @@ services:
       retries: 15
       start_period: 30s
 
-  kafka2:
-    image: confluentinc/cp-kafka:7.6.1
-    environment:
-      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
-      KAFKA_NODE_ID: 2
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29093,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka2:29093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka2:29093 --list"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 30s
-
-  kafka3:
-    image: confluentinc/cp-kafka:7.6.1
-    environment:
-      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
-      KAFKA_NODE_ID: 3
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29094,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka3:29094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka3:29094 --list"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 30s
-
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.1
-    environment:
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:29092,PLAINTEXT://kafka2:29093,PLAINTEXT://kafka3:29094
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-    depends_on:
-      kafka1:
-        condition: service_healthy
-      kafka2:
-        condition: service_healthy
-      kafka3:
-        condition: service_healthy
-    # Restart on failure: schema-registry races with _schemas partition leader election on
-    # fresh Kafka clusters. A single retry after a few seconds is always sufficient.
-    restart: on-failure
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-
-  vault:
-    image: hashicorp/vault:1.15
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
-      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-    cap_add:
-      - IPC_LOCK
-
   fraud-engine:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      secrets:
+        - maven_settings
+        - corp_ca
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: frauddb
       DB_USER: fraud
       DB_PASSWORD: fraud
-      DB_REPLICA_HOST: postgres-replica
-      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29093,kafka3:29094
-      SCHEMA_REGISTRY_URL: http://schema-registry:8081
-      # MANAGEMENT_OTLP_TRACING_ENDPOINT is intentionally absent here.
-      # Locally the app connects to no tracing backend and drops spans gracefully.
-      # In Kubernetes this env var is injected via the Helm values file pointing at the Instana agent.
-      VAULT_HOST: vault
-      VAULT_TOKEN: dev-root-token
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092
+      # MANAGEMENT_OTLP_TRACING_ENDPOINT intentionally absent: no tracing backend in dev.
     depends_on:
       postgres:
         condition: service_healthy
-      postgres-replica:
-        condition: service_healthy
       kafka1:
         condition: service_healthy
-      kafka2:
-        condition: service_healthy
-      kafka3:
-        condition: service_healthy
-      schema-registry:
-        condition: service_healthy
-      vault:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
       interval: 10s
@@ -215,7 +84,16 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
 
+# Build-time only (see docker/Dockerfile). Defaults are committed empty files, i.e. resolve
+# straight from Maven Central + Confluent with the system trust store. scripts/deploy.sh
+# defaults MAVEN_SETTINGS_FILE to ~/.m2/settings.xml when present; set CORP_CA_FILE to your
+# proxy's root CA (PEM) if your network does TLS inspection.
+secrets:
+  maven_settings:
+    file: ${MAVEN_SETTINGS_FILE:-../settings-local.xml}
+  corp_ca:
+    file: ${CORP_CA_FILE:-./corp-ca.none.pem}
+
 volumes:
   postgres_data:
-  postgres_replica_data:
   prometheus_data:

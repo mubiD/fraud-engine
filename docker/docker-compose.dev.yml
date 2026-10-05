@@ -1,6 +1,6 @@
 version: "3.9"
 
-# DEV environment: port range 8081 / 5433 / 9192
+# DEV overlay: container names, host ports, and local profile activation.
 # docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 services:
@@ -8,20 +8,6 @@ services:
     container_name: fraud-postgres-dev
     ports:
       - "5433:5432"
-    # Compose volume lists are replaced, not merged, across -f files. The base file's
-    # postgres-init mount must be repeated here or it silently stops applying under this
-    # overlay (the one make dev actually uses).
-    volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
-
-  postgres-replica:
-    container_name: fraud-postgres-replica-dev
-    ports:
-      - "5434:5432"
-    volumes:
-      - postgres_replica_data_dev:/var/lib/postgresql/data
-      - ./postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
 
   kafka1:
     container_name: fraud-kafka1-dev
@@ -30,28 +16,8 @@ services:
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9192,INTERNAL://kafka1:29092
       # Allow schema-registry to create its internal _schemas topic on fresh deploys
+      # (not needed in dev since schema-registry doesn't run, but harmless for local testing)
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-  kafka2:
-    container_name: fraud-kafka2-dev
-    ports:
-      - "9193:9092"
-    environment:
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9193,INTERNAL://kafka2:29093
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-  kafka3:
-    container_name: fraud-kafka3-dev
-    ports:
-      - "9194:9092"
-    environment:
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9194,INTERNAL://kafka3:29094
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-  schema-registry:
-    container_name: fraud-schema-registry-dev
-    ports:
-      - "8091:8081"
 
   fraud-engine:
     container_name: fraud-engine-dev
@@ -61,16 +27,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: local
 
-  vault:
-    container_name: fraud-vault-dev
-    ports:
-      - "8200:8200"
-
   prometheus:
     container_name: fraud-prometheus-dev
     ports:
       - "9090:9090"
-
-volumes:
-  postgres_data_dev:
-  postgres_replica_data_dev:

@@ -40,9 +40,9 @@ class RateLimiterConfigBindingTest {
     }
 
     @Test
-    void standaloneSubmitLimiter_bindsTo20RequestsPerTenSecondWindow() {
+    void standaloneSubmitLimiter_bindsTo200RequestsPerTenSecondWindow() {
         RateLimiterConfig config = registry.rateLimiter("standalone-submit").getRateLimiterConfig();
-        assertThat(config.getLimitForPeriod()).isEqualTo(20);
+        assertThat(config.getLimitForPeriod()).isEqualTo(200);
         assertThat(config.getLimitRefreshPeriod()).isEqualTo(Duration.ofSeconds(10));
     }
 

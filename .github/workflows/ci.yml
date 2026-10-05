@@ -21,13 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Amazon Corretto 21 matches the base image used in docker/Dockerfile.
+      # Amazon Corretto 25 matches the base image used in docker/Dockerfile.
       # `cache: maven` restores ~/.m2 between runs — avoids re-downloading the
       # full dependency tree (~400 MB) on every push.
-      - name: Set up JDK 21 (Corretto)
+      - name: Set up JDK 25 (Corretto)
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'corretto'
           cache: 'maven'
 
@@ -65,25 +65,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21 (Corretto)
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'corretto'
-          cache: 'maven'
+      - uses: docker/setup-buildx-action@v3
 
-      # Build the JAR on the host, not inside the image. The Dockerfile's own
-      # header comment explains why: the Confluent Maven repo requires auth that
-      # isn't available inside a plain build container.
-      - name: Build JAR
-        run: ./mvnw package -DskipTests -q
-
-      # Tag with the short commit SHA so every image built in CI is traceable
-      # back to the exact commit that produced it.
-      - name: Build Docker image
+      # The JAR is compiled inside the image build (multi-stage docker/Dockerfile), so CI
+      # builds the exact artefact that ships, with -Pconfluent, rather than a host-built JAR.
+      # Tag with the commit SHA so every image built in CI is traceable to its commit.
+      # Optional: a MAVEN_SETTINGS repository secret is passed as a BuildKit secret for
+      # networks that need an authenticated Maven mirror; unset, the build resolves publicly.
+      - name: Write Maven settings secret
+        env:
+          MAVEN_SETTINGS: ${{ secrets.MAVEN_SETTINGS }}
         run: |
-          docker build \
-            -f docker/Dockerfile \
-            -t fraud-engine:${{ github.sha }} \
-            -t fraud-engine:latest \
-            .
+          if [ -n "$MAVEN_SETTINGS" ]; then
+            printf '%s' "$MAVEN_SETTINGS" > "$RUNNER_TEMP/maven-settings.xml"
+          else
+            cp settings-local.xml "$RUNNER_TEMP/maven-settings.xml"
+          fi
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          tags: |
+            fraud-engine:${{ github.sha }}
+            fraud-engine:latest
+          secret-files: |
+            maven_settings=${{ runner.temp }}/maven-settings.xml
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

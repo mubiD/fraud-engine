@@ -28,3 +28,6 @@ spring:
 management:
   tracing:
     enabled: false
+  health:
+    vault:
+      enabled: false

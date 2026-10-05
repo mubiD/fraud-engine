@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.claude
+.claude-flow
+target
+docs
+load-tests
+certs
+*.md
+docker/*.yml

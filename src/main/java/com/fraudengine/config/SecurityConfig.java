@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -31,6 +32,14 @@ public class SecurityConfig {
     @Bean
     @Profile("!local & !test & !standalone")
     public JwtDecoder jwtDecoder() {
+        String jwkSetUri = authenticationConfig.getJwkSetUri();
+        if (jwkSetUri != null && !jwkSetUri.isBlank()) {
+            // Bypasses OIDC discovery (avoids a live HTTP call at bean-creation time).
+            // Used when FRAUD_JWK_URI is set — e.g. docker-compose.prod.yml pointing at
+            // the local mock-oauth2-server. In a real deployment FRAUD_JWK_URI is unset and
+            // the full fromIssuerLocation path runs instead.
+            return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        }
         JwtDecoder defaultDecoder =
                 JwtDecoders.fromIssuerLocation(authenticationConfig.getIdpBaseUri());
         return token -> {

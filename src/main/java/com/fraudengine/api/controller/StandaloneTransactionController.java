@@ -177,8 +177,15 @@ public class StandaloneTransactionController {
         // open for the entire batch: nothing committed until every iteration finished, and a
         // large count (e.g. 9999) both got slower per-iteration as EvaluationContextBuilder's
         // live per-customer queries grew and risked losing the whole batch to any single failure.
+        // Scale the customer pool with count so each customer averages ~2 transactions.
+        // A fixed pool of 10 caused ~30 transactions per customer on large runs: every
+        // customer rapidly accumulated both SA and international locations in their
+        // 60-minute context window, triggering GEOGRAPHIC_ANOMALY (LR=400 → FLAGGED alone)
+        // on virtually every transaction and producing 100% flagged results.
+        int customerPoolSize = Math.max(10, count / 2);
+
         for (int i = 0; i < count; i++) {
-            FraudAssessment assessment = processor.process(buildFakeTransaction());
+            FraudAssessment assessment = processor.process(buildFakeTransaction(customerPoolSize));
 
             switch (assessment.getDisposition()) {
                 case FLAGGED -> flagged++;
@@ -190,24 +197,35 @@ public class StandaloneTransactionController {
         return ResponseEntity.ok(new StreamResult(count, passed, pendingReview, flagged));
     }
 
-    private Transaction buildFakeTransaction() {
+    private Transaction buildFakeTransaction(int customerPoolSize) {
         ThreadLocalRandom rng = ThreadLocalRandom.current();
 
-        String[] customers = {"CUST-001","CUST-002","CUST-003","CUST-004","CUST-005",
-                              "CUST-006","CUST-007","CUST-008","CUST-009","CUST-010"};
+        // Pool scales with customerPoolSize (computed by caller) so each customer
+        // averages ~2 transactions on large runs, preventing context-window buildup.
+        String customerId = String.format("CUST-%03d", rng.nextInt(customerPoolSize) + 1);
+
         String[] merchants  = {"MERCH-WOOLWORTHS-ZA","MERCH-CHECKERS-ZA","MERCH-PICK-N-PAY-ZA",
                                "MERCH-SHOPRITE-ZA","MERCH-CLICKS-ZA","MERCH-DISCHEM-ZA"};
-        // International locations included so GEOGRAPHIC_ANOMALY can fire: a transaction from
-        // Cape Town followed by one from Moscow or New York for the same customer within the
-        // 60-minute window is physically impossible at any travel speed.
+        // SA locations dominate (~93%); one international slot (~7%) so GEOGRAPHIC_ANOMALY
+        // can still fire on the rare customer who receives both an SA and an international
+        // transaction within the 60-minute context window. Previous 3/7 (43%) weight caused
+        // every customer to accumulate conflicting locations quickly, flagging 100% of output.
         String[][] locations = {
             {"-33.9249","18.4241","Cape Town, ZA"},
+            {"-33.9249","18.4241","Cape Town, ZA"},
+            {"-33.9249","18.4241","Cape Town, ZA"},
+            {"-26.2041","28.0473","Johannesburg, ZA"},
+            {"-26.2041","28.0473","Johannesburg, ZA"},
             {"-26.2041","28.0473","Johannesburg, ZA"},
             {"-29.8587","31.0218","Durban, ZA"},
+            {"-29.8587","31.0218","Durban, ZA"},
             {"-25.7479","28.2293","Pretoria, ZA"},
-            {"55.7558","37.6173","Moscow, RU"},
-            {"40.7128","-74.0060","New York, US"},
-            {"51.5074","-0.1278","London, GB"}
+            {"-25.7479","28.2293","Pretoria, ZA"},
+            {"-33.0292","27.8546","East London, ZA"},
+            {"-33.9608","25.6022","Port Elizabeth, ZA"},
+            {"-34.1823","22.1263","George, ZA"},
+            {"-25.4627","30.9693","Nelspruit, ZA"},
+            {"55.7558","37.6173","Moscow, RU"}
         };
         // High-risk categories at ~15% combined weight to exercise HIGH_RISK_MERCHANT_CATEGORY.
         String[] categories = {
@@ -229,7 +247,7 @@ public class StandaloneTransactionController {
         String[] loc = locations[rng.nextInt(locations.length)];
 
         return Transaction.builder()
-                .customerId(customers[rng.nextInt(customers.length)])
+                .customerId(customerId)
                 .merchantId(merchantId)
                 .amount(amount)
                 .currency("ZAR")

@@ -142,6 +142,10 @@ logging:
 fraud:
   security:
     idp-base-uri: ${FRAUD_IDP_URI:https://idp.acmebank.example/oauth2/default}
+    # When set, jwtDecoder uses NimbusJwtDecoder.withJwkSetUri() instead of
+    # JwtDecoders.fromIssuerLocation(), bypassing the OIDC discovery HTTP call at startup.
+    # Set FRAUD_JWK_URI in docker-compose.prod.yml to point at the local mock IDP's JWK endpoint.
+    jwk-set-uri: ${FRAUD_JWK_URI:}
     allowed-roles:
       - FRAUD_ANALYST
       - FRAUD_ENGINEER

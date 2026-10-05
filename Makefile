@@ -1,4 +1,4 @@
-.PHONY: dev stop stream build logs ps test test-unit test-integration load-test grafana help
+.PHONY: dev prod stop stream build logs ps test test-unit test-integration load-test grafana help
 
 # On native Windows (invoked from PowerShell/cmd, not already inside Git Bash), GNU Make's own
 # recipe-spawning code fails to quote a SHELL path containing spaces ("Program Files" always
@@ -42,54 +42,54 @@ else
 BASH := bash
 endif
 
-# ── Java 21 auto-detection ────────────────────────────────────────────────────
-# If the active JAVA_HOME already points to a Java 21 JDK, use it as-is.
+# ── Java 25 auto-detection ────────────────────────────────────────────────────
+# If the active JAVA_HOME already points to a Java 25 JDK, use it as-is.
 # Otherwise, locate one in the standard OS install paths and export it for this
 # make session only (no permanent change to the user's shell environment).
 # On Windows the install path varies too widely to detect reliably, so we check
 # and fail fast with a clear message instead.
 ifeq ($(OS),Windows_NT)
   _JAVA_VER := $(shell cmd /c "\"$(JAVA_HOME)\bin\java.exe\" -version 2>&1" | findstr /i "version")
-  ifeq ($(findstring "21.,$(_JAVA_VER)),)
+  ifeq ($(findstring "25.,$(_JAVA_VER)),)
     $(warning )
-    $(warning ERROR: Java 21 is required but JAVA_HOME does not point to a Java 21 JDK.)
-    $(warning        Set JAVA_HOME to your Java 21 install, for example:)
-    $(warning          set JAVA_HOME=C:\Program Files\Amazon Corretto\jdk21.x.x_x)
+    $(warning ERROR: Java 25 is required but JAVA_HOME does not point to a Java 25 JDK.)
+    $(warning        Set JAVA_HOME to your Java 25 install, for example:)
+    $(warning          set JAVA_HOME=C:\Program Files\Amazon Corretto\jdk25.x.x_x)
     $(warning        Download: https://aws.amazon.com/corretto/)
     $(warning )
-    $(error Java 21 not found)
+    $(error Java 25 not found)
   endif
 else
   ifeq ($(shell uname),Darwin)
     # /usr/libexec/java_home is the macOS-canonical locator: returns the home path
     # of the requested version if installed, empty string if not.
-    _JAVA21_HOME := $(shell /usr/libexec/java_home -v 21 2>/dev/null)
+    _JAVA25_HOME := $(shell /usr/libexec/java_home -v 25 2>/dev/null)
   else
     # Linux: check the paths used by Amazon Corretto, Eclipse Temurin, and the
     # default OpenJDK apt/dnf packages (amd64 and arm64 suffixes).
-    _JAVA21_HOME := $(firstword $(wildcard \
-        /usr/lib/jvm/java-21-amazon-corretto \
-        /usr/lib/jvm/java-21-openjdk-amd64 \
-        /usr/lib/jvm/java-21-openjdk-arm64 \
-        /usr/lib/jvm/temurin-21 \
-        /usr/lib/jvm/java-21))
+    _JAVA25_HOME := $(firstword $(wildcard \
+        /usr/lib/jvm/java-25-amazon-corretto \
+        /usr/lib/jvm/java-25-openjdk-amd64 \
+        /usr/lib/jvm/java-25-openjdk-arm64 \
+        /usr/lib/jvm/temurin-25 \
+        /usr/lib/jvm/java-25))
   endif
 
-  ifneq ($(_JAVA21_HOME),)
-    # Found a Java 21 install that isn't the current JAVA_HOME — switch for this
+  ifneq ($(_JAVA25_HOME),)
+    # Found a Java 25 install that isn't the current JAVA_HOME — switch for this
     # make session only.
-    ifneq ($(JAVA_HOME),$(_JAVA21_HOME))
-      export JAVA_HOME := $(_JAVA21_HOME)
+    ifneq ($(JAVA_HOME),$(_JAVA25_HOME))
+      export JAVA_HOME := $(_JAVA25_HOME)
     endif
   else
-    # No Java 21 found anywhere — bail early with a useful error rather than a
+    # No Java 25 found anywhere — bail early with a useful error rather than a
     # cryptic Maven source-compatibility failure deep in the build.
     $(warning )
-    $(warning ERROR: Java 21 is required but could not be found.)
-    $(warning        Install Amazon Corretto 21: https://aws.amazon.com/corretto/)
+    $(warning ERROR: Java 25 is required but could not be found.)
+    $(warning        Install Amazon Corretto 25: https://aws.amazon.com/corretto/)
     $(warning        Then re-run make.)
     $(warning )
-    $(error Java 21 not found)
+    $(error Java 25 not found)
   endif
 endif
 
@@ -107,12 +107,15 @@ _STREAM_COUNT := $(filter-out stream,$(MAKECMDGOALS))
 # ── Environment launcher ─────────────────────────────────────────────────────
 
 dev:
-	"$(BASH)" ./scripts/deploy.sh && :
+	"$(BASH)" ./scripts/deploy.sh dev && :
+
+prod:
+	"$(BASH)" ./scripts/deploy.sh prod && :
 
 # ── Teardown ─────────────────────────────────────────────────────────────────
 
 stop:
-	$(COMPOSE) down --remove-orphans
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(or $(env),dev).yml -p fraud-$(or $(env),dev) down --remove-orphans
 
 # ── Fake event streaming (local/standalone profile) ──────────────────────────
 # Usage:
@@ -131,8 +134,14 @@ stream:
 
 # ── Image build (no startup) ─────────────────────────────────────────────────
 
+comma := ,
+MAVEN_SETTINGS_FILE ?= $(wildcard $(HOME)/.m2/settings.xml)
+
 build:
-	docker build -f docker/Dockerfile -t fraud-engine:local .
+	docker build -f docker/Dockerfile \
+		$(if $(MAVEN_SETTINGS_FILE),--secret id=maven_settings$(comma)src=$(MAVEN_SETTINGS_FILE)) \
+		$(if $(CORP_CA_FILE),--secret id=corp_ca$(comma)src=$(CORP_CA_FILE)) \
+		-t fraud-engine:local .
 
 # ── Observability ────────────────────────────────────────────────────────────
 
@@ -200,7 +209,9 @@ grafana:
 help:
 	@echo ""
 	@echo "  make dev                  Start the dev environment  (port 8081, pg 5433, kafka 9192)"
+	@echo "  make prod                 Start the prod environment (port 8080, pg 5432, kafka 9092, Vault)"
 	@echo "  make stop                 Tear down the dev environment"
+	@echo "  make stop env=prod        Tear down the prod environment"
 	@echo "  make logs                 Tail fraud-engine logs"
 	@echo "  make stream [n]           Stream n fake transactions through the rule engine (default 10)"
 	@echo "  make ps                   List all running fraud-* containers"
