@@ -37,7 +37,7 @@ make stream 500
 make stop
 ```
 
-**Prerequisites:** Docker and a local JDK 21.
+**Prerequisites:** Docker and a local JDK 25.
 
 ### Production environment (for testing auth, read replicas, KRaft)
 

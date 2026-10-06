@@ -1,0 +1,291 @@
+---
+# Kubernetes Deployment manifest for fraud-rule-engine with proper health probes
+# and Vault dependency management
+#
+# Usage:
+#   kubectl apply -f fraud-engine-deployment.yaml
+#
+# Prerequisites:
+#   1. Vault running on vault.default.svc.cluster.local:8200
+#   2. Kafka bootstrap servers configured via KAFKA_BOOTSTRAP_SERVERS env var
+#   3. PostgreSQL running and accessible
+#   4. Schema Registry running
+#
+# This deployment includes:
+#   - InitContainer to verify Vault is reachable before starting app
+#   - Liveness probe: /actuator/health/liveness (overall app health)
+#   - Readiness probe: /actuator/health/readiness (state store + kafka consumer ready)
+#   - Startup probe: waits for state store to be ready (handles slow initialization)
+#   - Graceful shutdown: 30 second drain period for in-flight messages
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-rule-engine
+  namespace: default
+  labels:
+    app: fraud-rule-engine
+    version: v1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Ensure no downtime during updates
+  selector:
+    matchLabels:
+      app: fraud-rule-engine
+  template:
+    metadata:
+      labels:
+        app: fraud-rule-engine
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      # InitContainer: verify Vault is reachable before starting application
+      # This prevents startup hangs if Vault is temporarily unavailable
+      initContainers:
+        - name: vault-ready
+          image: busybox:latest
+          imagePullPolicy: IfNotPresent
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Waiting for Vault to be ready..."
+              max_attempts=30
+              attempt=1
+
+              until nc -z vault.default.svc.cluster.local 8200; do
+                if [ $attempt -ge $max_attempts ]; then
+                  echo "ERROR: Vault not reachable after $max_attempts attempts"
+                  exit 1
+                fi
+                echo "Attempt $attempt/$max_attempts: Vault not ready, waiting..."
+                sleep 2
+                attempt=$((attempt + 1))
+              done
+
+              echo "SUCCESS: Vault is reachable"
+
+      containers:
+        - name: fraud-rule-engine
+          image: fraud-rule-engine:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # Environment variables
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: fraud-engine-config
+                  key: kafka.bootstrap-servers
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-engine-secrets
+                  key: db.host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-engine-secrets
+                  key: db.port
+            - name: DB_NAME
+              value: "frauddb"
+            - name: DB_REPLICA_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-engine-secrets
+                  key: db.replica-host
+            - name: SCHEMA_REGISTRY_URL
+              value: "http://schema-registry:8081"
+            - name: VAULT_HOST
+              value: "vault.default.svc.cluster.local"
+            - name: VAULT_PORT
+              value: "8200"
+            - name: VAULT_AUTH_METHOD
+              value: "APPROLE"
+            - name: VAULT_ROLE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-engine-vault
+                  key: role-id
+            - name: VAULT_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: fraud-engine-vault
+                  key: secret-id
+            - name: FRAUD_JWK_URI
+              value: ""  # Will use OIDC discovery in prod
+
+          # Resource requests/limits
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+          # Startup Probe: wait for Kafka Streams state store to be ready
+          # Gives the application up to 5 minutes to initialize (useful on first startup)
+          startupProbe:
+            httpGet:
+              path: /actuator/health/custom/state-store
+              port: http
+              scheme: HTTP
+            failureThreshold: 150  # 150 * 2 seconds = 5 minutes
+            periodSeconds: 2
+            timeoutSeconds: 1
+            initialDelaySeconds: 0
+
+          # Readiness Probe: only send traffic when state store AND kafka consumer are ready
+          # Checks: /actuator/health/readiness which includes state store and kafka consumer status
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3  # 3 failures = 15 seconds before marking unready
+            successThreshold: 1
+
+          # Liveness Probe: restart if application deadlocks
+          # More lenient than readiness (only checks overall app is running, not state store)
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3  # 3 failures = 30 seconds before restart
+            successThreshold: 1
+
+          # Graceful shutdown: in-flight Kafka messages get 30 seconds to complete
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 2"]  # Additional 2-second grace before SIGTERM
+
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts (for logs, tmp)
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/cache
+
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+
+      # Pod-level settings
+      terminationGracePeriodSeconds: 40  # Allow 40 seconds for graceful shutdown (preStop + server.shutdown.graceful timeout)
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst
+
+      # Security context for the pod
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+
+      # Affinity rules (optional)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - fraud-rule-engine
+                topologyKey: kubernetes.io/hostname
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-rule-engine
+  namespace: default
+  labels:
+    app: fraud-rule-engine
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: fraud-rule-engine
+
+---
+# ConfigMap for non-secret configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-engine-config
+  namespace: default
+data:
+  kafka.bootstrap-servers: "kafka-broker-0:9092,kafka-broker-1:9092,kafka-broker-2:9092"
+
+---
+# Secret template (MUST be created separately with actual values)
+# kubectl create secret generic fraud-engine-secrets \
+#   --from-literal=db.host=postgres.default.svc.cluster.local \
+#   --from-literal=db.port=5432 \
+#   --from-literal=db.replica-host=postgres-replica.default.svc.cluster.local \
+#   -n default
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fraud-engine-secrets
+  namespace: default
+type: Opaque
+data:
+  db.host: cG9zdGdyZXMuZGVmYXVsdC5zdmMuY2x1c3Rlci5sb2NhbA==  # Base64 encoded placeholder
+  db.port: NTQzMg==
+  db.replica-host: cG9zdGdyZXMtcmVwbGljYS5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2Fs
+
+---
+# Secret for Vault AppRole credentials
+# kubectl create secret generic fraud-engine-vault \
+#   --from-literal=role-id=YOUR_ROLE_ID \
+#   --from-literal=secret-id=YOUR_SECRET_ID \
+#   -n default
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fraud-engine-vault
+  namespace: default
+type: Opaque
+data:
+  role-id: cGxhY2Vob2xkZXI=  # Base64 encoded placeholder
+  secret-id: cGxhY2Vob2xkZXI=  # Base64 encoded placeholder

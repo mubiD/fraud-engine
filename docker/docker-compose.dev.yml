@@ -20,7 +20,7 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
   fraud-engine:
-    container_name: fraud-engine-dev
+    container_name: fraud-rule-engine-dev
     mem_limit: 1g
     ports:
       - "8081:8080"

@@ -6,7 +6,7 @@
 
 ## 1. What This Service Is
 
-This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank. It evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 21.
+This is an **asynchronous, post-authorisation** transaction fraud detection engine for Acme Bank. It evaluates a transaction *after* it has already happened, not as a blocking gate before authorisation. It evaluates financial transactions against **12** rule-based fraud detectors, persists the results, and routes outcomes downstream. The service is built on Spring Boot 3.3 / Java 25.
 
 Transactions enter the system via Kafka on all non-local/standalone Spring profiles. §2 below describes a demo-only HTTP submission stub active only in `local`/`standalone` profiles. The query API is otherwise read-only except for one real, always-present write endpoint (§4.14), which lets an analyst record a fraud assessment's ground-truth outcome; it does not accept new transactions.
 

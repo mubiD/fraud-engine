@@ -2,7 +2,7 @@
 
 **Author:** Mubashir
 **Date:** 2026-08-31
-**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · Prometheus · OpenTelemetry · Docker · JUnit 5 · Mockito · Testcontainers
+**Stack:** Java 25 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · Prometheus · OpenTelemetry · Docker · JUnit 5 · Mockito · Testcontainers
 **Status:** Current: describes the dev architecture as implemented
 
 ---

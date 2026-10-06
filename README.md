@@ -4,7 +4,7 @@
 
 A production-grade backend service that consumes transaction events from Kafka, evaluates them against a configurable set of fraud detection rules, persists assessments to PostgreSQL, and routes outcomes to dedicated downstream topics.
 
-**Stack:** Java 21 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · OpenTelemetry · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers
+**Stack:** Java 25 · Spring Boot 3.3 · Apache Kafka 3 (KRaft, 3-broker) · Protobuf · Confluent Schema Registry · PostgreSQL 16 (range-partitioned) · HashiCorp Vault · OpenTelemetry · Prometheus · Docker · JUnit 5 · Mockito · Testcontainers
 
 ---
 
@@ -84,7 +84,7 @@ Query API (read-only, with one write exception — see below)
 
 ## Running Locally
 
-Prerequisites: **Docker** and a local **JDK 21**. No Kafka installation required, since that runs inside containers. The JAR is built on the host using `./mvnw` (Maven wrapper — no separate Maven install required); see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
+Prerequisites: **Docker** and a local **JDK 25**. No Kafka installation required, since that runs inside containers. The JAR is built on the host using `./mvnw` (Maven wrapper — no separate Maven install required); see `docker/Dockerfile`'s header comment for why the build isn't containerized (Confluent's Maven repository needs authentication that isn't available in a plain build container).
 
 The `dev` environment is fully self-contained: app instance, Postgres + streaming replica, 3-broker Kafka cluster, Schema Registry, Vault, and Prometheus — all started with a single command.
 
@@ -137,7 +137,7 @@ make stream 500
   - **CPU:** 6 cores (minimum 4)
   - **Memory:** 12 GB (minimum 8 GB)
   - Increase in Rancher Desktop/Docker Desktop **Preferences → Virtual Machine** before running
-- **Docker** and **JDK 21** (same as dev)
+- **Docker** and **JDK 25** (same as dev)
 - First startup may take 2–3 minutes (Kafka Streams state store initialization)
 
 The `prod` environment runs the app under the `prod` Spring profile with production-like infrastructure:

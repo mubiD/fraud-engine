@@ -1,6 +1,7 @@
 package com.fraudengine.consumer;
 
 import com.fraudengine.config.FraudMetrics;
+import com.fraudengine.config.KafkaConsumerReadinessIndicator;
 import com.fraudengine.engine.RuleEngine;
 import com.fraudengine.kafka.AssessmentProducer;
 import com.fraudengine.model.FraudAssessment;
@@ -44,17 +45,20 @@ public class TransactionConsumer {
     private final RuleEngine ruleEngine;
     private final AssessmentProducer assessmentProducer;
     private final FraudMetrics metrics;
+    private final KafkaConsumerReadinessIndicator readinessIndicator;
 
     public TransactionConsumer(TransactionRepository transactionRepository,
                                 FraudAssessmentRepository fraudAssessmentRepository,
                                 RuleEngine ruleEngine,
                                 AssessmentProducer assessmentProducer,
-                                FraudMetrics metrics) {
+                                FraudMetrics metrics,
+                                KafkaConsumerReadinessIndicator readinessIndicator) {
         this.transactionRepository = transactionRepository;
         this.fraudAssessmentRepository = fraudAssessmentRepository;
         this.ruleEngine = ruleEngine;
         this.assessmentProducer = assessmentProducer;
         this.metrics = metrics;
+        this.readinessIndicator = readinessIndicator;
     }
 
     // numPartitions must match transactions.raw's partition count (KafkaConfig.transactionsRawTopic(),
@@ -87,6 +91,9 @@ public class TransactionConsumer {
             MDC.put("kafkaTopic",    topic);
             MDC.put("kafkaPartition", String.valueOf(partition));
             MDC.put("kafkaOffset",   String.valueOf(offset));
+
+            // Mark consumer as ready on first successful message processed
+            readinessIndicator.markAsReady();
 
             log.info("Consumed transaction event: amount={} {}, category={}, location={}",
                     event.getAmount(), event.getCurrency(),

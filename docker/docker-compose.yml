@@ -5,6 +5,23 @@ version: "3.9"
 # Never run this file directly; use the deploy script or:
 #   docker compose -f docker-compose.yml -f docker-compose.<env>.yml up -d
 
+# Extension fields for Kafka broker common configuration (shared across kafka1/kafka2/kafka3)
+x-kafka-broker-common:
+  &kafka-broker-common
+  image: confluentinc/cp-kafka:7.6.1
+  environment:
+    KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+  healthcheck:
+    interval: 10s
+    timeout: 10s
+    retries: 15
+    start_period: 30s
+
 services:
 
   postgres:
@@ -23,30 +40,20 @@ services:
       retries: 10
 
   kafka1:
-    image: confluentinc/cp-kafka:7.6.1
+    <<: *kafka-broker-common
     environment:
-      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka1:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       # Single-node KRaft: quorum of one. docker-compose.prod.yml overrides this to 3 voters.
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       # RF=1 and min_ISR=1 for single-broker dev. docker-compose.prod.yml raises these.
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
     healthcheck:
       test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka1:29092 --list"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 30s
 
   fraud-engine:
     build:
