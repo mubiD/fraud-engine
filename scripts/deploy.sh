@@ -88,19 +88,15 @@ docker compose $COMPOSE_FILES -p "$PROJECT" up -d
 
 echo "==> [$ENV] Waiting for app to become healthy..."
 RETRIES=120
-HEALTH_CHECK_PASSED=false
 # Determine app port based on environment (dev: 8081, prod: 8080)
 APP_HEALTH_PORT=8080
 [[ "$ENV" == "dev" ]] && APP_HEALTH_PORT=8081
 while true; do
-  # Check if app is responding to HTTP health check (most reliable)
-  if curl -sf http://localhost:${APP_HEALTH_PORT}/actuator/health >/dev/null 2>&1; then
-    HEALTH_CHECK_PASSED=true
+  # Check Docker health status (what load-test also checks)
+  STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$APP_CONTAINER" 2>/dev/null || true)
+  if [[ "$STATUS" == "healthy" ]]; then
     break
   fi
-
-  # Also check Docker health status as a backup
-  STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$APP_CONTAINER" 2>/dev/null || true)
   if [[ "$STATUS" == "unhealthy" ]]; then
     echo "ERROR: $APP_CONTAINER reported unhealthy."
     docker compose $COMPOSE_FILES -p "$PROJECT" logs fraud-engine
@@ -109,12 +105,9 @@ while true; do
 
   RETRIES=$((RETRIES - 1))
   if [[ $RETRIES -le 0 ]]; then
-    # If app is responding, success even if Docker health probe hasn't completed
-    if $HEALTH_CHECK_PASSED; then
-      break
-    fi
-    echo "WARNING: $APP_CONTAINER health check timeout, but app appears to be running."
-    break
+    echo "ERROR: $APP_CONTAINER health check timeout after 120s."
+    docker compose $COMPOSE_FILES -p "$PROJECT" logs fraud-engine
+    exit 1
   fi
   sleep 1
 done
