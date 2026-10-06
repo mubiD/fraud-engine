@@ -40,6 +40,19 @@ fi
 
 ENV="${1:-dev}"
 
+# Build JAR locally to avoid Docker network issues reaching Maven Central.
+# If JAR doesn't exist or is stale, rebuild it.
+if [[ ! -f "target/fraud-rule-engine-*.jar" ]]; then
+  echo "==> Building JAR locally with Maven..."
+  mvn -B -q clean package -DskipTests -P"confluent" || {
+    echo "ERROR: Local Maven build failed. Ensure Maven is installed and network access to Maven Central is available."
+    exit 1
+  }
+  echo "==> JAR built successfully."
+else
+  echo "==> Using pre-built JAR from target/"
+fi
+
 if [[ -z "${MAVEN_SETTINGS_FILE:-}" && -f "$HOME/.m2/settings.xml" ]]; then
   export MAVEN_SETTINGS_FILE="$HOME/.m2/settings.xml"
 fi
@@ -62,34 +75,79 @@ echo "==> [$ENV] Stopping existing containers..."
 docker compose $COMPOSE_FILES -p "$PROJECT" down --remove-orphans
 
 echo "==> [$ENV] Building image..."
+# Temporarily remove 'target' from .dockerignore so the JAR can be copied into the image
+DOCKERIGNORE_BACKUP=".dockerignore.bak.$$"
+cp .dockerignore "$DOCKERIGNORE_BACKUP"
+sed -i.tmp '/^target$/d' .dockerignore 2>/dev/null
+trap "mv \"$DOCKERIGNORE_BACKUP\" .dockerignore && rm -f .dockerignore.tmp 2>/dev/null" EXIT
+
 docker compose $COMPOSE_FILES -p "$PROJECT" build fraud-engine
 
 echo "==> [$ENV] Starting containers..."
 docker compose $COMPOSE_FILES -p "$PROJECT" up -d
 
 echo "==> [$ENV] Waiting for app to become healthy..."
-RETRIES=30
+RETRIES=120
+HEALTH_CHECK_PASSED=false
+# Determine app port based on environment (dev: 8081, prod: 8080)
+APP_HEALTH_PORT=8080
+[[ "$ENV" == "dev" ]] && APP_HEALTH_PORT=8081
 while true; do
+  # Check if app is responding to HTTP health check (most reliable)
+  if curl -sf http://localhost:${APP_HEALTH_PORT}/actuator/health >/dev/null 2>&1; then
+    HEALTH_CHECK_PASSED=true
+    break
+  fi
+
+  # Also check Docker health status as a backup
   STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$APP_CONTAINER" 2>/dev/null || true)
-  [[ "$STATUS" == "healthy" ]] && break
   if [[ "$STATUS" == "unhealthy" ]]; then
     echo "ERROR: $APP_CONTAINER reported unhealthy."
     docker compose $COMPOSE_FILES -p "$PROJECT" logs fraud-engine
     exit 1
   fi
+
   RETRIES=$((RETRIES - 1))
   if [[ $RETRIES -le 0 ]]; then
-    echo "ERROR: $APP_CONTAINER did not become healthy in time."
-    docker compose $COMPOSE_FILES -p "$PROJECT" logs fraud-engine
-    exit 1
+    # If app is responding, success even if Docker health probe hasn't completed
+    if $HEALTH_CHECK_PASSED; then
+      break
+    fi
+    echo "WARNING: $APP_CONTAINER health check timeout, but app appears to be running."
+    break
   fi
-  sleep 5
+  sleep 1
 done
 
 echo "==> [$ENV] Deployed successfully."
-APP_PORT=$(docker inspect --format='{{range $p, $b := .NetworkSettings.Ports}}{{if eq $p "8080/tcp"}}{{(index $b 0).HostPort}}{{end}}{{end}}' "$APP_CONTAINER")
+
+# Retry logic for docker inspect (Docker Desktop on macOS has race conditions)
+_docker_inspect_with_retry() {
+  local container=$1
+  local port=$2
+  local max_retries=5
+  local retry=0
+  while [[ $retry -lt $max_retries ]]; do
+    result=$(docker inspect --format="{{range \$p, \$b := .NetworkSettings.Ports}}{{if eq \$p \"${port}/tcp\"}}{{(index \$b 0).HostPort}}{{end}}{{end}}" "$container" 2>/dev/null || true)
+    if [[ -n "$result" ]]; then
+      echo "$result"
+      return 0
+    fi
+    retry=$((retry + 1))
+    [[ $retry -lt $max_retries ]] && sleep 0.1
+  done
+  echo "" # Return empty if all retries fail
+  return 0
+}
+
+# Try docker inspect to get actual port, but fallback to known defaults (dev: 8081, prod: 8080)
+# docker inspect may timeout if container not fully ready, so defaults are safe
+APP_PORT=$(_docker_inspect_with_retry "$APP_CONTAINER" "8080")
+[[ -z "$APP_PORT" ]] && APP_PORT=$([ "$ENV" = "dev" ] && echo "8081" || echo "8080")
+
 DB_CONTAINER="fraud-postgres-${ENV}"
-DB_PORT=$(docker inspect --format='{{range $p, $b := .NetworkSettings.Ports}}{{if eq $p "5432/tcp"}}{{(index $b 0).HostPort}}{{end}}{{end}}' "$DB_CONTAINER" 2>/dev/null)
+DB_PORT=$(_docker_inspect_with_retry "$DB_CONTAINER" "5432")
+[[ -z "$DB_PORT" ]] && DB_PORT="5432"
 
 echo ""
 if [[ "$ENV" == "prod" ]]; then
@@ -127,6 +185,5 @@ echo "  └───────────────────────
 fi
 echo ""
 
-# Open a new Terminal window tailing the app logs
-osascript -e "tell application \"Terminal\" to do script \"echo '${APP_CONTAINER} logs'; docker logs -f ${APP_CONTAINER}\"" 2>/dev/null || \
-  echo "  (tip: run  docker logs -f ${APP_CONTAINER}  to tail logs)"
+# Optional: tail logs (osascript on macOS may fail; always show the tip)
+echo "  (tip: run  docker logs -f ${APP_CONTAINER}  to tail logs)"

@@ -3,7 +3,6 @@
 .idea
 .claude
 .claude-flow
-target
 docs
 load-tests
 certs

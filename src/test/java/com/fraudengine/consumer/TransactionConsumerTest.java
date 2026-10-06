@@ -1,6 +1,7 @@
 package com.fraudengine.consumer;
 
 import com.fraudengine.config.FraudMetrics;
+import com.fraudengine.config.KafkaConsumerReadinessIndicator;
 import com.fraudengine.engine.RuleEngine;
 import com.fraudengine.kafka.AssessmentProducer;
 import com.fraudengine.model.FraudAssessment;
@@ -38,6 +39,7 @@ class TransactionConsumerTest {
     @Mock RuleEngine ruleEngine;
     @Mock AssessmentProducer assessmentProducer;
     @Mock FraudMetrics metrics;
+    @Mock KafkaConsumerReadinessIndicator readinessIndicator;
 
     @Captor ArgumentCaptor<Transaction> txCaptor;
 
@@ -52,7 +54,7 @@ class TransactionConsumerTest {
     void setUp() {
         consumer = new TransactionConsumer(
                 transactionRepository, fraudAssessmentRepository,
-                ruleEngine, assessmentProducer, metrics);
+                ruleEngine, assessmentProducer, metrics, readinessIndicator);
     }
 
     // ── consume(): new transaction path ────────────────────────────────────

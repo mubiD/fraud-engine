@@ -1,5 +1,3 @@
-version: "3.9"
-
 # DEV overlay: container names, host ports, and local profile activation.
 # docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
