@@ -46,6 +46,11 @@ jobs:
       - name: Integration tests
         run: ./mvnw test -Dtest='**/integration/**' -Pconfluent
 
+      # Package JAR for Docker build (tests already ran, so -DskipTests)
+      # Required by docker/Dockerfile which expects pre-built JAR in target/
+      - name: Package JAR
+        run: ./mvnw package -DskipTests -Pconfluent -q
+
       # Upload the Surefire XML reports so GitHub can surface per-test pass/fail
       # detail on the PR checks page, even when the job itself succeeds.
       - name: Publish test results
