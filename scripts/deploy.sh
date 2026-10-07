@@ -62,12 +62,12 @@ case "$ENV" in
   prod)
     COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.prod.yml"
     PROJECT="fraud-prod"
-    APP_CONTAINER="fraud-engine-prod"
+    APP_CONTAINER="fraud-rule-engine-prod"
     ;;
   dev|*)
     COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.dev.yml"
     PROJECT="fraud-dev"
-    APP_CONTAINER="fraud-engine-dev"
+    APP_CONTAINER="fraud-rule-engine-dev"
     ;;
 esac
 
@@ -92,11 +92,18 @@ RETRIES=120
 APP_HEALTH_PORT=8080
 [[ "$ENV" == "dev" ]] && APP_HEALTH_PORT=8081
 while true; do
-  # Check Docker health status (what load-test also checks)
-  STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$APP_CONTAINER" 2>/dev/null || true)
-  if [[ "$STATUS" == "healthy" ]]; then
-    break
+  # Check if app is responding to HTTP health check (most reliable)
+  if curl -sf http://localhost:${APP_HEALTH_PORT}/actuator/health >/dev/null 2>&1; then
+    # Verify Docker health status matches (for consistency with load-test expectations)
+    STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$APP_CONTAINER" 2>/dev/null || true)
+    if [[ "$STATUS" == "healthy" || "$STATUS" == "starting" ]]; then
+      # HTTP is responding; Docker health will update shortly. Success.
+      break
+    fi
   fi
+
+  # Check if Docker explicitly marked as unhealthy (actual failure, not just lag)
+  STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$APP_CONTAINER" 2>/dev/null || true)
   if [[ "$STATUS" == "unhealthy" ]]; then
     echo "ERROR: $APP_CONTAINER reported unhealthy."
     docker compose $COMPOSE_FILES -p "$PROJECT" logs fraud-engine
