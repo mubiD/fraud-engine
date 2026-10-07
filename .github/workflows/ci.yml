@@ -70,11 +70,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Build the JAR for docker build to COPY. Tests already passed in the test job,
+      # so we skip them here. The docker build context needs target/fraud-rule-engine-*.jar.
+      - name: Set up JDK 25 (Corretto)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'corretto'
+          cache: 'maven'
+
+      - name: Package JAR
+        run: ./mvnw package -DskipTests -Pconfluent -q
+
       - uses: docker/setup-buildx-action@v3
 
-      # The JAR is compiled inside the image build (multi-stage docker/Dockerfile), so CI
-      # builds the exact artefact that ships, with -Pconfluent, rather than a host-built JAR.
-      # Tag with the commit SHA so every image built in CI is traceable to its commit.
+      # Dockerfile expects a pre-built JAR (see docker/Dockerfile line 3). We built it in the
+      # previous step. Tag with the commit SHA so every image built in CI is traceable to its commit.
       # Optional: a MAVEN_SETTINGS repository secret is passed as a BuildKit secret for
       # networks that need an authenticated Maven mirror; unset, the build resolves publicly.
       - name: Write Maven settings secret
