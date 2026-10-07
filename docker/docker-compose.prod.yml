@@ -243,6 +243,8 @@ services:
       # skipping the OIDC discovery HTTP call at startup. Unset in a real deployment
       # (where FRAUD_IDP_URI points to the real IDP and fromIssuerLocation is used).
       FRAUD_JWK_URI: http://mock-oauth2-server:8080/default/jwks
+      # Disable OTLP tracing since there's no collector running locally
+      MANAGEMENT_OTLP_TRACING_ENABLED: "false"
     depends_on:
       postgres-replica:
         condition: service_healthy

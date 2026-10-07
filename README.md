@@ -97,7 +97,7 @@ The `dev` environment is fully self-contained: app instance, Postgres + streamin
 | Vault | 8200 |
 | Prometheus | 9090 |
 
-> Tracing is OpenTelemetry/OTLP. None of the compose files run a tracing backend locally, so the app finds nothing at `${MANAGEMENT_OTLP_TRACING_ENDPOINT}` and drops spans gracefully.
+> Tracing is disabled locally. OpenTelemetry/OTLP support is built-in but requires a collector endpoint (`MANAGEMENT_OTLP_TRACING_ENDPOINT`) only in production environments with observability infrastructure. Both `dev` and `prod` run without a collector.
 
 ### Start an environment
 
@@ -215,6 +215,66 @@ make logs
 
 ```bash
 make ps
+```
+
+### Load Testing with k6 (`make load-test`)
+
+Run k6 load tests against a running dev environment to benchmark the app's performance under controlled load. Metrics are collected in InfluxDB and visualized in Grafana.
+
+**Prerequisites:**
+- A running dev environment: `make dev` must be running first
+- Sufficient Docker resources (same as dev: 4+ CPU, 8+ GB RAM)
+
+**Quick start:**
+
+```bash
+make dev                          # Start the app (if not already running)
+make load-test scenario=01        # Run baseline scenario (10 VUs, 2 min default)
+```
+
+**Available scenarios:**
+
+| Scenario | Description | Default Config |
+|----------|-------------|-----------------|
+| `01-baseline` | Steady low concurrency, establishes p50/p95/p99 baseline | 10 VUs, 2 min |
+| `02-ramp` | Gradual load ramp to find saturation point | 10→50 VUs, 5 min |
+| `03-spike` | Sudden traffic spike to test resilience | 1 VU → 100 VU spike |
+| `04-analyst-workflow` | Simulates analyst reviewing and marking transactions | 5 VUs, 2 min |
+| `05-concurrent-outcomes` | Heavy concurrent write load on outcome endpoint | 20 VUs, 2 min |
+
+**Run with custom parameters:**
+
+```bash
+make load-test scenario=01 vus=20 duration=5m     # 20 virtual users, 5 min duration
+make load-test scenario=03                         # Spike test with defaults
+```
+
+**View results:**
+
+k6 metrics are automatically sent to InfluxDB and Grafana:
+
+```bash
+make grafana                      # Opens Grafana dashboard at http://localhost:3000/d/k6-fraud-engine
+```
+
+The dashboard shows real-time:
+- Active VUs (virtual users)
+- Requests per second (RPS)
+- Response time percentiles (p50, p95, p99)
+- Error rate (%)
+- HTTP response status codes
+
+**Thresholds (fail if exceeded):**
+
+Each scenario defines pass/fail thresholds. Exit code 99 means a threshold was breached:
+
+- `http_req_failed: rate<0.01` — Error rate must be <1%
+- `http_req_duration: p(95)<800` — P95 latency must be <800ms
+
+**Cleanup:**
+
+```bash
+make stop                         # Tears down dev + load-test resources (InfluxDB, Grafana)
 ```
 
 ---
@@ -838,7 +898,7 @@ Startup validation: every rule window measured against `recentCustomerTransactio
 | `DB_USER` / `DB_PASSWORD` | `fraud` / `fraud` | PostgreSQL credentials |
 | `VAULT_HOST` / `VAULT_TOKEN` | `vault` / `dev-root-token` | HashiCorp Vault |
 | `FRAUD_IDP_URI` | `https://idp.acmebank.example/oauth2/default` | JWT issuer; JWKS fetched from `{issuer}/.well-known/openid-configuration` at startup |
-| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | `http://localhost:4317` | OTel GRPC endpoint (Instana agent in K8s, unset locally, spans dropped gracefully) |
+| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | Unset locally | OpenTelemetry GRPC endpoint (Jaeger, Zipkin, Instana, etc.). When unset, tracing is disabled. |
 
 ---
 
@@ -919,9 +979,9 @@ Consumer lag per partition is automatically exposed via `kafka_consumer_fetch_ma
 
 ### Distributed tracing
 
-All Kafka listener invocations and HTTP requests are traced via the Micrometer OTel bridge and exported via OTLP gRPC to `${MANAGEMENT_OTLP_TRACING_ENDPOINT}`. Sampling probability is 10% by default.
+OpenTelemetry tracing infrastructure is compiled in and ready for production use. When `MANAGEMENT_OTLP_TRACING_ENDPOINT` is set, all Kafka listener invocations and HTTP requests are traced via the Micrometer OTel bridge and exported via OTLP gRPC. Sampling probability is 10% by default (to reduce trace data volume).
 
-**Locally** `MANAGEMENT_OTLP_TRACING_ENDPOINT` is not set. The app defaults to `http://localhost:4317`, finds nothing, and drops spans silently. All other functionality is unaffected.
+**Locally** `MANAGEMENT_OTLP_TRACING_ENDPOINT` is not set, so tracing is disabled. This is intentional—there's no running trace collector. To enable tracing, set the endpoint to a running Jaeger, Zipkin, Datadog, or Instana instance.
 
 ### Structured logging and MDC correlation
 

@@ -1,9 +1,24 @@
-# Load-test overlay: adds Grafana to the running dev stack for metrics visualization.
-# Uses the Prometheus instance already running in docker-compose.yml
+# Load-test overlay: adds InfluxDB and Grafana to the running dev stack for k6 metrics visualization.
 # Usage: make load-test [scenario=01] [vus=10] [duration=2m]
 # Requires: make dev must already be running.
 
 services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: fraud-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: admin
+      DOCKER_INFLUXDB_INIT_ORG: fraud-engine
+      DOCKER_INFLUXDB_INIT_BUCKET: k6
+      DOCKER_INFLUXDB_INIT_RETENTION: 72h
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: fraud-engine-k6-token
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+
   grafana:
     image: grafana/grafana:10.4.0
     container_name: fraud-rule-engine-grafana
@@ -16,3 +31,6 @@ services:
     volumes:
       - ../load-tests/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../load-tests/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  influxdb_data:

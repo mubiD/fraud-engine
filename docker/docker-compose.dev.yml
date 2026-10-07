@@ -24,6 +24,8 @@ services:
       - "8081:8080"
     environment:
       SPRING_PROFILES_ACTIVE: local
+      # Disable OTLP tracing since there's no collector running locally
+      MANAGEMENT_OTLP_TRACING_ENABLED: "false"
 
   prometheus:
     container_name: fraud-prometheus-dev

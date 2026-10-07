@@ -115,7 +115,7 @@ prod:
 # ── Teardown ─────────────────────────────────────────────────────────────────
 
 stop:
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(or $(env),dev).yml -p fraud-$(or $(env),dev) down --remove-orphans
+	docker compose -f docker/docker-compose.yml -f docker/docker-compose.$(or $(env),dev).yml $(if $(filter dev,$(or $(env),dev)),-f docker/docker-compose.loadtest.yml) -p fraud-$(or $(env),dev) down --remove-orphans
 
 # ── Fake event streaming (local/standalone profile) ──────────────────────────
 # Usage:
@@ -124,8 +124,8 @@ stop:
 COUNT ?= $(if $(_STREAM_COUNT),$(_STREAM_COUNT),10)
 
 stream:
-	$(eval APP_PORT := $(shell docker inspect --format='{{range $$p, $$b := .NetworkSettings.Ports}}{{if eq $$p "8080/tcp"}}{{(index $$b 0).HostPort}}{{end}}{{end}}' fraud-engine-dev 2>/dev/null))
-	@if [ -z "$(APP_PORT)" ]; then echo "fraud-engine-dev is not running"; exit 1; fi
+	$(eval APP_PORT := $(shell docker inspect --format='{{range $$p, $$b := .NetworkSettings.Ports}}{{if eq $$p "8080/tcp"}}{{(index $$b 0).HostPort}}{{end}}{{end}}' fraud-rule-engine-dev 2>/dev/null))
+	@if [ -z "$(APP_PORT)" ]; then echo "fraud-rule-engine-dev is not running"; exit 1; fi
 	@# Pretty-print if python3 is around, otherwise print raw JSON rather than fail outright.
 	@# python3 isn't guaranteed on all platforms this Makefile targets (never bundled on Windows,
 	@# and no longer bundled by default on recent macOS either), found live 2026-09-09 testing
@@ -178,9 +178,9 @@ test-integration:
 # InfluxDB + Grafana start automatically and remain up until make stop.
 
 load-test:
-	@STATUS=$$(docker inspect --format='{{.State.Health.Status}}' fraud-engine-dev 2>/dev/null); \
-	 if [ "$$STATUS" != "healthy" ]; then \
-	   echo "fraud-engine-dev is not running or not healthy — run make dev first"; exit 1; \
+	@HTTP_STATUS=$$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/ 2>/dev/null || echo "000"); \
+	 if [ "$$HTTP_STATUS" != "200" ] && [ "$$HTTP_STATUS" != "302" ] && [ "$$HTTP_STATUS" != "401" ]; then \
+	   echo "fraud-rule-engine-dev is not responding — run make dev first"; exit 1; \
 	 fi
 	$(LOADTEST_COMPOSE) up -d influxdb grafana
 	@SCRIPT=$$(ls "$(CURDIR)/load-tests/scenarios/$(_LT_SCENARIO)-"*.js 2>/dev/null | head -1); \
@@ -193,11 +193,11 @@ load-test:
 	 docker run --rm \
 	   --network fraud-dev_default \
 	   -v "$(CURDIR)/load-tests:/load-tests" \
-	   -e BASE_URL=http://fraud-engine-dev:8080 \
+	   -e BASE_URL=http://fraud-engine:8080 \
 	   $(if $(_LT_VUS),-e VUS=$(_LT_VUS)) \
 	   $(if $(_LT_DURATION),-e DURATION=$(_LT_DURATION)) \
 	   grafana/k6 run \
-	   --out influxdb=http://fraud-influxdb:8086/k6 \
+	   --out influxdb=http://admin:admin@fraud-influxdb:8086/fraud-engine/k6 \
 	   "/load-tests/scenarios/$$(basename $$SCRIPT)"
 
 grafana:

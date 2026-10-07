@@ -33,7 +33,10 @@ curl -X POST http://localhost:8081/api/v1/standalone/submit \
 # Or generate a batch of random transactions through the rule engine
 make stream 500
 
-# Tear down
+# Run load tests with k6 + Grafana visualization
+make load-test scenario=01      # Baseline: 10 VUs, 2 min (view results at http://localhost:3000)
+
+# Tear down (dev + all load-test resources)
 make stop
 ```
 
